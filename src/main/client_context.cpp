@@ -281,7 +281,7 @@ unique_ptr<QueryResult> ClientContext::ExecuteStatementInternalReopt(string quer
 		// 		result <- execute(physical_plan)
 		// 		return result
 		string temp_table_name = LogicalOperatorToString(plan->GetOperatorType) + to_string(i);
-		auto step_plan = reoptimizer.FirstStepWithTempTable(move(plan), temp_table_name);
+		auto step_plan = reoptimizer.FirstStepAsTempTable(move(plan), temp_table_name);
 
 		// 	physical_plan <- PhysicalPlanGenerator.CreatePlan(logical_plan)
 		auto physical_plan = physical_planner.CreatePlan(move(step_plan));
