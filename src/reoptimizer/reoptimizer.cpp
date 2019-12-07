@@ -10,15 +10,17 @@ using namespace duckdb;
 ReOptimizer::ReOptimizer() {
 }
 
-unique_ptr<LogicalOperator> ReOptimizer::FirstStepWithTempTable(unique_ptr<LogicalOperator> plan, string temp_table_name) {
-    unique_ptr<LogicalOperator> first_step = GetJoinOperators(move(plan)).back;
+unique_ptr<LogicalOperator> ReOptimizer::FirstStepAsTempTable(unique_ptr<LogicalOperator> plan, string temp_table_name) {
+    unique_ptr<LogicalOperator> first_join = GetJoinOperators(move(plan)).back;    
     // FIXME: change this first step to be a "CREATE TEMPORARY TABLE" plan with temp_table_name
-    return plan;
+    // It needs a projection and create table on top of it
+    // Needs SchemaCatalogInformation and BoundCreateTableInfo
+    return first_join;
 }
 
 vector<unique_ptr<LogicalOperator>> ReOptimizer::GetJoinOperators(unique_ptr<LogicalOperator> plan) {
     // returns a vector of all join operators in the plan
-    // the last element is a "join leaf" - has no joins in children
+    // the last element has no joins in children
     vector<unique_ptr<LogicalOperator>> join_nodes;
     if (plan->children.empty) {
         return join_nodes;
