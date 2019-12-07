@@ -111,6 +111,9 @@ private:
 	//! Internally execute a SQL statement. Caller must hold the context_lock.
 	unique_ptr<QueryResult> ExecuteStatementInternal(string query, unique_ptr<SQLStatement> statement,
 	                                                 bool allow_stream_result);
+	//! Internally execute a SQL statement with re-optimization. Caller must hold the context_lock
+	unique_ptr<QueryResult> ExecuteStatementInternalReopt(string query, unique_ptr<SQLStatement> statement,
+	                                                 bool allow_stream_result);
 
 private:
 	index_t prepare_count = 0;
