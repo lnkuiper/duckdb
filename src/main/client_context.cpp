@@ -16,6 +16,7 @@
 #include "duckdb/parser/statement/prepare_statement.hpp"
 #include "duckdb/planner/operator/logical_execute.hpp"
 #include "duckdb/planner/planner.hpp"
+#include "duckdb/reoptimizer/reoptimizer.hpp"
 #include "duckdb/transaction/transaction_manager.hpp"
 #include "duckdb/transaction/transaction.hpp"
 #include "duckdb/parser/statement/deallocate_statement.hpp"
@@ -272,22 +273,25 @@ unique_ptr<QueryResult> ClientContext::ExecuteStatementInternalReopt(string quer
 		statement_type = exec->prep->statement_type;
 	}
 
-	while (true) { // reoptimization loop
-	// if (ReOptimizer.LastStep(logical_plan)):
-	// 		physical_plan <- PhysicalPlanGenerator.CreatePlan(logical_plan)
-	// 		result <- execute(physical_plan)
-	// 		return result
+	ReOptimizer reoptimizer = ReOptimizer();
+	PhysicalPlanGenerator physical_planner(*this);
+	for (int i = 0; true; i++) { // reoptimization loop
+		// if (ReOptimizer.LastStep(logical_plan)):
+		// 		physical_plan <- PhysicalPlanGenerator.CreatePlan(logical_plan)
+		// 		result <- execute(physical_plan)
+		// 		return result
+		string temp_table_name = LogicalOperatorToString(plan->GetOperatorType) + to_string(i);
+		auto step_plan = reoptimizer.FirstStepWithTempTable(move(plan), temp_table_name);
 
-	// 	step_plan <- extract first step of logical_plan
-	
-	// 	step_plan <- ReOptimizer.ToRemoteTablePlan(step_plan)
-	// 	physical_plan <- PhysicalPlanGenerator.CreatePlan(logical_plan)
-	// 	result <- execute(physical_plan)
-	// 	logical_plan <- ReOptimizer.StripFirstStep(logical_plan) // includes changing table reference to remote tables
-	// 	if (ReOptimizer.DecideReOptimize(logical_plan, result)):
-	// 		logical_plan <- Planner.CreatePlan(remaining_query)
-	// 		logical_plan <- Optimizer.Optimize(logical_plan)
+		// 	physical_plan <- PhysicalPlanGenerator.CreatePlan(logical_plan)
+		auto physical_plan = physical_planner.CreatePlan(move(step_plan));
+		// 	result <- execute(physical_plan)
+		// 	logical_plan <- ReOptimizer.StripFirstStep(logical_plan) // includes changing table reference to remote tables
+		// 	if (ReOptimizer.DecideReOptimize(logical_plan, result)):
+		// 		logical_plan <- Planner.CreatePlan(remaining_query)
+		// 		logical_plan <- Optimizer.Optimize(logical_plan)
 	}
+
 	profiler.StartPhase("physical_planner");
 	// now convert logical query plan into a physical query plan
 	PhysicalPlanGenerator physical_planner(*this);
