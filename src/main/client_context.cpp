@@ -229,6 +229,95 @@ unique_ptr<QueryResult> ClientContext::ExecuteStatementInternal(string query, un
 	return move(result);
 }
 
+unique_ptr<QueryResult> ClientContext::ExecuteStatementInternalReopt(string query, unique_ptr<SQLStatement> statement,
+                                                                bool allow_stream_result) {
+	if (ActiveTransaction().is_invalidated && statement->type != StatementType::TRANSACTION) {
+		throw Exception("Current transaction is aborted (please ROLLBACK)");
+	}
+	StatementType statement_type = statement->type;
+	bool create_stream_result = statement_type == StatementType::SELECT && allow_stream_result;
+	// for some statements, we log the literal query string in the WAL
+	bool log_query_string = statement_type == StatementType::ALTER;
+
+	profiler.StartPhase("planner");
+	Planner planner(*this);
+	planner.CreatePlan(move(statement));
+	if (!planner.plan) {
+		// we have to log here because some queries are executed in the planner
+		// SELECT statements are not executed in the planner, so for JOB this does not matter
+		// return an empty result
+		if (log_query_string) {
+			ActiveTransaction().PushQuery(query);
+		}
+		return make_unique<MaterializedQueryResult>(statement_type);
+	}
+	profiler.EndPhase();
+
+	assert(!log_query_string);
+
+	auto plan = move(planner.plan);
+	// extract the result column names from the plan
+	auto names = planner.names;
+	auto sql_types = planner.sql_types;
+
+	profiler.StartPhase("optimizer");
+	Optimizer optimizer(planner.binder, *this);
+	plan = optimizer.Optimize(move(plan));
+	assert(plan);
+	profiler.EndPhase();
+
+	// special case with logging EXECUTE with prepared statements that do not scan the table
+	if (plan->type == LogicalOperatorType::EXECUTE) {
+		auto exec = (LogicalExecute *)plan.get();
+		statement_type = exec->prep->statement_type;
+	}
+
+	while (true) { // reoptimization loop
+	// if (ReOptimizer.LastStep(logical_plan)):
+	// 		physical_plan <- PhysicalPlanGenerator.CreatePlan(logical_plan)
+	// 		result <- execute(physical_plan)
+	// 		return result
+
+	// 	step_plan <- extract first step of logical_plan
+	
+	// 	step_plan <- ReOptimizer.ToRemoteTablePlan(step_plan)
+	// 	physical_plan <- PhysicalPlanGenerator.CreatePlan(logical_plan)
+	// 	result <- execute(physical_plan)
+	// 	logical_plan <- ReOptimizer.StripFirstStep(logical_plan) // includes changing table reference to remote tables
+	// 	if (ReOptimizer.DecideReOptimize(logical_plan, result)):
+	// 		logical_plan <- Planner.CreatePlan(remaining_query)
+	// 		logical_plan <- Optimizer.Optimize(logical_plan)
+	}
+	profiler.StartPhase("physical_planner");
+	// now convert logical query plan into a physical query plan
+	PhysicalPlanGenerator physical_planner(*this);
+	auto physical_plan = physical_planner.CreatePlan(move(plan));
+	profiler.EndPhase();
+
+	// store the physical plan in the context for calls to Fetch()
+	execution_context.physical_plan = move(physical_plan);
+	execution_context.physical_state = execution_context.physical_plan->GetOperatorState();
+
+	auto types = execution_context.physical_plan->GetTypes();
+	assert(types.size() == sql_types.size());
+
+	if (create_stream_result) {
+		// successfully compiled SELECT clause and it is the last statement
+		// return a StreamQueryResult so the client can call Fetch() on it and stream the result
+		return make_unique<StreamQueryResult>(statement_type, *this, sql_types, types, names);
+	}
+	// create a materialized result by continuously fetching
+	auto result = make_unique<MaterializedQueryResult>(statement_type, sql_types, types, names);
+	while (true) {
+		auto chunk = FetchInternal();
+		if (chunk->size() == 0) {
+			break;
+		}
+		result->collection.Append(*chunk);
+	}
+	return move(result);
+}
+
 static string CanExecuteStatementInReadOnlyMode(SQLStatement &stmt) {
 	switch (stmt.type) {
 	case StatementType::INSERT:
