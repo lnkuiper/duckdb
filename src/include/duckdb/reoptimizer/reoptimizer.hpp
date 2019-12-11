@@ -20,6 +20,11 @@ public:
 
 private:
     vector<unique_ptr<LogicalOperator>> ReOptimizer::GetJoinOperators(unique_ptr<LogicalOperator> plan);
+
+    string ReOptimizer::TemporaryTableQuery(unique_ptr<LogicalAnyJoin> plan);
+    string ReOptimizer::TemporaryTableQuery(unique_ptr<LogicalDelimJoin> plan);
+    string ReOptimizer::TemporaryTableQuery(unique_ptr<LogicalComparisonJoin> plan);
+    string ReOptimizer::TemporaryTableQuery(unique_ptr<LogicalCrossProduct> plan);
 };
 
 } // namespace duckdb
