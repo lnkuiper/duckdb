@@ -1,9 +1,13 @@
 #include "duckdb/reoptimizer/reoptimizer.hpp"
 
 #include "duckdb/execution/physical_plan_generator.hpp"
-#include "duckdb/main/client_context.hpp"
 #include "duckdb/common/exception.hpp"
+#include "duckdb/main/client_context.hpp"
 #include "duckdb/optimizer/optimizer.hpp"
+#include "duckdb/planner/operator/logical_any_join.hpp"
+#include "duckdb/planner/operator/logical_delim_join.hpp"
+#include "duckdb/planner/operator/logical_comparison_join.hpp"
+#include "duckdb/planner/operator/logical_cross_product.hpp"
 
 using namespace std;
 using namespace duckdb;
@@ -11,11 +15,11 @@ using namespace duckdb;
 ReOptimizer::ReOptimizer() {
 }
 
-unique_ptr<LogicalOperator> ReOptimizer::FirstStepAsTempTable(unique_ptr<LogicalOperator> plan, string temp_table_name) {
+unique_ptr<LogicalOperator> ReOptimizer::FirstStepAsTempTable(unique_ptr<LogicalOperator> plan, string table_name) {
     vector<unique_ptr<LogicalOperator>> join_nodes = GetJoinOperators(move(plan));
     if (join_nodes.empty)
         return plan;
-    unique_ptr<LogicalOperator> first_join = join_nodes.back;    
+    unique_ptr<LogicalOperator> first_join = join_nodes.back;
     /* TODO: change this first step to be a "CREATE TEMPORARY TABLE" plan with temp_table_name
      * It needs a projection and create table on top of it
      * Needs SchemaCatalogInformation and BoundCreateTableInfo
@@ -28,25 +32,15 @@ unique_ptr<LogicalOperator> ReOptimizer::FirstStepAsTempTable(unique_ptr<Logical
      * The only easy way to do this is by going back to "string query" and giving it to the parser
      * Plan: get the table names and columns from first_join and make a new query
      */
-    string temp_table_query;
-    switch(first_join->GetOperatorType) {
-    case LogicalOperatorType::ANY_JOIN:
-        unique_ptr<LogicalAnyJoin> a = unique_ptr((LogicalAnyJoin *) move(first_join));
-        temp_table_query = TemporaryTableQuery(a);
-        break;
-    case LogicalOperatorType::DELIM_JOIN:
-    case LogicalOperatorType::COMPARISON_JOIN:
-    case LogicalOperatorType::CROSS_PRODUCT:
-    default:
-        throw ReOptimizerException("Expected a join type, got '%s' instead", first_join->GetOperatorType.ToString);
-    }
-
+    string temp_table_query = CreateTemporaryTableQuery(move(first_join), table_name);
+    
+    // Needs to return createtable
     return first_join;
 }
 
+/* returns a vector of all join operators in the plan
+ * the last element has no joins in children */
 vector<unique_ptr<LogicalOperator>> ReOptimizer::GetJoinOperators(unique_ptr<LogicalOperator> plan) {
-    // returns a vector of all join operators in the plan
-    // the last element has no joins in children
     vector<unique_ptr<LogicalOperator>> join_nodes;
     if (plan->children.empty) {
         return join_nodes;
@@ -66,18 +60,32 @@ vector<unique_ptr<LogicalOperator>> ReOptimizer::GetJoinOperators(unique_ptr<Log
     }
 }
 
-string ReOptimizer::TemporaryTableQuery(unique_ptr<LogicalAnyJoin> plan) {
-    
-}
-
-string ReOptimizer::TemporaryTableQuery(unique_ptr<LogicalDelimJoin> plan) {
-
-}
-
-string ReOptimizer::TemporaryTableQuery(unique_ptr<LogicalComparisonJoin> plan) {
-
-}
-
-string ReOptimizer::TemporaryTableQuery(unique_ptr<LogicalCrossProduct> plan) {
-
+string ReOptimizer::CreateTemporaryTableQuery(unique_ptr<LogicalOperator> plan, string table_name) {
+    string query = "CREATE TEMPORARY TABLE " + table_name + " AS ";
+    // TODO: get children here
+    switch(plan->GetOperatorType) {
+    case LogicalOperatorType::ANY_JOIN: {
+        LogicalAnyJoin* join = (LogicalAnyJoin *) plan.get();
+        string condition = join->condition->ToString;
+        break;
+    }
+    case LogicalOperatorType::DELIM_JOIN: {
+        LogicalDelimJoin* join = (LogicalDelimJoin *) plan.get();
+        vector<unique_ptr<Expression>> columns = join->duplicate_eliminated_columns;
+        break;
+    }
+    case LogicalOperatorType::COMPARISON_JOIN: {
+        LogicalComparisonJoin* join = (LogicalComparisonJoin *) plan.get();
+        vector<JoinCondition> conditions = join->conditions;
+        break;
+    }
+    case LogicalOperatorType::CROSS_PRODUCT: {
+        LogicalCrossProduct* join = (LogicalCrossProduct *) plan.get();
+        // easy, no conditions
+        break;
+    }
+    default:
+        throw ReOptimizerException("Expected a join type, got '%s' instead", plan->GetOperatorType.ToString);
+    }
+    return "";
 }
