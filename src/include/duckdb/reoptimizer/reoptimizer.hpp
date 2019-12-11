@@ -16,15 +16,12 @@ class ReOptimizer {
 public:
 	ReOptimizer();
 
-    unique_ptr<LogicalOperator> ReOptimizer::FirstStepAsTempTable(unique_ptr<LogicalOperator> plan, string temp_table_name);
+    unique_ptr<LogicalOperator> ReOptimizer::FirstStepAsTempTable(unique_ptr<LogicalOperator> plan, string table_name);
 
 private:
     vector<unique_ptr<LogicalOperator>> ReOptimizer::GetJoinOperators(unique_ptr<LogicalOperator> plan);
 
-    string ReOptimizer::TemporaryTableQuery(unique_ptr<LogicalAnyJoin> plan);
-    string ReOptimizer::TemporaryTableQuery(unique_ptr<LogicalDelimJoin> plan);
-    string ReOptimizer::TemporaryTableQuery(unique_ptr<LogicalComparisonJoin> plan);
-    string ReOptimizer::TemporaryTableQuery(unique_ptr<LogicalCrossProduct> plan);
+    string ReOptimizer::CreateTemporaryTableQuery(unique_ptr<LogicalOperator> plan, string table_name);
 };
 
 } // namespace duckdb
