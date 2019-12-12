@@ -5,9 +5,10 @@
 #include "duckdb/main/client_context.hpp"
 #include "duckdb/optimizer/optimizer.hpp"
 #include "duckdb/planner/operator/logical_any_join.hpp"
-#include "duckdb/planner/operator/logical_delim_join.hpp"
 #include "duckdb/planner/operator/logical_comparison_join.hpp"
 #include "duckdb/planner/operator/logical_cross_product.hpp"
+#include "duckdb/planner/operator/logical_delim_join.hpp"
+#include "duckdb/planner/operator/logical_get.hpp"
 
 using namespace std;
 using namespace duckdb;
@@ -15,7 +16,7 @@ using namespace duckdb;
 ReOptimizer::ReOptimizer() {
 }
 
-unique_ptr<LogicalOperator> ReOptimizer::FirstStepAsTempTable(unique_ptr<LogicalOperator> plan, string table_name) {
+unique_ptr<LogicalOperator> ReOptimizer::FirstStepAsTempTable(unique_ptr<LogicalOperator> plan, string temporary_table_name) {
     vector<unique_ptr<LogicalOperator>> join_nodes = GetJoinOperators(move(plan));
     if (join_nodes.empty)
         return plan;
@@ -32,7 +33,7 @@ unique_ptr<LogicalOperator> ReOptimizer::FirstStepAsTempTable(unique_ptr<Logical
      * The only easy way to do this is by going back to "string query" and giving it to the parser
      * Plan: get the table names and columns from first_join and make a new query
      */
-    string temp_table_query = CreateTemporaryTableQuery(move(first_join), table_name);
+    string temp_table_query = CreateTemporaryTableQuery(move(first_join), temporary_table_name);
     
     // Needs to return createtable
     return first_join;
@@ -60,13 +61,37 @@ vector<unique_ptr<LogicalOperator>> ReOptimizer::GetJoinOperators(unique_ptr<Log
     }
 }
 
-string ReOptimizer::CreateTemporaryTableQuery(unique_ptr<LogicalOperator> plan, string table_name) {
-    string query = "CREATE TEMPORARY TABLE " + table_name + " AS ";
-    // TODO: get children here
+string ReOptimizer::CreateTemporaryTableQuery(unique_ptr<LogicalOperator> plan, string temporary_table_name) {
+    // TODO: select which columns? - perhaps just * for now
+    string query = "CREATE TEMPORARY TABLE " + temporary_table_name + " AS (SELECT * FROM ";
+    // children should be GET only (logical equivalent of SEQ_SCAN)
+    for (int i = 0; i < plan->children.size(); i++) {
+        auto &child = plan->children.at(i);
+        switch(child->GetOperatorType) {
+        case LogicalOperatorType::GET: {
+            LogicalGet* logical_get = (LogicalGet *) child.get();
+            // TODO: use these column IDs to get the column names
+            vector<column_t> colum_ids = logical_get->column_ids;
+            // Append these table names and give them aliases
+            query += logical_get->table->schema->name + "." + logical_get->table->name + " c" + to_string(i);
+            if (i < plan->children.size() - 1)
+                query += ", ";
+            break;
+        }
+        default:
+            throw new ReOptimizerException("Expected child of join to be GET, got '%s' instead", child->GetOperatorType);
+        }
+    }
+
     switch(plan->GetOperatorType) {
     case LogicalOperatorType::ANY_JOIN: {
         LogicalAnyJoin* join = (LogicalAnyJoin *) plan.get();
-        string condition = join->condition->ToString;
+
+        // How to find the column that is being joined on
+        string condition = join->condition->ToString();
+        join->condition->type;
+        join->condition->return_type;
+        query += " WHERE ";
         break;
     }
     case LogicalOperatorType::DELIM_JOIN: {
@@ -87,5 +112,5 @@ string ReOptimizer::CreateTemporaryTableQuery(unique_ptr<LogicalOperator> plan, 
     default:
         throw ReOptimizerException("Expected a join type, got '%s' instead", plan->GetOperatorType.ToString);
     }
-    return "";
+    return query + ");";
 }
