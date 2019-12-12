@@ -273,24 +273,31 @@ unique_ptr<QueryResult> ClientContext::ExecuteStatementInternalReopt(string quer
 		statement_type = exec->prep->statement_type;
 	}
 
-	ReOptimizer reoptimizer = ReOptimizer();
-	PhysicalPlanGenerator physical_planner(*this);
+	profiler.StartPhase("reoptimizer");
+	hash<string> hasher;
+	string prefix = to_string(hasher(query));
+	ReOptimizer reoptimizer = ReOptimizer(*this);
 	for (int i = 0; true; i++) { // reoptimization loop
-		// if (ReOptimizer.LastStep(logical_plan)):
-		// 		physical_plan <- PhysicalPlanGenerator.CreatePlan(logical_plan)
-		// 		result <- execute(physical_plan)
-		// 		return result
-		string temp_table_name = LogicalOperatorToString(plan->GetOperatorType) + to_string(i);
-		auto step_plan = reoptimizer.FirstStepAsTempTable(move(plan), temp_table_name);
+		string temp_table_name = prefix + "_" + to_string(i);
+		string step_query = reoptimizer.CreateFirstStepQuery(move(plan), temp_table_name);
+		if (step_query == "") {
+			// there are no joins left in the plan
+			// rest of the plan can be executed normally
+			// TODO: ensure that this happens
+			break;
+		}
+		profiler.StartPhase("execute_step");
+		Prepare(step_query);
+		profiler.EndPhase();
+		// We now have a table named temp_table_name with our first join in there
+		// Not sure if Prepare() is the way to go. Might be better to do all the steps here
+		// 
 
-		// 	physical_plan <- PhysicalPlanGenerator.CreatePlan(logical_plan)
-		auto physical_plan = physical_planner.CreatePlan(move(step_plan));
-		// 	result <- execute(physical_plan)
-		// 	logical_plan <- ReOptimizer.StripFirstStep(logical_plan) // includes changing table reference to remote tables
 		// 	if (ReOptimizer.DecideReOptimize(logical_plan, result)):
 		// 		logical_plan <- Planner.CreatePlan(remaining_query)
 		// 		logical_plan <- Optimizer.Optimize(logical_plan)
 	}
+	profiler.EndPhase();
 
 	profiler.StartPhase("physical_planner");
 	// now convert logical query plan into a physical query plan

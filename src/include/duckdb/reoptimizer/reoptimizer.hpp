@@ -14,14 +14,18 @@ namespace duckdb {
 
 class ReOptimizer {
 public:
-	ReOptimizer();
+	ReOptimizer(ClientContext &context);
 
-    unique_ptr<LogicalOperator> ReOptimizer::FirstStepAsTempTable(unique_ptr<LogicalOperator> plan, string table_name);
+    string CreateFirstStepQuery(unique_ptr<LogicalOperator> plan, string table_name);
+
+    ClientContext &context;
 
 private:
-    vector<unique_ptr<LogicalOperator>> ReOptimizer::GetJoinOperators(unique_ptr<LogicalOperator> plan);
-
-    string ReOptimizer::CreateTemporaryTableQuery(unique_ptr<LogicalOperator> plan, string table_name);
+    string CreateTemporaryTableQuery(unique_ptr<LogicalOperator> plan, string table_name);
+    vector<unique_ptr<LogicalOperator>> GetJoinOperators(unique_ptr<LogicalOperator> plan);
+    vector<string> ColumnNamesFromLogicalGet(LogicalGet* logical_get);
+    string JoinStrings(vector<string> strings, string delimiter);
+    string JoinConditionFromLogicalPlan(unique_ptr<LogicalOperator> plan);
 };
 
 } // namespace duckdb

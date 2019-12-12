@@ -2,8 +2,13 @@
 
 #include "duckdb/execution/physical_plan_generator.hpp"
 #include "duckdb/common/exception.hpp"
+#include "duckdb/common/enums/expression_type.hpp"
 #include "duckdb/main/client_context.hpp"
+#include "duckdb/main/table_description.hpp"
 #include "duckdb/optimizer/optimizer.hpp"
+#include "duckdb/parser/expression/columnref_expression.hpp"
+#include "duckdb/planner/joinside.hpp"
+#include "duckdb/planner/planner.hpp"
 #include "duckdb/planner/operator/logical_any_join.hpp"
 #include "duckdb/planner/operator/logical_comparison_join.hpp"
 #include "duckdb/planner/operator/logical_cross_product.hpp"
@@ -13,34 +18,26 @@
 using namespace std;
 using namespace duckdb;
 
-ReOptimizer::ReOptimizer() {
+ReOptimizer::ReOptimizer(ClientContext &context) : context(context) {
 }
 
-unique_ptr<LogicalOperator> ReOptimizer::FirstStepAsTempTable(unique_ptr<LogicalOperator> plan, string temporary_table_name) {
+string ReOptimizer::CreateFirstStepQuery(unique_ptr<LogicalOperator> plan, string temporary_table_name) {
     vector<unique_ptr<LogicalOperator>> join_nodes = GetJoinOperators(move(plan));
     if (join_nodes.empty)
-        return plan;
+        return "";
+    context.profiler.StartPhase("create_step");
     unique_ptr<LogicalOperator> first_join = join_nodes.back;
-    /* TODO: change this first step to be a "CREATE TEMPORARY TABLE" plan with temp_table_name
-     * It needs a projection and create table on top of it
-     * Needs SchemaCatalogInformation and BoundCreateTableInfo
-     * Check how the plan is created in Planner for examples
-     * Planner calls binder... the original query is bound to a (temporary?) table, even for select statements
-     * Hopefully not a problem for this approach
-     * 
-     * Optimizer needs the planner.binder - planner needs "unique_ptr<SQLStatement> statement"
-     * We need to go back from LogicalOperator to SQLStatement
-     * The only easy way to do this is by going back to "string query" and giving it to the parser
-     * Plan: get the table names and columns from first_join and make a new query
-     */
-    string temp_table_query = CreateTemporaryTableQuery(move(first_join), temporary_table_name);
+    string query = CreateTemporaryTableQuery(move(first_join), temporary_table_name);
+
+    // TODO: need to remove this first step from the plan now (replace with GET on temp table)
     
     // Needs to return createtable
-    return first_join;
+    context.profiler.EndPhase();
+    return query;
 }
 
 /* returns a vector of all join operators in the plan
- * the last element has no joins in children */
+ * the last element should have two children, both of which have LogicalGet as children */
 vector<unique_ptr<LogicalOperator>> ReOptimizer::GetJoinOperators(unique_ptr<LogicalOperator> plan) {
     vector<unique_ptr<LogicalOperator>> join_nodes;
     if (plan->children.empty) {
@@ -61,56 +58,97 @@ vector<unique_ptr<LogicalOperator>> ReOptimizer::GetJoinOperators(unique_ptr<Log
     }
 }
 
-string ReOptimizer::CreateTemporaryTableQuery(unique_ptr<LogicalOperator> plan, string temporary_table_name) {
-    // TODO: select which columns? - perhaps just * for now
-    string query = "CREATE TEMPORARY TABLE " + temporary_table_name + " AS (SELECT * FROM ";
-    // children should be GET only (logical equivalent of SEQ_SCAN)
-    for (int i = 0; i < plan->children.size(); i++) {
-        auto &child = plan->children.at(i);
-        switch(child->GetOperatorType) {
-        case LogicalOperatorType::GET: {
-            LogicalGet* logical_get = (LogicalGet *) child.get();
-            // TODO: use these column IDs to get the column names
-            vector<column_t> colum_ids = logical_get->column_ids;
-            // Append these table names and give them aliases
-            query += logical_get->table->schema->name + "." + logical_get->table->name + " c" + to_string(i);
-            if (i < plan->children.size() - 1)
-                query += ", ";
-            break;
-        }
-        default:
-            throw new ReOptimizerException("Expected child of join to be GET, got '%s' instead", child->GetOperatorType);
+vector<string> ReOptimizer::ColumnNamesFromLogicalGet(LogicalGet* logical_get) {
+    vector<column_t> queried_column_ids = logical_get->column_ids;
+    vector<string> column_names;
+    for (column_t column_id : queried_column_ids) {
+        for (ColumnDefinition &cd : logical_get->table->columns) {
+            if (column_id == cd.oid) {
+                column_names.push_back(cd.name);
+                break;
+            }
         }
     }
+    return column_names;
+}
 
+string ReOptimizer::JoinStrings(vector<string> strings, string delimiter) {
+    string joined_strings = "";
+    for (int i = 0; i < strings.size(); i++) {
+        joined_strings += strings.at(i);
+        if (i < strings.size() - 1)
+            joined_strings += delimiter;
+    }
+    return joined_strings;
+}
+
+string ReOptimizer::JoinConditionFromLogicalPlan(unique_ptr<LogicalOperator> plan) {
     switch(plan->GetOperatorType) {
     case LogicalOperatorType::ANY_JOIN: {
         LogicalAnyJoin* join = (LogicalAnyJoin *) plan.get();
-
-        // How to find the column that is being joined on
-        string condition = join->condition->ToString();
-        join->condition->type;
-        join->condition->return_type;
-        query += " WHERE ";
+        // this join has a unique_ptr<Expression> condition, instead of vector<JoinCondition> conditions (like LogicalComparisonJoin),
+        // which makes it much harder to parse (many switches for expressiontype and such)
         break;
     }
     case LogicalOperatorType::DELIM_JOIN: {
+        // I don't fully understand  what this join type does
         LogicalDelimJoin* join = (LogicalDelimJoin *) plan.get();
         vector<unique_ptr<Expression>> columns = join->duplicate_eliminated_columns;
         break;
     }
     case LogicalOperatorType::COMPARISON_JOIN: {
         LogicalComparisonJoin* join = (LogicalComparisonJoin *) plan.get();
-        vector<JoinCondition> conditions = join->conditions;
-        break;
+        vector<string> condition_strings;
+        for (JoinCondition &condition : join->conditions) {
+            string comparison_str;
+            switch (condition.comparison) {
+            case ExpressionType::COMPARE_EQUAL:
+                comparison_str = " = ";
+                break;
+            case ExpressionType::COMPARE_NOTEQUAL:
+                comparison_str = " != ";
+                break;
+            default:
+                throw new ReOptimizerException("Expected ExpressionType::COMPARE_EQUAL, got 'ExpressionType%s' instead", condition.comparison);
+            }
+            ColumnRefExpression* l_expr = (ColumnRefExpression *) condition.left.get();
+            ColumnRefExpression* r_expr = (ColumnRefExpression *) condition.right.get();
+            condition_strings.push_back(l_expr->table_name + "." + l_expr->column_name + comparison_str +
+                                        r_expr->table_name + "." + r_expr->column_name);
+        }
+        return " WHERE " + JoinStrings(condition_strings, " AND ");
     }
     case LogicalOperatorType::CROSS_PRODUCT: {
-        LogicalCrossProduct* join = (LogicalCrossProduct *) plan.get();
-        // easy, no conditions
-        break;
+        // cross product has empty join condition
+        return "";
     }
     default:
         throw ReOptimizerException("Expected a join type, got '%s' instead", plan->GetOperatorType.ToString);
     }
-    return query + ");";
+}
+
+string ReOptimizer::CreateTemporaryTableQuery(unique_ptr<LogicalOperator> plan, string temporary_table_name) {
+    vector<string> queried_columns;
+    vector<string> queried_tables;
+    for (int i = 0; i < plan->children.size(); i++) {
+        auto &child = plan->children.at(i);
+        switch(child->GetOperatorType) {
+        case LogicalOperatorType::GET: {
+            LogicalGet* logical_get = (LogicalGet *) child.get();
+            for (string column_name : ColumnNamesFromLogicalGet(logical_get))
+                queried_columns.push_back("t" + to_string(i) + "." + column_name);
+            queried_tables.push_back(logical_get->table->schema->name + "." + logical_get->table->name);
+        }
+        case LogicalOperatorType::FILTER: {
+            // TODO: FILTER is also possible, I forgot - filtering on multiple can be done in one LogicalFilter
+            break;
+        }
+        default:
+            throw new ReOptimizerException("Expected child of join to be GET or FILTER, got '%s' instead", child->GetOperatorType);
+        }
+    }
+    return "CREATE TEMPORARY TABLE " + temporary_table_name + " AS ("
+             + "SELECT " + JoinStrings(queried_columns, ", ") + " "
+             + "FROM " + JoinStrings(queried_tables, ", ") + " "
+             + JoinConditionFromLogicalPlan(move(plan)) + ");";
 }
