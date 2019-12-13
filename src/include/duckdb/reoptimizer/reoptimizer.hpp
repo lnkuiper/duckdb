@@ -17,6 +17,7 @@ public:
 	ReOptimizer(ClientContext &context);
 
     string CreateFirstStepQuery(unique_ptr<LogicalOperator> plan, string table_name);
+    unique_ptr<LogicalOperator> remaining_plan;
 
     ClientContext &context;
 

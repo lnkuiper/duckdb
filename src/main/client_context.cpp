@@ -192,6 +192,77 @@ unique_ptr<PreparedStatementData> ClientContext::CreatePreparedStatement(const s
 	return result;
 }
 
+unique_ptr<PreparedStatementData> ClientContext::CreatePreparedStatementReOpt(const string &query, unique_ptr<SQLStatement> statement) {
+	StatementType statement_type = statement->type;
+	auto result = make_unique<PreparedStatementData>(statement_type);
+
+	profiler.StartPhase("initial_planner");
+	Planner planner(*this);
+	planner.CreatePlan(move(statement));
+	assert(planner.plan);
+	profiler.EndPhase();
+
+	auto plan = move(planner.plan);
+	// extract the result column names from the plan
+	result->names = planner.names;
+	result->sql_types = planner.sql_types;
+	result->value_map = move(planner.value_map);
+
+#ifdef DEBUG
+	if (enable_optimizer) {
+#endif
+		profiler.StartPhase("initial_optimizer");
+		Optimizer optimizer(planner.binder, *this);
+		plan = optimizer.Optimize(move(plan));
+		assert(plan);
+		profiler.EndPhase();
+#ifdef DEBUG
+	}
+#endif
+
+	profiler.StartPhase("reoptimizer");
+	hash<string> hasher;
+	string prefix = to_string(hasher(query));
+	for (int i = 0; true; i++) { // reoptimization loop
+		
+		string temp_table_name = prefix + "_" + to_string(i);
+		// string step_query = reoptimizer.CreateFirstStepQuery(move(plan), temp_table_name);
+		if (step_query == "") {
+			// there are no joins left in the plan
+			// rest of the plan can be executed normally
+			// TODO: ensure that this happens
+			break;
+		}
+		// this line is probably not needed since we have a pointer to the plan
+		// if we edit the plan in ReOptimizer the plan will be changed - there is only 1 reference to it
+		// auto remaining_plan = move(reoptimizer.remaining_plan);
+
+		profiler.StartPhase("execute_step");
+		// Somewhat of a hack fix to ensure that step_query does not pass through here
+		enable_reoptimizer = false;
+		Query(step_query, false);
+		enable_reoptimizer = true;
+		profiler.EndPhase();
+		// We now have a table named temp_table_name with our first join in there
+
+		// 	if (ReOptimizer.DecideReOptimize(<which params??>)):
+		// 		remaining_plan <- Optimizer.Optimize(move(remaining_plan));
+		// plan = move(remaining_plan);
+	}
+	profiler.EndPhase();
+
+	profiler.StartPhase("physical_planner");
+	// now convert logical query plan into a physical query plan
+	PhysicalPlanGenerator physical_planner(*this);
+	auto physical_plan = physical_planner.CreatePlan(move(plan));
+	profiler.EndPhase();
+
+	result->dependencies = move(physical_planner.dependencies);
+	result->types = physical_plan->types;
+	result->plan = move(physical_plan);
+	return result;
+}
+
 unique_ptr<QueryResult> ClientContext::ExecutePreparedStatement(const string &query, PreparedStatementData &statement, vector<Value> bound_values, bool allow_stream_result) {
 	if (ActiveTransaction().is_invalidated && statement.statement_type != StatementType::TRANSACTION) {
 		throw Exception("Current transaction is aborted (please ROLLBACK)");
@@ -223,35 +294,6 @@ unique_ptr<QueryResult> ClientContext::ExecutePreparedStatement(const string &qu
 		result->collection.Append(*chunk);
 	}
 	return move(result);
-}
-
-unique_ptr<QueryResult> ClientContext::ExecuteStatementInternalReopt(string query, unique_ptr<SQLStatement> statement,
-                                                                bool allow_stream_result) {
-	// profiler.StartPhase("reoptimizer");
-	// hash<string> hasher;
-	// string prefix = to_string(hasher(query));
-	// ReOptimizer reoptimizer = ReOptimizer(*this);
-	// for (int i = 0; true; i++) { // reoptimization loop
-	// 	string temp_table_name = prefix + "_" + to_string(i);
-	// 	string step_query = reoptimizer.CreateFirstStepQuery(move(plan), temp_table_name);
-	// 	if (step_query == "") {
-	// 		// there are no joins left in the plan
-	// 		// rest of the plan can be executed normally
-	// 		// TODO: ensure that this happens
-	// 		break;
-	// 	}
-	// 	profiler.StartPhase("execute_step");
-	// 	Prepare(step_query);
-	// 	profiler.EndPhase();
-	// 	// We now have a table named temp_table_name with our first join in there
-	// 	// Not sure if Prepare() is the way to go. Might be better to do all the steps here
-	// 	// 
-
-	// 	// 	if (ReOptimizer.DecideReOptimize(logical_plan, result)):
-	// 	// 		logical_plan <- Planner.CreatePlan(remaining_query)
-	// 	// 		logical_plan <- Optimizer.Optimize(logical_plan)
-	// }
-	// profiler.EndPhase();
 }
 
 static string CanExecuteStatementInReadOnlyMode(SQLStatement &stmt) {
@@ -371,13 +413,23 @@ void ClientContext::RemovePreparedStatement(PreparedStatement *statement) {
 }
 
 unique_ptr<QueryResult> ClientContext::RunStatementInternal(const string &query, unique_ptr<SQLStatement> statement, bool allow_stream_result) {
-	// prepare the query for execution
-	auto prepared = CreatePreparedStatement(query, move(statement));
 	// by default, no values are bound
 	vector<Value> bound_values;
-	// execute the prepared statement
-	return ExecutePreparedStatement(query, *prepared, move(bound_values), allow_stream_result);
+	if (enable_reoptimizer) {
+		// prepare the query for execution
+		auto prepared = CreatePreparedStatementReOpt(query, move(statement));
+		// execute the prepared statement
+		return ExecutePreparedStatement(query, *prepared, move(bound_values), allow_stream_result);
+	}
+	else {
+		// prepare the query for execution
+		auto prepared = CreatePreparedStatement(query, move(statement));
+		// execute the prepared statement
+		return ExecutePreparedStatement(query, *prepared, move(bound_values), allow_stream_result);
+	}
 }
+
+// RunStatementInternalReOpt
 
 unique_ptr<QueryResult> ClientContext::RunStatement(const string &query, unique_ptr<SQLStatement> statement, bool allow_stream_result) {
 	unique_ptr<QueryResult> result;
@@ -407,7 +459,8 @@ unique_ptr<QueryResult> ClientContext::RunStatement(const string &query, unique_
 		statement = move(copied_statement);
 	}
 	// start the profiler
-	profiler.StartQuery(query);
+	if (!enable_reoptimizer)
+		profiler.StartQuery(query);
 	try {
 		result = RunStatementInternal(query, move(statement), allow_stream_result);
 	} catch (StandardException &ex) {

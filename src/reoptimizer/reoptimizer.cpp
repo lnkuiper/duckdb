@@ -30,6 +30,17 @@ string ReOptimizer::CreateFirstStepQuery(unique_ptr<LogicalOperator> plan, strin
     string query = CreateTemporaryTableQuery(move(first_join), temporary_table_name);
 
     // TODO: need to remove this first step from the plan now (replace with GET on temp table)
+    // Do this by setting remaining_plan in this method - can take it later
+    // does "plan" change if "first join" is changed to a GET on the temp table?
+    // it is a unique_ptr after all
+    // apparently the object is disposed of when the unique_ptr goes out of scope
+    // that would mean that this class does not even need "remaining_plan"
+    // it does mean that this method must call move(plan), probably
+    // OK it is probably easier to set remaining_plan = move(plan) after all
+
+    // This method needs to return the plan
+    // set a string variable variable with the step_plan
+    // that way we don't have to fuck around with pointers
     
     // Needs to return createtable
     context.profiler.EndPhase();

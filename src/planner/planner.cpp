@@ -1,5 +1,6 @@
 #include "duckdb/planner/planner.hpp"
 
+#include "duckdb/common/exception.hpp"
 #include "duckdb/common/serializer.hpp"
 #include "duckdb/main/client_context.hpp"
 #include "duckdb/main/database.hpp"

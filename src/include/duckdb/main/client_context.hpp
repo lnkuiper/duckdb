@@ -54,6 +54,8 @@ public:
 	bool query_verification_enabled = false;
 	//! Enable the running of optimizers
 	bool enable_optimizer = true;
+	//! Enable the re-optimizer
+	bool enable_reoptimizer = true;
 
 	//! The random generator used by random(). Its seed value can be set by setseed().
 	std::mt19937 random_engine;
@@ -111,18 +113,14 @@ private:
 	//! Internally execute a set of SQL statement. Caller must hold the context_lock.
 	unique_ptr<QueryResult> RunStatements(const string &query, vector<unique_ptr<SQLStatement>> &statements,
 	                                                  bool allow_stream_result);
-	//! Internally execute a SQL statement. Caller must hold the context_lock.
-	unique_ptr<QueryResult> ExecuteStatementInternal(string query, unique_ptr<SQLStatement> statement,
-	                                                 bool allow_stream_result);
-	//! Internally execute a SQL statement with re-optimization. Caller must hold the context_lock
-	unique_ptr<QueryResult> ExecuteStatementInternalReopt(string query, unique_ptr<SQLStatement> statement,
-	                                                 bool allow_stream_result);
 
 	//! Internally prepare and execute a prepared SQL statement. Caller must hold the context_lock.
 	unique_ptr<QueryResult> RunStatement(const string &query, unique_ptr<SQLStatement> statement, bool allow_stream_result);
 
 	//! Internally prepare a SQL statement. Caller must hold the context_lock.
 	unique_ptr<PreparedStatementData> CreatePreparedStatement(const string &query, unique_ptr<SQLStatement> statement);
+	//! Copy of CreatePreparedStatement - with re-optimization
+	unique_ptr<PreparedStatementData> ClientContext::CreatePreparedStatementReOpt(const string &query, unique_ptr<SQLStatement> statement);
 	//! Internally execute a prepared SQL statement. Caller must hold the context_lock.
 	unique_ptr<QueryResult> ExecutePreparedStatement(const string &query, PreparedStatementData &statement, vector<Value> bound_values, bool allow_stream_result);
 	//! Call CreatePreparedStatement() and ExecutePreparedStatement() without any bound values
