@@ -85,7 +85,8 @@ private:
 //! Exceptions that are StandardExceptions do NOT invalidate the current transaction when thrown
 class StandardException : public Exception {
 public:
-	StandardException(ExceptionType exception_type, string message) : Exception(exception_type, message) {}
+	StandardException(ExceptionType exception_type, string message) : Exception(exception_type, message) {
+	}
 };
 
 class CatalogException : public StandardException {
