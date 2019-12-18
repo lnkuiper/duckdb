@@ -16,17 +16,19 @@ class ReOptimizer {
 public:
 	ReOptimizer(ClientContext &context);
 
-    string CreateFirstStepQuery(unique_ptr<LogicalOperator> plan, string table_name);
+    unique_ptr<LogicalOperator> CreateFirstStepPlan(unique_ptr<LogicalOperator> plan, string table_name);
     unique_ptr<LogicalOperator> remaining_plan;
 
     ClientContext &context;
 
+    string step_query;
+
 private:
-    string CreateTemporaryTableQuery(unique_ptr<LogicalOperator> plan, string table_name);
-    vector<unique_ptr<LogicalOperator>> GetJoinOperators(unique_ptr<LogicalOperator> plan);
-    vector<string> ColumnNamesFromLogicalGet(LogicalGet* logical_get);
+    void SetTemporaryTableQuery(LogicalOperator &plan, string table_name);
+    vector<LogicalOperator> GetJoinOperators(LogicalOperator &plan);
+    vector<string> ColumnNamesFromLogicalGet(LogicalGet &logical_get);
     string JoinStrings(vector<string> strings, string delimiter);
-    string JoinConditionFromLogicalPlan(unique_ptr<LogicalOperator> plan);
+    string JoinConditionFromLogicalPlan(LogicalOperator &plan, string schema);
 };
 
 } // namespace duckdb
