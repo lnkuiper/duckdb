@@ -182,6 +182,9 @@ unique_ptr<PreparedStatementData> ClientContext::CreatePreparedStatement(const s
 	}
 #endif
 
+	// FIXME: remove this code again after using it for testing
+	plan->Print();
+
 	profiler.StartPhase("physical_planner");
 	// now convert logical query plan into a physical query plan
 	PhysicalPlanGenerator physical_planner(*this);
@@ -226,7 +229,7 @@ unique_ptr<PreparedStatementData> ClientContext::CreatePreparedStatementReOpt(co
 	hash<string> hasher;
 	string prefix = to_string(hasher(query));
 	for (int i = 0; true; i++) { // reoptimization loop
-		ReOptimizer reoptimizer = ReOptimizer(*this);
+		ReOptimizer reoptimizer = ReOptimizer(*this, planner.binder);
 		string temp_table_name = prefix + "_" + to_string(i);
 		auto step_plan = reoptimizer.CreateFirstStepPlan(move(plan), temp_table_name);
 		string step_query = reoptimizer.step_query;
@@ -430,6 +433,8 @@ unique_ptr<QueryResult> ClientContext::RunStatement(const string &query, unique_
 	}
 	// start the profiler
 	if (!enable_reoptimizer)
+		//! Unsure whether the profiler should be started if we are doing reoptimization.
+		//! the query that goes through here will (likely) not be the first one that is executed
 		profiler.StartQuery(query);
 	try {
 		result = RunStatementInternal(query, move(statement), allow_stream_result);

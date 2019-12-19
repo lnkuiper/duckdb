@@ -32,6 +32,7 @@ else()
   add_subdirectory(main)
   add_subdirectory(storage)
   add_subdirectory(transaction)
+  add_subdirectory(reoptimizer)
 
   set(DUCKDB_LINK_LIBS
       pg_query
