@@ -13,10 +13,11 @@
 #include "duckdb/planner/logical_operator.hpp"
 
 namespace duckdb {
+class Binder;
 
 class ReOptimizer {
 public:
-	ReOptimizer(ClientContext &context, Binder &binder);
+	ReOptimizer(Binder &binder, ClientContext &context);
 
     unique_ptr<LogicalOperator> CreateFirstStepPlan(unique_ptr<LogicalOperator> plan, string table_name);
     unique_ptr<LogicalOperator> remaining_plan;
