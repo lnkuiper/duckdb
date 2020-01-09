@@ -183,10 +183,12 @@ unique_ptr<PreparedStatementData> ClientContext::CreatePreparedStatement(const s
 #endif
 
 	// FIXME: remove this code again after using it for testing
-	ReOptimizer reoptimizer = ReOptimizer(planner.binder, *this);
-	plan->Print();
-	plan = reoptimizer.CreateFirstStepPlan(move(plan), "_temp");
-	Printer::Print(reoptimizer.step_query);
+	// if (statement->type == StatementType::PREPARE) {
+	// 	plan->Print();
+	// 	ReOptimizer reoptimizer = ReOptimizer(*this, query);
+	// 	plan = reoptimizer.CreateStepPlan(move(plan), "_temp");
+	// 	Printer::Print(reoptimizer.step_query);
+	// }
 
 	profiler.StartPhase("physical_planner");
 	// now convert logical query plan into a physical query plan
@@ -200,7 +202,8 @@ unique_ptr<PreparedStatementData> ClientContext::CreatePreparedStatement(const s
 	return result;
 }
 
-unique_ptr<PreparedStatementData> ClientContext::CreatePreparedStatementReOpt(const string &query, unique_ptr<SQLStatement> statement) {
+unique_ptr<PreparedStatementData> ClientContext::CreatePreparedStatementReOpt(const string &query, 
+																			  unique_ptr<SQLStatement> statement) {
 	StatementType statement_type = statement->type;
 	auto result = make_unique<PreparedStatementData>(statement_type);
 
@@ -228,36 +231,33 @@ unique_ptr<PreparedStatementData> ClientContext::CreatePreparedStatementReOpt(co
 	}
 #endif
 
-	profiler.StartPhase("reoptimizer");
-	hash<string> hasher;
-	string prefix = to_string(hasher(query));
-	for (int i = 0; true; i++) { // reoptimization loop
-		ReOptimizer reoptimizer = ReOptimizer(planner.binder, *this);
-		string temp_table_name = prefix + "_" + to_string(i);
-		auto step_plan = reoptimizer.CreateFirstStepPlan(move(plan), temp_table_name);
-		string step_query = reoptimizer.step_query;
-		if (step_query == "") {
-			// there are no joins left in the plan
-			// rest of the plan can be executed normally
-			// TODO: ensure that this happens
-			break;
-		}
-		// this line is probably not needed since we have a pointer to the plan
-		// if we edit the plan in ReOptimizer the plan will be changed - there is only 1 reference to it
-		// auto remaining_plan = move(reoptimizer.remaining_plan);
+	// ReOptimizer reoptimizer = ReOptimizer(*this, statement);
+	// profiler.StartPhase("reoptimizer");
+	// hash<string> hasher;
+	// string prefix = to_string(hasher(query));
+	// for (int i = 0; true; i++) { // reoptimization loop
+	// 	string temp_table_name = prefix + "_" + to_string(i);
+	// 	auto step_plan = reoptimizer.CreateFirstStepPlan(move(plan), temp_table_name);
+	// 	string step_query = reoptimizer.step_query;
+	// 	if (step_query == "") {
+	// 		// there are no joins left in the plan
+	// 		// rest of the plan can be executed normally
+	// 		// TODO: ensure that this happens
+	// 		break;
+	// 	}
 
-		profiler.StartPhase("execute_step");
-		// Somewhat of a hack fix to ensure that step_query does not pass through here
-		enable_reoptimizer = false;
-		Query(step_query, false);
-		enable_reoptimizer = true;
-		profiler.EndPhase();
-		// We now have a table named temp_table_name with our first join in there
+	// 	profiler.StartPhase("execute_step");
+	// 	// Somewhat of a hack fix to ensure that step_query does not pass through here
+	// 	enable_reoptimizer = false;
+	// 	Query(step_query, false);
+	// 	enable_reoptimizer = true;
+	// 	profiler.EndPhase();
+	// 	// We now have a table named temp_table_name with our first join in there
 
-		// 	if (ReOptimizer.DecideReOptimize(<which params??>)):
-		// 		remaining_plan <- Optimizer.Optimize(move(remaining_plan));
-		// plan = move(remaining_plan);
-	}
+	// 	// 	if (ReOptimizer.DecideReOptimize(<which params??>)):
+	// 	// 		remaining_plan <- Optimizer.Optimize(move(remaining_plan));
+	// 	// plan = move(remaining_plan);
+	// }
 	profiler.EndPhase();
 
 	profiler.StartPhase("physical_planner");

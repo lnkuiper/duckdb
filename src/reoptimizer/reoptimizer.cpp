@@ -2,31 +2,31 @@
 
 #include "duckdb/execution/physical_plan_generator.hpp"
 #include "duckdb/common/exception.hpp"
+#include "duckdb/common/unordered_map.hpp"
 #include "duckdb/common/enums/expression_type.hpp"
 #include "duckdb/common/enums/logical_operator_type.hpp"
 #include "duckdb/main/table_description.hpp"
 #include "duckdb/optimizer/optimizer.hpp"
 #include "duckdb/parser/expression/columnref_expression.hpp"
-// #include "duckdb/parser/query_node.hpp"
+#include "duckdb/parser/statement/prepare_statement.hpp"
 #include "duckdb/planner/joinside.hpp"
 #include "duckdb/planner/planner.hpp"
-// #include "duckdb/planner/operator/logical_any_join.hpp"
 #include "duckdb/planner/operator/logical_comparison_join.hpp"
-// #include "duckdb/planner/operator/logical_cross_product.hpp"
-// #include "duckdb/planner/operator/logical_delim_join.hpp"
 #include "duckdb/planner/operator/logical_filter.hpp"
 #include "duckdb/planner/operator/logical_get.hpp"
 
 using namespace std;
 using namespace duckdb;
 
-ReOptimizer::ReOptimizer(Binder &binder, ClientContext &context) : context(context), binder(binder) {
+ReOptimizer::ReOptimizer(ClientContext &context, const string &query) : context(context) {   
+    ExtractUsedColumns(query);
 }
 
-unique_ptr<LogicalOperator> ReOptimizer::CreateFirstStepPlan(unique_ptr<LogicalOperator> plan, string temporary_table_name) {
+unique_ptr<LogicalOperator> ReOptimizer::CreateStepPlan(unique_ptr<LogicalOperator> plan, string temporary_table_name) {
     vector<LogicalOperator*> join_nodes = GetJoinOperators(*plan);
     if (join_nodes.empty())
         return plan;
+    
     LogicalComparisonJoin* first_join = static_cast<LogicalComparisonJoin*>(join_nodes.back());
     context.profiler.StartPhase("create_step");
     SetTemporaryTableQuery(*first_join, temporary_table_name);
@@ -77,6 +77,17 @@ void ReOptimizer::SetTemporaryTableQuery(LogicalComparisonJoin &plan, string tem
                + "SELECT " + JoinStrings(queried_columns, ", ") + " "
                + "FROM " + JoinStrings(queried_tables, ", ") + " "
                + "WHERE " + JoinStrings(where_conditions, " AND ") + ");";
+}
+
+/* returns a mapping of tablename -> vector of columns of the columns used in the plan
+ * FIXME: make sure this is only called once during the initialization of the ReOptimizer */
+void ReOptimizer::ExtractUsedColumns(const string &query) {
+    unordered_map<string, vector<string>> used_columns;
+    Printer::Print(query);
+    // TODO: implement using regex (FeelsBadMan)
+
+
+    queried_columns = used_columns;
 }
 
 /* returns a vector of all join operators in the plan
