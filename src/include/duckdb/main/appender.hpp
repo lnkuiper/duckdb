@@ -59,14 +59,18 @@ public:
 	//! Flush the changes made by the appender and close it. The appender cannot be used after this point
 	void Close();
 
+	//! Obtain a reference to the internal vector that is used to append to the table
+	Vector &GetAppendVector(index_t col_idx);
+
 	index_t CurrentColumn() {
 		return column;
 	}
 
-	void Invalidate(string msg);
+	void Invalidate(string msg, bool close = false);
 
 private:
-	bool CheckAppend(TypeId type);
+	template<class T>
+	void AppendValueInternal(T value);
 	void CheckInvalidated();
 
 	void AppendRowRecursive() {
