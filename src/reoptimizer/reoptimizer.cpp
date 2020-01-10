@@ -1,5 +1,8 @@
 #include "duckdb/reoptimizer/reoptimizer.hpp"
 
+#include <regex>
+#include <string>
+
 #include "duckdb/execution/physical_plan_generator.hpp"
 #include "duckdb/common/exception.hpp"
 #include "duckdb/common/unordered_map.hpp"
@@ -19,19 +22,22 @@ using namespace std;
 using namespace duckdb;
 
 ReOptimizer::ReOptimizer(ClientContext &context, const string &query) : context(context) {   
+    remaining_query = query;
     ExtractUsedColumns(query);
 }
 
 unique_ptr<LogicalOperator> ReOptimizer::CreateStepPlan(unique_ptr<LogicalOperator> plan, string temporary_table_name) {
     vector<LogicalOperator*> join_nodes = GetJoinOperators(*plan);
-    if (join_nodes.empty())
+    if (join_nodes.empty()) {
+        step_query = "";
         return plan;
+    }
     
-    LogicalComparisonJoin* first_join = static_cast<LogicalComparisonJoin*>(join_nodes.back());
     context.profiler.StartPhase("create_step");
+    LogicalComparisonJoin* first_join = static_cast<LogicalComparisonJoin*>(join_nodes.back());
     SetTemporaryTableQuery(*first_join, temporary_table_name);
-
     context.profiler.EndPhase();
+
     return plan;
 }
 
@@ -66,28 +72,98 @@ void ReOptimizer::SetTemporaryTableQuery(LogicalComparisonJoin &plan, string tem
          * should traverse the plan to find only the columns that are needed for future joins or the result.
          * Also, the current approach is returning an empty string vector */
         queried_tables.push_back(logical_get->table->schema->name + "." + logical_get->table->name + " AS " + table_alias);
-        for (ColumnDefinition &col : context.TableInfo(logical_get->table->schema->name, logical_get->table->name)->columns) {
-            queried_columns.push_back(table_alias + "." + col.name);
+        for (string col : columns_per_table[logical_get->table->name]) {
+            queried_columns.push_back(table_alias + "." + col);
         }
     }
     for (auto &cond : plan.conditions) {
         where_conditions.push_back("t0." + cond.left->GetName() + " = t1." + cond.right->GetName());
     }
-    step_query = "CREATE TEMPORARY TABLE " + temporary_table_name + " AS ("
+    // create table within a transaction that is never committed for now (error with ActiveTransaction().is_invalidated))
+    // step_query = "CREATE TEMPORARY TABLE " + temporary_table_name + " AS ("
+    step_query = "CREATE TABLE " + temporary_table_name + " AS ("
                + "SELECT " + JoinStrings(queried_columns, ", ") + " "
                + "FROM " + JoinStrings(queried_tables, ", ") + " "
                + "WHERE " + JoinStrings(where_conditions, " AND ") + ");";
 }
 
-/* returns a mapping of tablename -> vector of columns of the columns used in the plan
- * FIXME: make sure this is only called once during the initialization of the ReOptimizer */
+/* sets mapping of tablename -> vector of columns of the columns used in the plan */
 void ReOptimizer::ExtractUsedColumns(const string &query) {
-    unordered_map<string, vector<string>> used_columns;
-    Printer::Print(query);
-    // TODO: implement using regex (FeelsBadMan)
+    // map from aliases to tablename
+    unordered_map<string, string> aliases;
+    
+    /* FIXME: regex implementation for now. Not happy with this,
+     * but approaches using SQLStatement and LogicalOperator did not work */
 
+    // Extract FROM block
+    smatch from_smatch;
+	regex from_re("FROM(.*?)WHERE");
+	if (regex_search(query, from_smatch, from_re)) {
+		string from_clauses = from_smatch[1];
 
-    queried_columns = used_columns;
+        // Match aliases in FROM, add to map
+		smatch alias_smatch;
+		regex alias_re("([^ ]+ AS [^ ,]+)");
+		string::const_iterator search_start(from_clauses.cbegin());
+		while (regex_search(search_start, from_clauses.cend(), alias_smatch, alias_re)) {
+			string alias_def = alias_smatch[0];
+            aliases[alias_def.substr(alias_def.find(" AS ") + 4, alias_def.length())] =
+                                                alias_def.substr(0, alias_def.find(" AS "));
+			search_start = alias_smatch.suffix().first;
+		}
+	}
+
+    // Map from full table names to queried columns
+    for (unordered_map<string, string>::iterator it = aliases.begin(); it != aliases.end(); it++) {
+        columns_per_table[it->second] = vector<string>();
+    }
+
+    // Extract SELECT block
+    smatch select_smatch;
+    regex select_re("SELECT(.*?)FROM");
+    if (regex_search(query, select_smatch, select_re)) {
+    	string selects = select_smatch[1];
+
+        // Extract queried columns (don't have to worry about 'SELECT *' in JOB)
+    	smatch col_smatch;
+    	regex col_re("([^ .\\(]+\\.[^ .\\)]+)");
+    	string::const_iterator search_start(selects.cbegin());
+		while (regex_search(search_start, selects.cend(), col_smatch, col_re)) {
+			string col = col_smatch[0];
+			string alias = col.substr(0, col.find("."));
+            string column = col.substr(col.find("."), col.length());
+            columns_per_table[aliases[alias]].push_back(column);
+			search_start = col_smatch.suffix().first;
+		}
+    }
+
+    // Extract WHERE block
+    smatch where_smatch;
+	regex where_re("WHERE(.*?);");
+	if (regex_search(query, where_smatch, where_re)) {
+		string where_clauses = where_smatch[1];
+
+        // Match equality joins
+		smatch col_smatch;
+		regex col_re("([^ ']+ = [^ ',]+)");
+		string::const_iterator search_start(where_clauses.cbegin());
+		while (regex_search(search_start, where_clauses.cend(), col_smatch, col_re)) {
+			string col_def = col_smatch[0];
+
+            // Extract columns from both sides of equality
+            string lhs = col_def.substr(0, col_def.find(" = "));
+            string l_alias = lhs.substr(0, lhs.find("."));
+            string l_column =  lhs.substr(lhs.find(".") + 1, lhs.length());
+            columns_per_table[aliases[l_alias]].push_back(l_column);
+
+            string rhs = col_def.substr(col_def.find(" = ") + 3, col_def.length());
+            string r_alias = rhs.substr(0, rhs.find("."));
+            string r_column = rhs.substr(rhs.find(".") + 1, rhs.length());
+            columns_per_table[aliases[r_alias]].push_back(r_column);
+
+			search_start = col_smatch.suffix().first;
+		}
+	}
 }
 
 /* returns a vector of all join operators in the plan
