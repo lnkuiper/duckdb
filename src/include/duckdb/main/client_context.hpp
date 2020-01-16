@@ -55,7 +55,7 @@ public:
 	//! Enable the running of optimizers
 	bool enable_optimizer = true;
 	//! Enable the re-optimizer
-	bool enable_reoptimizer = true;
+	bool enable_reoptimizer = false;
 
 	//! The random generator used by random(). Its seed value can be set by setseed().
 	std::mt19937 random_engine;

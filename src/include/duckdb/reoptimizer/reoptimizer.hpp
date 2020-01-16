@@ -8,7 +8,7 @@
 
 #pragma once
 
-// #include <map>
+#include <set>
 
 #include "duckdb/main/client_context.hpp"
 #include "duckdb/planner/binder.hpp"
@@ -19,7 +19,7 @@ class Binder;
 
 class ReOptimizer {
 public:
-	ReOptimizer(ClientContext &context, const string &query);
+	ReOptimizer(ClientContext &context, const string &query, LogicalOperator &plan);
 
     unique_ptr<LogicalOperator> CreateStepPlan(unique_ptr<LogicalOperator> plan, string temporary_table_name);
     unique_ptr<LogicalOperator> remaining_plan;
@@ -32,11 +32,12 @@ public:
 
 private:
     void SetTemporaryTableQuery(LogicalComparisonJoin &plan, string table_name);
-    void ExtractUsedColumns(const string &query);
-    vector<LogicalOperator*> GetJoinOperators(LogicalOperator &plan);
+    // void ExtractUsedColumns(const string &query);
+    void ExtractUsedColumns(LogicalOperator &plan);
+    vector<LogicalOperator*> ExtractJoinOperators(LogicalOperator &plan);
+    std::set<TableCatalogEntry*> ExtractGetTables(LogicalOperator &plan);
     string JoinStrings(vector<string> strings, string delimiter);
-    
-    unordered_map<string, vector<string>> columns_per_table = {};
+    unordered_map<string, std::set<string>> used_columns_per_table;
 };
 
 } // namespace duckdb

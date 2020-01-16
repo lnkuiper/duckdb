@@ -182,6 +182,17 @@ unique_ptr<PreparedStatementData> ClientContext::CreatePreparedStatement(const s
 	}
 #endif
 
+	// FIXME: test code - remove later
+	if (statement_type == StatementType::PREPARE) {
+		ReOptimizer reoptimizer = ReOptimizer(*this, query, *plan);
+		hash<string> hasher;
+		string tablename_prefix = "_t_" + to_string(hasher(query));
+		string temp_table_name = tablename_prefix + "_" + to_string(0);
+		plan = reoptimizer.CreateStepPlan(move(plan), temp_table_name);
+		string step_query = reoptimizer.step_query;
+		Printer::Print(step_query);
+	}
+
 	profiler.StartPhase("physical_planner");
 	// now convert logical query plan into a physical query plan
 	PhysicalPlanGenerator physical_planner(*this);
@@ -226,7 +237,7 @@ unique_ptr<PreparedStatementData> ClientContext::CreatePreparedStatementReOpt(co
 #endif
 
 	profiler.StartPhase("reoptimizer");
-	ReOptimizer reoptimizer = ReOptimizer(*this, query);
+	ReOptimizer reoptimizer = ReOptimizer(*this, query, *plan);
 	hash<string> hasher;
 	string tablename_prefix = "_t_" + to_string(hasher(query));
 	for (int i = 0; true; i++) {

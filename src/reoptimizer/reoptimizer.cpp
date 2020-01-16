@@ -17,26 +17,33 @@
 #include "duckdb/planner/operator/logical_comparison_join.hpp"
 #include "duckdb/planner/operator/logical_filter.hpp"
 #include "duckdb/planner/operator/logical_get.hpp"
+#include "duckdb/planner/operator/logical_projection.hpp"
 
 using namespace std;
 using namespace duckdb;
 
-ReOptimizer::ReOptimizer(ClientContext &context, const string &query) : context(context) {   
+ReOptimizer::ReOptimizer(ClientContext &context, const string &query, LogicalOperator &plan) : context(context) {   
     remaining_query = query;
-    ExtractUsedColumns(query);
 }
 
 unique_ptr<LogicalOperator> ReOptimizer::CreateStepPlan(unique_ptr<LogicalOperator> plan, string temporary_table_name) {
-    vector<LogicalOperator*> join_nodes = GetJoinOperators(*plan);
+    vector<LogicalOperator*> join_nodes = ExtractJoinOperators(*plan);
     if (join_nodes.empty()) {
         step_query = "";
         return plan;
     }
-    
+
+    used_columns_per_table = {};
+    ExtractUsedColumns(*plan);
+
     context.profiler.StartPhase("create_step");
     LogicalComparisonJoin* first_join = static_cast<LogicalComparisonJoin*>(join_nodes.back());
     SetTemporaryTableQuery(*first_join, temporary_table_name);
     context.profiler.EndPhase();
+
+    /* TODO: edit 'plan', inserting the temporary table for the join node
+     * this will probably be quite hard, because of the binder
+     * might need to Skype with Mark/Hannes */
 
     return plan;
 }
@@ -72,7 +79,7 @@ void ReOptimizer::SetTemporaryTableQuery(LogicalComparisonJoin &plan, string tem
          * should traverse the plan to find only the columns that are needed for future joins or the result.
          * Also, the current approach is returning an empty string vector */
         queried_tables.push_back(logical_get->table->schema->name + "." + logical_get->table->name + " AS " + table_alias);
-        for (string col : columns_per_table[logical_get->table->name]) {
+        for (string col : used_columns_per_table[logical_get->table->name]) {
             queried_columns.push_back(table_alias + "." + col);
         }
     }
@@ -87,106 +94,80 @@ void ReOptimizer::SetTemporaryTableQuery(LogicalComparisonJoin &plan, string tem
                + "WHERE " + JoinStrings(where_conditions, " AND ") + ");";
 }
 
-/* sets mapping of tablename -> vector of columns of the columns used in the plan */
-void ReOptimizer::ExtractUsedColumns(const string &query) {
-    // map from aliases to tablename
-    unordered_map<string, string> aliases;
-    
-    /* FIXME: regex implementation for now. Not happy with this,
-     * but approaches using SQLStatement and LogicalOperator did not work */
-
-    // Extract FROM block
-    smatch from_smatch;
-	regex from_re("FROM(.*?)WHERE");
-	if (regex_search(query, from_smatch, from_re)) {
-		string from_clauses = from_smatch[1];
-
-        // Match aliases in FROM, add to map
-		smatch alias_smatch;
-		regex alias_re("([^ ]+ AS [^ ,]+)");
-		string::const_iterator search_start(from_clauses.cbegin());
-		while (regex_search(search_start, from_clauses.cend(), alias_smatch, alias_re)) {
-			string alias_def = alias_smatch[0];
-            aliases[alias_def.substr(alias_def.find(" AS ") + 4, alias_def.length())] =
-                                                alias_def.substr(0, alias_def.find(" AS "));
-			search_start = alias_smatch.suffix().first;
-		}
-	}
-
-    // Map from full table names to queried columns
-    for (unordered_map<string, string>::iterator it = aliases.begin(); it != aliases.end(); it++) {
-        columns_per_table[it->second] = vector<string>();
+/* sets mapping of tablename -> set of columns used in the plan */
+void ReOptimizer::ExtractUsedColumns(LogicalOperator &plan) {
+    if (plan.children.empty())
+        return;
+    std::set<string> used_columns;
+    switch (plan.type) {
+    case LogicalOperatorType::PROJECTION: {
+        LogicalProjection* lp = static_cast<LogicalProjection*>(&plan);
+        for (int i = 0; i < lp->expressions.size(); i++)
+            used_columns.insert(lp->expressions.at(i)->GetName());
+        break;
+    }
+    case LogicalOperatorType::COMPARISON_JOIN: {
+        LogicalComparisonJoin* lcj = static_cast<LogicalComparisonJoin*>(&plan);
+        for (auto &cond : lcj->conditions) {
+            used_columns.insert(cond.left->GetName());
+            used_columns.insert(cond.right->GetName());
+        }
+        break;
+    }
     }
 
-    // Extract SELECT block
-    smatch select_smatch;
-    regex select_re("SELECT(.*?)FROM");
-    if (regex_search(query, select_smatch, select_re)) {
-    	string selects = select_smatch[1];
-
-        // Extract queried columns (don't have to worry about 'SELECT *' in JOB)
-    	smatch col_smatch;
-    	regex col_re("([^ .\\(]+\\.[^ .\\)]+)");
-    	string::const_iterator search_start(selects.cbegin());
-		while (regex_search(search_start, selects.cend(), col_smatch, col_re)) {
-			string col = col_smatch[0];
-			string alias = col.substr(0, col.find("."));
-            string column = col.substr(col.find("."), col.length());
-            columns_per_table[aliases[alias]].push_back(column);
-			search_start = col_smatch.suffix().first;
-		}
+    if (!used_columns.empty()) {
+        std::set<TableCatalogEntry*> tables = ExtractGetTables(plan);
+        for (std::set<TableCatalogEntry*>::iterator it = tables.begin(); it != tables.end(); it++) {
+            TableCatalogEntry* table = *it;
+            for (ColumnDefinition &cd : table->columns) {
+                if (used_columns.find(cd.name) != used_columns.end()) {
+                    used_columns_per_table[table->name].insert(cd.name);
+                }
+            }
+        }
     }
 
-    // Extract WHERE block
-    smatch where_smatch;
-	regex where_re("WHERE(.*?);");
-	if (regex_search(query, where_smatch, where_re)) {
-		string where_clauses = where_smatch[1];
-
-        // Match equality joins
-		smatch col_smatch;
-		regex col_re("([^ ']+ = [^ ',]+)");
-		string::const_iterator search_start(where_clauses.cbegin());
-		while (regex_search(search_start, where_clauses.cend(), col_smatch, col_re)) {
-			string col_def = col_smatch[0];
-
-            // Extract columns from both sides of equality
-            string lhs = col_def.substr(0, col_def.find(" = "));
-            string l_alias = lhs.substr(0, lhs.find("."));
-            string l_column =  lhs.substr(lhs.find(".") + 1, lhs.length());
-            columns_per_table[aliases[l_alias]].push_back(l_column);
-
-            string rhs = col_def.substr(col_def.find(" = ") + 3, col_def.length());
-            string r_alias = rhs.substr(0, rhs.find("."));
-            string r_column = rhs.substr(rhs.find(".") + 1, rhs.length());
-            columns_per_table[aliases[r_alias]].push_back(r_column);
-
-			search_start = col_smatch.suffix().first;
-		}
-	}
+    for (auto &child : plan.children) {
+        ExtractUsedColumns(*child);
+    }
 }
 
 /* returns a vector of all join operators in the plan
  * the last element should have two children, both of which have LogicalGet as children */
-vector<LogicalOperator*> ReOptimizer::GetJoinOperators(LogicalOperator &plan) {
-    vector<LogicalOperator*> join_nodes;
+vector<LogicalOperator*> ReOptimizer::ExtractJoinOperators(LogicalOperator &plan) {
+    vector<LogicalOperator*> joins;
     if (plan.children.empty())
-        return join_nodes;
+        return joins;
     switch(plan.type) {
-    // Pretty sure we only get COMPARISON_JOIN in JOB
     // case LogicalOperatorType::JOIN:
     // case LogicalOperatorType::ANY_JOIN:
     // case LogicalOperatorType::DELIM_JOIN:
     // case LogicalOperatorType::CROSS_PRODUCT:
+    // Pretty sure we only get COMPARISON_JOIN in JOB
     case LogicalOperatorType::COMPARISON_JOIN:
-        join_nodes.push_back(&plan);
+        joins.push_back(&plan);
     default:
         for (auto &child : plan.children) {
-            vector<LogicalOperator*> children_join_nodes = GetJoinOperators(*child);
-            join_nodes.insert(join_nodes.end(), children_join_nodes.begin(), children_join_nodes.end());
+            vector<LogicalOperator*> child_joins = ExtractJoinOperators(*child);
+            joins.insert(joins.end(), child_joins.begin(), child_joins.end());
         }
-        return join_nodes;
+        return joins;
     }
+}
+
+std::set<TableCatalogEntry*> ReOptimizer::ExtractGetTables(LogicalOperator &plan) {
+    std::set<TableCatalogEntry*> gets;
+    if (plan.type == LogicalOperatorType::GET) {
+        LogicalGet* lg = static_cast<LogicalGet*>(&plan);
+        gets.insert(lg->table);
+    }
+    for (auto &child : plan.children) {
+        std::set<TableCatalogEntry*> child_gets = ExtractGetTables(*child);
+        for (std::set<TableCatalogEntry*>::iterator it = child_gets.begin(); it != child_gets.end(); it++)
+            gets.insert(*it);
+    }
+    return gets;
 }
 
 string ReOptimizer::JoinStrings(vector<string> strings, string delimiter) {
