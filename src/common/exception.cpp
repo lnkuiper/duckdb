@@ -86,6 +86,8 @@ string Exception::ExceptionTypeToString(ExceptionType type) {
 		return "INTERRUPT";
 	case ExceptionType::FATAL:
 		return "FATAL";
+	case ExceptionType::INTERNAL:
+		return "INTERNAL";
 	case ExceptionType::REOPTIMIZER:
 		return "REOPTIMIZER";
 	default:
@@ -181,6 +183,11 @@ FatalException::FatalException(string msg, ...) : Exception(ExceptionType::FATAL
 	FORMAT_CONSTRUCTOR(msg);
 }
 
+InternalException::InternalException(string msg, ...) : Exception(ExceptionType::INTERNAL, msg) {
+	FORMAT_CONSTRUCTOR(msg);
+}
+
 ReOptimizerException::ReOptimizerException(string msg, ...) : Exception(ExceptionType::REOPTIMIZER, msg) {
 	FORMAT_CONSTRUCTOR(msg);
 }
+

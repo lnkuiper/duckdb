@@ -51,7 +51,7 @@ void ReOptimizer::SetTemporaryTableQuery(LogicalComparisonJoin &plan, string tem
         auto &child = plan.children.at(i);
         string table_alias = "t" + to_string(i);
         LogicalGet* logical_get;
-        switch(child->GetOperatorType()) {
+        switch(child->type) {
         case LogicalOperatorType::GET: {
             logical_get = static_cast<LogicalGet*>(child.get());
             break;
@@ -66,7 +66,7 @@ void ReOptimizer::SetTemporaryTableQuery(LogicalComparisonJoin &plan, string tem
             break;
         }
         default:
-            throw new ReOptimizerException("Expected child of join to be GET or FILTER, got '%s' instead", child->GetOperatorType());
+            throw new ReOptimizerException("Expected child of join to be GET or FILTER, got '%s' instead", child->type);
         }
         /* TODO: adding all the columns in each temporary table will cause unnecessary IO 
          * should traverse the plan to find only the columns that are needed for future joins or the result.
@@ -172,7 +172,7 @@ vector<LogicalOperator*> ReOptimizer::GetJoinOperators(LogicalOperator &plan) {
     vector<LogicalOperator*> join_nodes;
     if (plan.children.empty())
         return join_nodes;
-    switch(plan.GetOperatorType()) {
+    switch(plan.type) {
     // Pretty sure we only get COMPARISON_JOIN in JOB
     // case LogicalOperatorType::JOIN:
     // case LogicalOperatorType::ANY_JOIN:
