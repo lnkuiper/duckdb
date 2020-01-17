@@ -19,13 +19,15 @@ class Binder;
 
 class ReOptimizer {
 public:
-	ReOptimizer(ClientContext &context, LogicalOperator &plan);
+	ReOptimizer(ClientContext &context, LogicalOperator &plan, Binder &binder);
 
 	//! Executes the first join, then adapts the plan accordingly FIXME: rename
 	unique_ptr<LogicalOperator> CreateStepPlan(unique_ptr<LogicalOperator> plan, const string temporary_table_name);
 
 	//! The client context
 	ClientContext &context;
+    //! The binder
+    Binder &binder;
 
 private:
 	//! Creates a CREATE TEMPORARY TABLE query string for the first join to be executed in 'plan'
@@ -34,7 +36,7 @@ private:
 	unique_ptr<LogicalOperator> AdjustPlan(unique_ptr<LogicalOperator> plan, LogicalComparisonJoin &step,
 	                                       string temporary_table_name);
 	//! Replaces the join 'old_op' in 'plan' with the given operator 'new_op'
-	void ReplaceLogicalStep(LogicalOperator &plan, LogicalComparisonJoin &old_op, unique_ptr<LogicalOperator> new_op);
+	void ReplaceLogicalStep(LogicalOperator &plan, LogicalComparisonJoin &old_op, unique_ptr<LogicalGet> new_op, index_t depth = 0);
 
 	//! sets mapping of tablename -> set of columns used in 'plan' in 'used_columns_per_table'
 	void ExtractUsedColumns(LogicalOperator &plan);

@@ -1,8 +1,5 @@
 #include "duckdb/reoptimizer/reoptimizer.hpp"
 
-#include <regex>
-#include <string>
-
 #include "duckdb/execution/physical_plan_generator.hpp"
 #include "duckdb/common/exception.hpp"
 #include "duckdb/common/unordered_map.hpp"
@@ -23,7 +20,7 @@
 using namespace std;
 using namespace duckdb;
 
-ReOptimizer::ReOptimizer(ClientContext &context, LogicalOperator &plan) : context(context) {
+ReOptimizer::ReOptimizer(ClientContext &context, LogicalOperator &plan, Binder &binder) : context(context), binder(binder) {
 }
 
 unique_ptr<LogicalOperator> ReOptimizer::CreateStepPlan(unique_ptr<LogicalOperator> plan,
@@ -109,20 +106,23 @@ unique_ptr<LogicalOperator> ReOptimizer::AdjustPlan(unique_ptr<LogicalOperator> 
 	// FIXME: derive schema name instead of using "main"?
 	TableCatalogEntry *table = context.catalog.GetTable(context, "main", temporary_table_name);
 
+    // FIXME: properly derive binding values
 	LogicalJoin *join = static_cast<LogicalJoin *>(&step);
-	index_t table_index = join->mark_index;
-	Printer::Print("table_index = " + to_string(table_index));
+
+    /* 'i' in my simple query was expected to be at 4.1 - when I fixed it so the bindings were [4.0] and [4.1] 'i' worked!
+     * Now we arrive at 'a' - and this fails. I expected [i, a] to be at [4.0, 4.1] - but 'a' is expected at 5.1, apparently
+     * We can only insert one table_index since it's a LogicalGet, so to fix this issue we actually have to fuck with the binder
+     * It seems really hard to do this, but it might be a simple case of replacing a value in the common table expression bindings
+     * unordered_map<string, QueryNode *> Binder::CTE_bindings OR vector<CorrelatedColumnInfo> Binder::correlated_columns
+     * CorrelatedColumnInfo has a 'name', and a ColumnBinding, which has table_index and column_index
+     * TODO: print out all of the CorrelatedColumnInfo in a loop to see what is going on there - then see if it's possible */
 	vector<column_t> column_ids;
+    column_ids.push_back(0);
 	column_ids.insert(column_ids.end(), join->left_projection_map.begin(), join->left_projection_map.end());
 	column_ids.insert(column_ids.end(), join->right_projection_map.begin(), join->right_projection_map.end());
-	Printer::Print("l_size: " + to_string(join->left_projection_map.size()) +
-	               ", r size: " + to_string(join->right_projection_map.size()));
-	Printer::Print("column_ids");
-	for (int i = 0; i < column_ids.size(); i++)
-		Printer::Print(to_string(column_ids.at(i)));
 
 	// Create a LogicalGet for the temporary table
-	unique_ptr<LogicalOperator> temp_table_get = make_unique<LogicalGet>(table, table_index, column_ids);
+	unique_ptr<LogicalGet> temp_table_get = make_unique<LogicalGet>(table, 2, column_ids);
 
 	// replace 'step' with 'temp_table_get' in 'plan'
 	ReplaceLogicalStep(*plan, step, move(temp_table_get));
@@ -130,12 +130,13 @@ unique_ptr<LogicalOperator> ReOptimizer::AdjustPlan(unique_ptr<LogicalOperator> 
 }
 
 void ReOptimizer::ReplaceLogicalStep(LogicalOperator &plan, LogicalComparisonJoin &old_op,
-                                     unique_ptr<LogicalOperator> new_op) {
+                                     unique_ptr<LogicalGet> new_op, index_t depth) {
 	if (plan.children.empty())
 		return;
 
 	bool found = false;
 	for (int i = 0; i < plan.children.size(); i++) {
+        new_op->table_index++;
 		auto &child = plan.children.at(i);
 		if (child->type != LogicalOperatorType::COMPARISON_JOIN)
 			continue;
@@ -156,7 +157,7 @@ void ReOptimizer::ReplaceLogicalStep(LogicalOperator &plan, LogicalComparisonJoi
 
 	if (!found) {
 		for (auto &child : plan.children)
-			ReplaceLogicalStep(*child.get(), old_op, move(new_op));
+			ReplaceLogicalStep(*child.get(), old_op, move(new_op), depth+1);
 	}
 }
 

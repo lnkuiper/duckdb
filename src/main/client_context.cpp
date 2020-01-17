@@ -184,7 +184,7 @@ unique_ptr<PreparedStatementData> ClientContext::CreatePreparedStatement(const s
 
 	// FIXME: test code - remove later
 	if (statement_type == StatementType::PREPARE) {
-		ReOptimizer reoptimizer = ReOptimizer(*this, *plan);
+		ReOptimizer reoptimizer = ReOptimizer(*this, *plan, planner.binder);
 		hash<string> hasher;
 		string tablename_prefix = "_temp_" + to_string(hasher(query));
 		string temp_table_name = tablename_prefix + "_" + to_string(0);
@@ -235,7 +235,7 @@ unique_ptr<PreparedStatementData> ClientContext::CreatePreparedStatementReOpt(co
 #endif
 
 	profiler.StartPhase("reoptimizer");
-	ReOptimizer reoptimizer = ReOptimizer(*this, *plan);
+	ReOptimizer reoptimizer = ReOptimizer(*this, *plan, planner.binder);
 	hash<string> hasher;
 	const string tablename_prefix = "_temp_" + to_string(hasher(query));
 	for (int i = 0; true; i++) {
