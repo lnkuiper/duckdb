@@ -184,13 +184,11 @@ unique_ptr<PreparedStatementData> ClientContext::CreatePreparedStatement(const s
 
 	// FIXME: test code - remove later
 	if (statement_type == StatementType::PREPARE) {
-		ReOptimizer reoptimizer = ReOptimizer(*this, query, *plan);
+		ReOptimizer reoptimizer = ReOptimizer(*this, *plan);
 		hash<string> hasher;
-		string tablename_prefix = "_t_" + to_string(hasher(query));
+		string tablename_prefix = "_temp_" + to_string(hasher(query));
 		string temp_table_name = tablename_prefix + "_" + to_string(0);
 		plan = reoptimizer.CreateStepPlan(move(plan), temp_table_name);
-		string step_query = reoptimizer.step_query;
-		Printer::Print(step_query);
 	}
 
 	profiler.StartPhase("physical_planner");
@@ -206,8 +204,8 @@ unique_ptr<PreparedStatementData> ClientContext::CreatePreparedStatement(const s
 }
 
 // FIXME: only works within a transaction - segfault with autocommit
-unique_ptr<PreparedStatementData> ClientContext::CreatePreparedStatementReOpt(const string &query, 
-																			  unique_ptr<SQLStatement> statement) {
+unique_ptr<PreparedStatementData> ClientContext::CreatePreparedStatementReOpt(const string &query,
+                                                                              unique_ptr<SQLStatement> statement) {
 	Printer::Print("Inside ReOpt");
 	StatementType statement_type = statement->type;
 	auto result = make_unique<PreparedStatementData>(statement_type);
@@ -237,31 +235,13 @@ unique_ptr<PreparedStatementData> ClientContext::CreatePreparedStatementReOpt(co
 #endif
 
 	profiler.StartPhase("reoptimizer");
-	ReOptimizer reoptimizer = ReOptimizer(*this, query, *plan);
+	ReOptimizer reoptimizer = ReOptimizer(*this, *plan);
 	hash<string> hasher;
-	string tablename_prefix = "_t_" + to_string(hasher(query));
+	const string tablename_prefix = "_temp_" + to_string(hasher(query));
 	for (int i = 0; true; i++) {
 		Printer::Print("Creating step query");
-		string temp_table_name = tablename_prefix + "_" + to_string(i);
+		const string temp_table_name = tablename_prefix + "_" + to_string(i);
 		plan = reoptimizer.CreateStepPlan(move(plan), temp_table_name);
-		string step_query = reoptimizer.step_query;
-		Printer::Print(step_query);
-		
-		if (step_query.compare("") == 0) {
-			/* No joins left in the plan, continue as normal */
-			break;
-		}
-
-		Printer::Print("Executing step query");
-
-		// hack fix to ensure that step_query is processed normally (without reoptimization)
-		profiler.StartPhase("execute_step");
-		enable_reoptimizer = false;
-		Query(step_query, false);
-		enable_reoptimizer = true;
-		profiler.EndPhase();
-
-		Printer::Print("Step query done");
 
 		break;
 		// We now have a table named temp_table_name with our first join in there
@@ -290,7 +270,8 @@ unique_ptr<QueryResult> ClientContext::ExecutePreparedStatement(const string &qu
 		throw Exception("Current transaction is aborted (please ROLLBACK)");
 	}
 	if (db.access_mode == AccessMode::READ_ONLY && !statement.read_only) {
-		throw Exception(StringUtil::Format("Cannot execute statement of type \"%s\" in read-only mode!", StatementTypeToString(statement.statement_type).c_str()));
+		throw Exception(StringUtil::Format("Cannot execute statement of type \"%s\" in read-only mode!",
+		                                   StatementTypeToString(statement.statement_type).c_str()));
 	}
 
 	// bind the bound values before execution
@@ -409,7 +390,7 @@ void ClientContext::RemovePreparedStatement(PreparedStatement *statement) {
 }
 
 unique_ptr<QueryResult> ClientContext::RunStatementInternal(const string &query, unique_ptr<SQLStatement> statement,
-															bool allow_stream_result) {
+                                                            bool allow_stream_result) {
 	// by default, no values are bound
 	vector<Value> bound_values;
 	// prepare the query for execution

@@ -1,7 +1,7 @@
 //===----------------------------------------------------------------------===//
 //                         DuckDB
 //
-// reoptimizer/reoptimizer.hpp
+// duckdb/reoptimizer/reoptimizer.hpp
 //
 //
 //===----------------------------------------------------------------------===//
@@ -19,25 +19,35 @@ class Binder;
 
 class ReOptimizer {
 public:
-	ReOptimizer(ClientContext &context, const string &query, LogicalOperator &plan);
+	ReOptimizer(ClientContext &context, LogicalOperator &plan);
 
-    unique_ptr<LogicalOperator> CreateStepPlan(unique_ptr<LogicalOperator> plan, string temporary_table_name);
-    unique_ptr<LogicalOperator> remaining_plan;
+	//! Executes the first join, then adapts the plan accordingly FIXME: rename
+	unique_ptr<LogicalOperator> CreateStepPlan(unique_ptr<LogicalOperator> plan, const string temporary_table_name);
 
-    ClientContext &context;
-
-    string remaining_query;
-
-    string step_query;
+	//! The client context
+	ClientContext &context;
 
 private:
-    void SetTemporaryTableQuery(LogicalComparisonJoin &plan, string table_name);
-    // void ExtractUsedColumns(const string &query);
-    void ExtractUsedColumns(LogicalOperator &plan);
-    vector<LogicalOperator*> ExtractJoinOperators(LogicalOperator &plan);
-    std::set<TableCatalogEntry*> ExtractGetTables(LogicalOperator &plan);
-    string JoinStrings(vector<string> strings, string delimiter);
-    unordered_map<string, std::set<string>> used_columns_per_table;
+	//! Creates a CREATE TEMPORARY TABLE query string for the first join to be executed in 'plan'
+	string CreateStepQuery(LogicalComparisonJoin &plan, const string temporary_table_name);
+	//! Adjusts the original plan by replacing the join with a LogicalGet on the temporary table
+	unique_ptr<LogicalOperator> AdjustPlan(unique_ptr<LogicalOperator> plan, LogicalComparisonJoin &step,
+	                                       string temporary_table_name);
+	//! Replaces the join 'old_op' in 'plan' with the given operator 'new_op'
+	void ReplaceLogicalStep(LogicalOperator &plan, LogicalComparisonJoin &old_op, unique_ptr<LogicalOperator> new_op);
+
+	//! sets mapping of tablename -> set of columns used in 'plan' in 'used_columns_per_table'
+	void ExtractUsedColumns(LogicalOperator &plan);
+	//! returns all join operators in the plan - the last element is the first one to be executed
+	vector<LogicalOperator *> ExtractJoinOperators(LogicalOperator &plan);
+	//! Extracts pointers to TableCatalogEntry for each LogicalGet in 'plan'
+	std::set<TableCatalogEntry *> ExtractGetTables(LogicalOperator &plan);
+
+	//! Utility to join strings like in Java, Python
+	string JoinStrings(vector<string> strings, string delimiter);
+
+	//! mapping of tablename -> set of columns FIXME: rename
+	unordered_map<string, std::set<string>> used_columns_per_table;
 };
 
 } // namespace duckdb
