@@ -1,5 +1,6 @@
 #include "duckdb/planner/bind_context.hpp"
 
+#include "duckdb/common/printer.hpp"
 #include "duckdb/parser/expression/columnref_expression.hpp"
 #include "duckdb/parser/tableref/subqueryref.hpp"
 #include "duckdb/planner/expression/bound_columnref_expression.hpp"
@@ -64,6 +65,12 @@ void BindContext::AddBinding(const string &alias, unique_ptr<Binding> binding) {
 }
 
 void BindContext::AddBaseTable(BoundBaseTableRef *bound, const string &alias) {
+	// ReOptimization hack
+	if (binding_aliases.find(bound->table->name) != binding_aliases.end()) {
+		throw ReOptimizerException("Duplicate binding alias \"%s\"", bound->table->name);
+	}
+	binding_aliases[bound->table->name] = alias;
+
 	AddBinding(alias, make_unique<TableBinding>(alias, bound));
 }
 
@@ -77,4 +84,18 @@ void BindContext::AddTableFunction(index_t index, const string &alias, TableFunc
 
 void BindContext::AddGenericBinding(index_t index, const string &alias, vector<string> names, vector<SQLType> types) {
 	AddBinding(alias, make_unique<GenericBinding>(alias, move(types), move(names), index));
+}
+
+void BindContext::ReplaceBindingIndex(string alias, index_t index) {
+	bindings[alias]->index = index;
+}
+
+void BindContext::Print() {
+	for (unordered_map<string, unique_ptr<Binding>>::iterator it = bindings.begin(); it != bindings.end(); it++) {
+		Printer::Print(it->second->alias + " : " + to_string(it->second->index));
+	}
+}
+
+string BindContext::GetBindingAlias(string table) {
+	return binding_aliases[table];
 }

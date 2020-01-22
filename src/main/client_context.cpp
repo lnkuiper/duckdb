@@ -207,7 +207,6 @@ unique_ptr<PreparedStatementData> ClientContext::CreatePreparedStatement(const s
 // FIXME: only works within a transaction - segfault with autocommit
 unique_ptr<PreparedStatementData> ClientContext::CreatePreparedStatementReOpt(const string &query,
                                                                               unique_ptr<SQLStatement> statement) {
-	Printer::Print("Inside ReOpt");
 	StatementType statement_type = statement->type;
 	auto result = make_unique<PreparedStatementData>(statement_type);
 
@@ -245,19 +244,16 @@ unique_ptr<PreparedStatementData> ClientContext::CreatePreparedStatementReOpt(co
 		plan = reoptimizer.CreateStepPlan(move(plan), temp_table_name);
 
 		break;
-		// We now have a table named temp_table_name with our first join in there
-
-		// 	if (ReOptimizer.DecideReOptimize(<which params??>)):
-		// 		remaining_plan <- Optimizer.Optimize(move(remaining_plan));
-		// plan = move(remaining_plan);
 	}
 	profiler.EndPhase();
 
 	profiler.StartPhase("physical_planner");
 	// now convert logical query plan into a physical query plan
+	Printer::Print("Creating physical plan");
 	PhysicalPlanGenerator physical_planner(*this);
 	auto physical_plan = physical_planner.CreatePlan(move(plan));
 	profiler.EndPhase();
+	Printer::Print("Physical plan done");
 
 	result->dependencies = move(physical_planner.dependencies);
 	result->types = physical_plan->types;

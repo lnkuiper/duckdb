@@ -47,6 +47,14 @@ public:
 	//! Adds a base table with the given alias to the BindContext.
 	void AddGenericBinding(index_t index, const string &alias, vector<string> names, vector<SQLType> types);
 
+	//! Replaces the index for a specific binding (ReOptimizer)
+	void ReplaceBindingIndex(string alias, index_t index);
+	//! Print bindings
+	void Print();
+
+	//! Gets binding alias from binding_aliases (ReOptimizer)
+	string GetBindingAlias(string table);
+
 	unordered_set<string> hidden_columns;
 
 private:
@@ -56,5 +64,8 @@ private:
 	unordered_map<string, unique_ptr<Binding>> bindings;
 	//! The list of bindings in insertion order
 	vector<std::pair<string, Binding *>> bindings_list;
+
+	//! Table name to binding alias (ReOptimizer)
+	unordered_map<string, string> binding_aliases;
 };
 } // namespace duckdb

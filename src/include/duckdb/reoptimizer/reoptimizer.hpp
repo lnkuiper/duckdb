@@ -12,6 +12,7 @@
 
 #include "duckdb/main/client_context.hpp"
 #include "duckdb/planner/binder.hpp"
+#include "duckdb/planner/column_binding.hpp"
 #include "duckdb/planner/logical_operator.hpp"
 
 namespace duckdb {
@@ -23,6 +24,10 @@ public:
 
 	//! Executes the first join, then adapts the plan accordingly FIXME: rename
 	unique_ptr<LogicalOperator> CreateStepPlan(unique_ptr<LogicalOperator> plan, const string temporary_table_name);
+
+	//! Names of the left and right tables of the first join
+	string left_table_name;
+	string right_table_name;
 
 	//! The client context
 	ClientContext &context;
@@ -36,7 +41,9 @@ private:
 	unique_ptr<LogicalOperator> AdjustPlan(unique_ptr<LogicalOperator> plan, LogicalComparisonJoin &step,
 	                                       string temporary_table_name);
 	//! Replaces the join 'old_op' in 'plan' with the given operator 'new_op'
-	void ReplaceLogicalStep(LogicalOperator &plan, LogicalComparisonJoin &old_op, unique_ptr<LogicalGet> new_op, index_t depth = 0);
+	void ReplaceLogicalOperator(LogicalOperator &plan, LogicalComparisonJoin &old_op, unique_ptr<LogicalGet> new_op);
+	//! Fixes column bindings after replacing JOIN with GET
+	void FixColumnBindings(LogicalOperator &plan);
 
 	//! sets mapping of tablename -> set of columns used in 'plan' in 'used_columns_per_table'
 	void ExtractUsedColumns(LogicalOperator &plan);
@@ -50,6 +57,8 @@ private:
 
 	//! mapping of tablename -> set of columns FIXME: rename
 	unordered_map<string, std::set<string>> used_columns_per_table;
+	//! The new column bindings (after replacing JOIN with GET)
+	unordered_map<string, ColumnBinding> bindings_mapping;
 };
 
 } // namespace duckdb

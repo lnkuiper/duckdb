@@ -24,6 +24,10 @@ struct ColumnBinding {
 	bool operator==(const ColumnBinding &rhs) const {
 		return table_index == rhs.table_index && column_index == rhs.column_index;
 	}
+
+	string ToString() {
+		return "#[" + std::to_string(table_index) + "." + std::to_string(column_index) + "]";
+	}
 };
 
 } // namespace duckdb
