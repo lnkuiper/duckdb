@@ -188,4 +188,6 @@ ExpressionType NegateComparisionExpression(ExpressionType type);
 //! Flip a comparison expression, turning e.g. < into >, or = into =
 ExpressionType FlipComparisionExpression(ExpressionType type);
 
+string ExpressionClassToString(ExpressionClass cl);
+
 } // namespace duckdb

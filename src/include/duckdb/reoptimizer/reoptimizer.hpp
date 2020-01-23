@@ -31,8 +31,10 @@ public:
 
 	//! The client context
 	ClientContext &context;
-    //! The binder
-    Binder &binder;
+	//! The binder
+	Binder &binder;
+
+	int remaining_joins = 0;
 
 private:
 	//! Creates a CREATE TEMPORARY TABLE query string for the first join to be executed in 'plan'

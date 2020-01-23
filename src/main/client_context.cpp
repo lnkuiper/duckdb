@@ -183,15 +183,6 @@ unique_ptr<PreparedStatementData> ClientContext::CreatePreparedStatement(const s
 	}
 #endif
 
-	// FIXME: test code - remove later
-	if (statement_type == StatementType::PREPARE) {
-		ReOptimizer reoptimizer = ReOptimizer(*this, *plan, planner.binder);
-		hash<string> hasher;
-		string tablename_prefix = "_temp_" + to_string(hasher(query));
-		string temp_table_name = tablename_prefix + "_" + to_string(0);
-		plan = reoptimizer.CreateStepPlan(move(plan), temp_table_name);
-	}
-
 	profiler.StartPhase("physical_planner");
 	// now convert logical query plan into a physical query plan
 	PhysicalPlanGenerator physical_planner(*this);
@@ -204,7 +195,6 @@ unique_ptr<PreparedStatementData> ClientContext::CreatePreparedStatement(const s
 	return result;
 }
 
-// FIXME: only works within a transaction - segfault with autocommit
 unique_ptr<PreparedStatementData> ClientContext::CreatePreparedStatementReOpt(const string &query,
                                                                               unique_ptr<SQLStatement> statement) {
 	StatementType statement_type = statement->type;
@@ -237,23 +227,28 @@ unique_ptr<PreparedStatementData> ClientContext::CreatePreparedStatementReOpt(co
 	profiler.StartPhase("reoptimizer");
 	ReOptimizer reoptimizer = ReOptimizer(*this, *plan, planner.binder);
 	hash<string> hasher;
-	const string tablename_prefix = "_temp_" + to_string(hasher(query));
+	const string tablename_prefix = "_reopt_temp_" + to_string(hasher(query));
 	for (int i = 0; true; i++) {
-		Printer::Print("Creating step query");
 		const string temp_table_name = tablename_prefix + "_" + to_string(i);
 		plan = reoptimizer.CreateStepPlan(move(plan), temp_table_name);
 
-		break;
+		// if 0 or 1 joins remain the plan can be finished normally
+		if (reoptimizer.remaining_joins <= 1)
+			break;
+
+		profiler.StartPhase("optimizer");
+		Optimizer optimizer(reoptimizer.binder, *this);
+		plan = optimizer.Optimize(move(plan));
+		assert(plan);
+		profiler.EndPhase();
 	}
 	profiler.EndPhase();
 
 	profiler.StartPhase("physical_planner");
 	// now convert logical query plan into a physical query plan
-	Printer::Print("Creating physical plan");
 	PhysicalPlanGenerator physical_planner(*this);
 	auto physical_plan = physical_planner.CreatePlan(move(plan));
 	profiler.EndPhase();
-	Printer::Print("Physical plan done");
 
 	result->dependencies = move(physical_planner.dependencies);
 	result->types = physical_plan->types;

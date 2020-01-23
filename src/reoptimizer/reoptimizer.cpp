@@ -21,16 +21,21 @@
 using namespace std;
 using namespace duckdb;
 
-ReOptimizer::ReOptimizer(ClientContext &context, LogicalOperator &plan, Binder &binder) : context(context), binder(binder) {
+// FIXME: only works within a transaction - segfault with autocommit
+// TODO: write tests that figure out if this shit actually works
+ReOptimizer::ReOptimizer(ClientContext &context, LogicalOperator &plan, Binder &binder)
+    : context(context), binder(binder) {
 }
 
 unique_ptr<LogicalOperator> ReOptimizer::CreateStepPlan(unique_ptr<LogicalOperator> plan,
                                                         const string temporary_table_name) {
 	vector<LogicalOperator *> joins = ExtractJoinOperators(*plan);
-	if (joins.empty())
+	remaining_joins = joins.size();
+	if (remaining_joins <= 1)
 		return plan;
 
 	plan->Print();
+	// binder.bind_context.Print();
 
 	used_columns_per_table = {}; // reset
 	ExtractUsedColumns(*plan);
@@ -47,18 +52,20 @@ unique_ptr<LogicalOperator> ReOptimizer::CreateStepPlan(unique_ptr<LogicalOperat
 	context.Query(step_query, false);
 	context.profiler.EndPhase();
 
-	/* TODO: edit 'plan', inserting the temporary table for the join node
-	 * this will probably be quite hard, because of the binder
-	 * might need to Skype with Mark/Hannes
-	 * 
-	 * UPDATE: it seems to work! needs more testing */
-
 	context.profiler.StartPhase("edit_plan");
 	plan = AdjustPlan(move(plan), *first_join, temporary_table_name);
+	assert(plan);
+	remaining_joins--;
+
+	// for (unordered_map<string, ColumnBinding>::iterator it = bindings_mapping.begin(); it != bindings_mapping.end();
+	// it++) { 	Printer::Print(it->first + " : " + it->second.ToString());
+	// }
+
 	FixColumnBindings(*plan);
 	context.profiler.EndPhase();
 
 	plan->Print();
+	// binder.bind_context.Print();
 
 	return plan;
 }
@@ -81,6 +88,7 @@ string ReOptimizer::CreateStepQuery(LogicalComparisonJoin &plan, const string te
 			assert(child->children.size() == 1);
 			LogicalFilter *logical_filter = static_cast<LogicalFilter *>(child.get());
 			for (auto &expr : logical_filter->expressions) {
+				// FIXME: GetName() does not add quotes around string comparisons
 				where_conditions.push_back(table_alias + "." + expr->GetName());
 			}
 			logical_get = static_cast<LogicalGet *>(logical_filter->children.at(0).get());
@@ -93,7 +101,10 @@ string ReOptimizer::CreateStepQuery(LogicalComparisonJoin &plan, const string te
 		// if (i == 0) left_table_name = logical_get->table->name;
 		// if (i == 1) right_table_name = logical_get->table->name;
 
-		queried_tables.push_back(logical_get->table->schema->name + "." + logical_get->table->name + " AS " + table_alias);
+		// TODO: use LogicalJoin::left_projection_map and right_projection_map instead of this for more efficiency
+		// Hard to implement though, and can also be solved by calling Optimizer::Optimize() - slight overhead
+		queried_tables.push_back(logical_get->table->schema->name + "." + logical_get->table->name + " AS " +
+		                         table_alias);
 		for (string col : used_columns_per_table[logical_get->table->name]) {
 			queried_columns.push_back(table_alias + "." + col + " AS " + col);
 		}
@@ -101,15 +112,19 @@ string ReOptimizer::CreateStepQuery(LogicalComparisonJoin &plan, const string te
 	for (auto &cond : plan.conditions) {
 		where_conditions.push_back("t0." + cond.left->GetName() + " = t1." + cond.right->GetName());
 	}
-	
-	return "CREATE TEMPORARY TABLE " + temporary_table_name + " AS (" + "SELECT " + JoinStrings(queried_columns, ", ") + " " +
-	       "FROM " + JoinStrings(queried_tables, ", ") + " " + "WHERE " + JoinStrings(where_conditions, " AND ") + ");";
+
+	return "CREATE TEMPORARY TABLE " + temporary_table_name + " AS (" + "SELECT " + JoinStrings(queried_columns, ", ") +
+	       " " + "FROM " + JoinStrings(queried_tables, ", ") + " " + "WHERE " + JoinStrings(where_conditions, " AND ") +
+	       ");";
 }
 
 unique_ptr<LogicalOperator> ReOptimizer::AdjustPlan(unique_ptr<LogicalOperator> plan, LogicalComparisonJoin &step,
                                                     const string temporary_table_name) {
-	// FIXME: derive schema name instead of using "main" by default?
-	TableCatalogEntry *table = context.catalog.GetTable(context, "main", temporary_table_name);	
+    // temporary tables are always stored in schema 'temp' when I do them myself in the shell
+	// however, it seems that they are added to 'main' when executed internally
+	// FIXME: however, the following line results in a segfault
+	// Because context.transaction is not initalized - what do
+	TableCatalogEntry *table = context.catalog.GetTable(context, "main", temporary_table_name);
 
 	// Create a LogicalGet for the newly made temporary table (empty column_ids - filled in "ReplaceLogicalOperator")
 	unique_ptr<LogicalGet> temp_table_get = make_unique<LogicalGet>(table, 0, vector<column_t>());
@@ -120,22 +135,24 @@ unique_ptr<LogicalOperator> ReOptimizer::AdjustPlan(unique_ptr<LogicalOperator> 
 	return plan;
 }
 
-// FIXME: check if we can simply store a pointer to &old_op (e.g. plan.children.at(i) or something and replace without recursion)
+// FIXME: check if we can simply store a pointer to &old_op (e.g. plan.children.at(i) or something and replace without
+// recursion) - although we would need to retrieve the 'depth' some other way
 void ReOptimizer::ReplaceLogicalOperator(LogicalOperator &plan, LogicalComparisonJoin &old_op,
-                                     unique_ptr<LogicalGet> new_op) {
+                                         unique_ptr<LogicalGet> new_op) {
 	if (plan.children.empty())
 		return;
 
 	// recursively find the step to replace
 	bool found = false;
 	for (int i = 0; i < plan.children.size(); i++) {
-        new_op->table_index++; // increase by depth
+		new_op->table_index++; // increase by depth
 		auto &child = plan.children.at(i);
 		if (child->type != LogicalOperatorType::COMPARISON_JOIN)
 			continue;
 		LogicalComparisonJoin *join = static_cast<LogicalComparisonJoin *>(child.get());
 		bool equal = true;
 		for (int j = 0; j < join->conditions.size(); j++) {
+			// TODO: create a better equality check? - or implement the FIXME above
 			if (join->conditions.at(j).left->GetName() != old_op.conditions.at(j).left->GetName()) {
 				equal = false;
 				break;
@@ -143,7 +160,8 @@ void ReOptimizer::ReplaceLogicalOperator(LogicalOperator &plan, LogicalCompariso
 		}
 		if (equal) {
 			found = true;
-			// TODO: find out if the following two lines are needed (seems like NO, perhaps when calling Optimize again?)
+			// TODO: find out if the following two lines are needed (seems like NO, perhaps when calling Optimize
+			// again?)
 			// binder.bind_context.ReplaceBindingIndex(binder.bind_context.GetBindingAlias(left_table_name), new_op->table_index);
 			// binder.bind_context.ReplaceBindingIndex(binder.bind_context.GetBindingAlias(right_table_name), new_op->table_index);
 			for (ColumnBinding cb : old_op.GetColumnBindings()) {
@@ -155,14 +173,15 @@ void ReOptimizer::ReplaceLogicalOperator(LogicalOperator &plan, LogicalCompariso
 					}
 				}
 				// Add column id to LogicalGet column_ids (no duplicate column ids)
-				if (find(new_op->column_ids.begin(), new_op->column_ids.end(), cb.column_index) == new_op->column_ids.end())
+				if (find(new_op->column_ids.begin(), new_op->column_ids.end(), cb.column_index) ==
+				    new_op->column_ids.end())
 					new_op->column_ids.push_back(cb.column_index);
 			}
 			plan.children.at(i) = move(new_op);
 			break;
 		}
 	}
-	// Enter recursion until the operator in question is found
+	// Enter recursion until the operator is found
 	if (!found) {
 		for (auto &child : plan.children)
 			ReplaceLogicalOperator(*child.get(), old_op, move(new_op));
@@ -170,14 +189,35 @@ void ReOptimizer::ReplaceLogicalOperator(LogicalOperator &plan, LogicalCompariso
 }
 
 void ReOptimizer::FixColumnBindings(LogicalOperator &plan) {
-	// Replace references to old bindings with the new bindings
+	// Fix BoundColumRefs in JoinConditions
+	if (plan.type == LogicalOperatorType::COMPARISON_JOIN) {
+		LogicalComparisonJoin *join = static_cast<LogicalComparisonJoin *>(&plan);
+		for (int i = 0; i < join->conditions.size(); i++) {
+			JoinCondition &jc = join->conditions[i];
+			BoundColumnRefExpression l = (BoundColumnRefExpression &)*jc.left.get();
+			BoundColumnRefExpression r = (BoundColumnRefExpression &)*jc.right.get();
+			if (bindings_mapping.find(l.ToString()) != bindings_mapping.end()) {
+				unique_ptr<BoundColumnRefExpression> fixed_bcre = make_unique<BoundColumnRefExpression>(
+				    l.alias, l.return_type, bindings_mapping[l.ToString()], l.depth);
+				join->conditions.at(i).left = move(fixed_bcre);
+			}
+			if (bindings_mapping.find(r.ToString()) != bindings_mapping.end()) {
+				unique_ptr<BoundColumnRefExpression> fixed_bcre = make_unique<BoundColumnRefExpression>(
+				    r.alias, r.return_type, bindings_mapping[r.ToString()], r.depth);
+				join->conditions.at(i).right = move(fixed_bcre);
+			}
+		}
+	}
+	// Fix other BoundColumnRefExpressions
 	for (int i = 0; i < plan.expressions.size(); i++) {
+		// TODO: Might want to use LogicalProjection::table_index ??
 		auto &expr = *plan.expressions[i];
 		if (expr.GetExpressionClass() != ExpressionClass::BOUND_COLUMN_REF)
 			continue;
 		BoundColumnRefExpression e = (BoundColumnRefExpression &)expr;
 		if (bindings_mapping.find(e.ToString()) != bindings_mapping.end()) {
-			unique_ptr<BoundColumnRefExpression> fixed_bcre = make_unique<BoundColumnRefExpression>(e.alias, e.return_type, bindings_mapping[e.ToString()], e.depth);
+			unique_ptr<BoundColumnRefExpression> fixed_bcre =
+			    make_unique<BoundColumnRefExpression>(e.alias, e.return_type, bindings_mapping[e.ToString()], e.depth);
 			plan.expressions.at(i) = move(fixed_bcre);
 		}
 	}
@@ -190,7 +230,6 @@ void ReOptimizer::FixColumnBindings(LogicalOperator &plan) {
 void ReOptimizer::ExtractUsedColumns(LogicalOperator &plan) {
 	if (plan.children.empty())
 		return;
-
 	// Extract set of column names that are used by 'plan' or its children
 	std::set<string> used_columns;
 	switch (plan.type) {
@@ -241,10 +280,10 @@ vector<LogicalOperator *> ReOptimizer::ExtractJoinOperators(LogicalOperator &pla
 		break;
 	}
 	for (auto &child : plan.children) {
-			vector<LogicalOperator *> child_joins = ExtractJoinOperators(*child);
-			joins.insert(joins.end(), child_joins.begin(), child_joins.end());
-		}
-		return joins;
+		vector<LogicalOperator *> child_joins = ExtractJoinOperators(*child);
+		joins.insert(joins.end(), child_joins.begin(), child_joins.end());
+	}
+	return joins;
 }
 
 std::set<TableCatalogEntry *> ReOptimizer::ExtractGetTables(LogicalOperator &plan) {
