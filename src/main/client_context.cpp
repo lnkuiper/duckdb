@@ -418,10 +418,7 @@ unique_ptr<QueryResult> ClientContext::RunStatement(const string &query, unique_
 		statement = move(copied_statement);
 	}
 	// start the profiler
-	if (!enable_reoptimizer)
-		//! Unsure whether the profiler should be started if we are doing reoptimization.
-		//! the query that goes through here will (likely) not be the first one that is executed
-		profiler.StartQuery(query);
+	profiler.StartQuery(query);
 	try {
 		result = RunStatementInternal(query, move(statement), allow_stream_result);
 	} catch (StandardException &ex) {

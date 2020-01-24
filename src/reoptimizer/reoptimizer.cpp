@@ -12,6 +12,7 @@
 #include "duckdb/parser/statement/prepare_statement.hpp"
 #include "duckdb/planner/joinside.hpp"
 #include "duckdb/planner/planner.hpp"
+#include "duckdb/planner/expression/bound_comparison_expression.hpp"
 #include "duckdb/planner/operator/logical_comparison_join.hpp"
 #include "duckdb/planner/operator/logical_filter.hpp"
 #include "duckdb/planner/operator/logical_get.hpp"
@@ -21,7 +22,6 @@
 using namespace std;
 using namespace duckdb;
 
-// FIXME: only works within a transaction - segfault with autocommit
 // TODO: write tests that figure out if this shit actually works
 ReOptimizer::ReOptimizer(ClientContext &context, LogicalOperator &plan, Binder &binder)
     : context(context), binder(binder) {
@@ -49,7 +49,12 @@ unique_ptr<LogicalOperator> ReOptimizer::CreateStepPlan(unique_ptr<LogicalOperat
 	Printer::Print(step_query);
 
 	context.profiler.StartPhase("execute_step");
+	// store whether we are on autocommit so we can restore it after executing our subquery
+	bool auto_commit = context.transaction.IsAutoCommit();
+	// ClientContext::Query will commit if we are on autocommit - not desirable since we are technically mid-query
+	context.transaction.SetAutoCommit(false);
 	context.Query(step_query, false);
+	context.transaction.SetAutoCommit(auto_commit);
 	context.profiler.EndPhase();
 
 	context.profiler.StartPhase("edit_plan");
@@ -84,12 +89,21 @@ string ReOptimizer::CreateStepQuery(LogicalComparisonJoin &plan, const string te
 			logical_get = static_cast<LogicalGet *>(child.get());
 			break;
 		}
-		case LogicalOperatorType::FILTER: { // with filter we need the child GET
+		case LogicalOperatorType::FILTER: { // if filter we need its child GET
 			assert(child->children.size() == 1);
 			LogicalFilter *logical_filter = static_cast<LogicalFilter *>(child.get());
 			for (auto &expr : logical_filter->expressions) {
-				// FIXME: GetName() does not add quotes around string comparisons
-				where_conditions.push_back(table_alias + "." + expr->GetName());
+				if (expr->GetExpressionClass() != ExpressionClass::BOUND_COMPARISON)
+					throw new ReOptimizerException("Expected filter class to be BOUND_COMPARISON, got '%s' instead",
+					                               expr->GetExpressionClass());
+				BoundComparisonExpression *bce = static_cast<BoundComparisonExpression *>(expr.get());
+				// table reference is 'always' placed on the left, constant on the right
+				if (bce->right->return_type == TypeId::VARCHAR) // strings need to be escaped with quotes
+					where_conditions.push_back(table_alias + "." + bce->left->alias +
+					                           ExpressionTypeToOperator(bce->type) + "'" + bce->right->ToString() +
+					                           "'");
+				else
+					where_conditions.push_back(table_alias + "." + expr->GetName());
 			}
 			logical_get = static_cast<LogicalGet *>(logical_filter->children.at(0).get());
 			break;
@@ -102,7 +116,9 @@ string ReOptimizer::CreateStepQuery(LogicalComparisonJoin &plan, const string te
 		// if (i == 1) right_table_name = logical_get->table->name;
 
 		// TODO: use LogicalJoin::left_projection_map and right_projection_map instead of this for more efficiency
+		// FIXME: this is actually really important since materialization is the most expensive part of ReOpt
 		// Hard to implement though, and can also be solved by calling Optimizer::Optimize() - slight overhead
+		// LogicalComparisonJoin::GetColumnBindings might help!
 		queried_tables.push_back(logical_get->table->schema->name + "." + logical_get->table->name + " AS " +
 		                         table_alias);
 		for (string col : used_columns_per_table[logical_get->table->name]) {
@@ -120,11 +136,15 @@ string ReOptimizer::CreateStepQuery(LogicalComparisonJoin &plan, const string te
 
 unique_ptr<LogicalOperator> ReOptimizer::AdjustPlan(unique_ptr<LogicalOperator> plan, LogicalComparisonJoin &step,
                                                     const string temporary_table_name) {
-    // temporary tables are always stored in schema 'temp' when I do them myself in the shell
-	// however, it seems that they are added to 'main' when executed internally
-	// FIXME: however, the following line results in a segfault
-	// Because context.transaction is not initalized - what do
-	TableCatalogEntry *table = context.catalog.GetTable(context, "main", temporary_table_name);
+	// Catalog::GetTable can only be called if there is an active transaction - else segfault
+	TableCatalogEntry *table;
+	if (!context.transaction.HasActiveTransaction()) {
+		context.transaction.BeginTransaction();
+		table = context.catalog.GetTable(context, "main", temporary_table_name);
+		context.transaction.Commit();
+	} else {
+		table = context.catalog.GetTable(context, "main", temporary_table_name);
+	}
 
 	// Create a LogicalGet for the newly made temporary table (empty column_ids - filled in "ReplaceLogicalOperator")
 	unique_ptr<LogicalGet> temp_table_get = make_unique<LogicalGet>(table, 0, vector<column_t>());
@@ -153,6 +173,7 @@ void ReOptimizer::ReplaceLogicalOperator(LogicalOperator &plan, LogicalCompariso
 		bool equal = true;
 		for (int j = 0; j < join->conditions.size(); j++) {
 			// TODO: create a better equality check? - or implement the FIXME above
+			// Actually - this equality check is quite alright, but recursively finding the Op is costly
 			if (join->conditions.at(j).left->GetName() != old_op.conditions.at(j).left->GetName()) {
 				equal = false;
 				break;
@@ -162,8 +183,10 @@ void ReOptimizer::ReplaceLogicalOperator(LogicalOperator &plan, LogicalCompariso
 			found = true;
 			// TODO: find out if the following two lines are needed (seems like NO, perhaps when calling Optimize
 			// again?)
-			// binder.bind_context.ReplaceBindingIndex(binder.bind_context.GetBindingAlias(left_table_name), new_op->table_index);
-			// binder.bind_context.ReplaceBindingIndex(binder.bind_context.GetBindingAlias(right_table_name), new_op->table_index);
+			// binder.bind_context.ReplaceBindingIndex(binder.bind_context.GetBindingAlias(left_table_name),
+			// new_op->table_index);
+			// binder.bind_context.ReplaceBindingIndex(binder.bind_context.GetBindingAlias(right_table_name),
+			// new_op->table_index);
 			for (ColumnBinding cb : old_op.GetColumnBindings()) {
 				// Fill with mapping from old bindings to new bindings (visit children too)
 				bindings_mapping[cb.ToString()] = ColumnBinding(new_op->table_index, cb.column_index);
