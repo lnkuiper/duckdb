@@ -66,9 +66,9 @@ void BindContext::AddBinding(const string &alias, unique_ptr<Binding> binding) {
 
 void BindContext::AddBaseTable(BoundBaseTableRef *bound, const string &alias) {
 	// ReOptimization hack
-	if (binding_aliases.find(bound->table->name) != binding_aliases.end()) {
-		throw ReOptimizerException("Duplicate binding alias \"%s\"", bound->table->name);
-	}
+	// if (binding_aliases.find(bound->table->name) != binding_aliases.end()) {
+	// 	throw ReOptimizerException("Duplicate binding alias \"%s\"", bound->table->name);
+	// }
 	binding_aliases[bound->table->name] = alias;
 
 	AddBinding(alias, make_unique<TableBinding>(alias, bound));

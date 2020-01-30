@@ -54,8 +54,6 @@ public:
 	bool query_verification_enabled = false;
 	//! Enable the running of optimizers
 	bool enable_optimizer = true;
-	//! Enable the re-optimizer
-	bool enable_reoptimizer = true;
 
 	//! The random generator used by random(). Its seed value can be set by setseed().
 	std::mt19937 random_engine;
@@ -76,6 +74,8 @@ public:
 	//! MaterializedQueryResult. The StreamQueryResult will only be returned in the case of a successful SELECT
 	//! statement.
 	unique_ptr<QueryResult> Query(string query, bool allow_stream_result);
+	//! Same as Query, but without a lock (concurrent queries can be executed - for ReOptimization)
+	unique_ptr<QueryResult> QueryWithoutLock(string query, bool allow_stream_result);
 	//! Fetch a query from the current result set (if any)
 	unique_ptr<DataChunk> Fetch();
 	//! Cleanup the result set (if any).
@@ -137,5 +137,7 @@ private:
 	unordered_set<PreparedStatement *> prepared_statement_objects;
 	//! Appenders that were attached to this client context
 	unordered_set<Appender *> appenders;
+	//! Enable the re-optimizer
+	bool enable_reoptimizer = true;
 };
 } // namespace duckdb

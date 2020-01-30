@@ -208,6 +208,8 @@ unique_ptr<PreparedStatementData> ClientContext::CreatePreparedStatementReOpt(co
 
 	auto plan = move(planner.plan);
 	// extract the result column names from the plan
+	result->read_only = planner.read_only;
+	result->requires_valid_transaction = planner.requires_valid_transaction;
 	result->names = planner.names;
 	result->sql_types = planner.sql_types;
 	result->value_map = move(planner.value_map);
@@ -225,7 +227,7 @@ unique_ptr<PreparedStatementData> ClientContext::CreatePreparedStatementReOpt(co
 #endif
 
 	profiler.StartPhase("reoptimizer");
-	ReOptimizer reoptimizer = ReOptimizer(*this, *plan, planner.binder);
+	ReOptimizer reoptimizer = ReOptimizer(*this, planner.binder);
 	hash<string> hasher;
 	const string tablename_prefix = "_reopt_temp_" + to_string(hasher(query));
 	for (int i = 0; true; i++) {
@@ -479,6 +481,26 @@ unique_ptr<QueryResult> ClientContext::RunStatements(const string &query, vector
 
 unique_ptr<QueryResult> ClientContext::Query(string query, bool allow_stream_result) {
 	lock_guard<mutex> client_guard(context_lock);
+
+	Parser parser;
+	try {
+		InitialCleanup();
+		// parse the query and transform it into a set of statements
+		parser.ParseQuery(query.c_str());
+	} catch (std::exception &ex) {
+		return make_unique<MaterializedQueryResult>(ex.what());
+	}
+
+	if (parser.statements.size() == 0) {
+		// no statements, return empty successful result
+		return make_unique<MaterializedQueryResult>(StatementType::INVALID);
+	}
+
+	return RunStatements(query, parser.statements, allow_stream_result);
+}
+
+unique_ptr<QueryResult> ClientContext::QueryWithoutLock(string query, bool allow_stream_result) {
+	// no lock here
 
 	Parser parser;
 	try {
