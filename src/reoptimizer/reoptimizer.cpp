@@ -53,6 +53,7 @@ unique_ptr<LogicalOperator> ReOptimizer::CreateStepPlan(unique_ptr<LogicalOperat
 	LogicalComparisonJoin *first_join = static_cast<LogicalComparisonJoin *>(joins.back());
 
 	context.profiler.StartPhase("create_step");
+	GenerateLeftProjectionMap(*plan, *first_join);
 	string step_query = CreateStepQuery(*first_join, temporary_table_name);
 	context.profiler.EndPhase();
 
@@ -109,13 +110,64 @@ unique_ptr<LogicalOperator> ReOptimizer::CreateStepPlan(unique_ptr<LogicalOperat
 	return plan;
 }
 
+// FIXME: column binding issue can be fixed:
+// by counting how many times a column binding is referenced by a BoundColumnRefExpression
+// can be counted with a method like the one above
+// maybe count usages of each column binding and store in a map??
+// seems like this would only be useful in the CreateStepQuery method
+// Something like
+void ReOptimizer::GenerateLeftProjectionMap(LogicalOperator &plan, LogicalComparisonJoin &join) {
+	vector<ColumnBinding> left_bindings = join.children[0]->GetColumnBindings();
+	for (size_t binding_index = 0; binding_index < left_bindings.size(); binding_index++) {
+		ColumnBinding binding = left_bindings[binding_index];
+		if (CountBindingReferences(plan, binding) > 1) {
+			Printer::Print("COLUMN BINDING " + binding.ToString() + " REFERRED TO MORE THAN ONCE");
+			join.left_projection_map.push_back(binding_index);
+		}
+	}
+}
+
+int ReOptimizer::CountBindingReferences(LogicalOperator &plan, ColumnBinding binding) {
+	int reference_count = 0;
+	if (plan.children.empty())
+		return reference_count;
+	// count references in JoinConditions
+	if (plan.type == LogicalOperatorType::COMPARISON_JOIN) {
+		LogicalComparisonJoin *join = static_cast<LogicalComparisonJoin *>(&plan);
+		for (size_t condition_index = 0; condition_index < join->conditions.size(); condition_index++) {
+			JoinCondition &join_condition = join->conditions[condition_index];
+			BoundColumnRefExpression l = (BoundColumnRefExpression &)*join_condition.left.get();
+			BoundColumnRefExpression r = (BoundColumnRefExpression &)*join_condition.right.get();
+			if (l.binding == binding)
+				reference_count++;
+			else if (r.binding == binding)
+				reference_count++;
+		}
+	}
+	// count references found in expressions
+	for (size_t expr_index = 0; expr_index < plan.expressions.size(); expr_index++) {
+		auto &expr = *plan.expressions[expr_index];
+		if (expr.GetExpressionClass() != ExpressionClass::BOUND_COLUMN_REF)
+			continue;
+		BoundColumnRefExpression e = (BoundColumnRefExpression &)expr;
+		if (e.binding == binding)
+			reference_count++;
+	}
+	// recursively propagate operator tree
+	int child_reference_count = 0;
+	for (auto &child : plan.children) {
+		child_reference_count += CountBindingReferences(*child, binding);
+	}
+	return reference_count + child_reference_count;
+}
+
 string ReOptimizer::CreateStepQuery(LogicalComparisonJoin &join, const string temporary_table_name) {
 	vector<string> queried_tables;
 	vector<string> queried_columns;
 	vector<string> where_conditions;
-	for (size_t i = 0; i < join.children.size(); i++) {
-		auto &child = join.children.at(i);
-		string table_alias = "t" + to_string(i);
+	for (size_t child_index = 0; child_index < join.children.size(); child_index++) {
+		auto &child = join.children.at(child_index);
+		string table_alias = "t" + to_string(child_index);
 		LogicalGet *logical_get;
 		switch (child->type) {
 		case LogicalOperatorType::GET: {
@@ -158,7 +210,7 @@ string ReOptimizer::CreateStepQuery(LogicalComparisonJoin &join, const string te
 
 		// FIXME: left_projection_map is empty - projecting all columns - some of which are removed later
 		vector<ColumnBinding> child_bindings = logical_get->GetColumnBindings();
-		vector<column_t> projection_map = i == 0 ? join.left_projection_map : join.right_projection_map;
+		vector<column_t> projection_map = child_index == 0 ? join.left_projection_map : join.right_projection_map;
 		// take all bindings if empty
 		if (projection_map.empty()) {
 			for (size_t proj_index = 0; proj_index < child_bindings.size(); proj_index++) {
@@ -251,33 +303,33 @@ void ReOptimizer::FixColumnBindings(LogicalOperator &plan) {
 	// fix BoundColumRefs in JoinConditions
 	if (plan.type == LogicalOperatorType::COMPARISON_JOIN) {
 		LogicalComparisonJoin *join = static_cast<LogicalComparisonJoin *>(&plan);
-		for (size_t i = 0; i < join->conditions.size(); i++) {
-			JoinCondition &jc = join->conditions[i];
+		for (size_t condition_index = 0; condition_index < join->conditions.size(); condition_index++) {
+			JoinCondition &jc = join->conditions[condition_index];
 			BoundColumnRefExpression l = (BoundColumnRefExpression &)*jc.left.get();
 			BoundColumnRefExpression r = (BoundColumnRefExpression &)*jc.right.get();
 			if (bindings_mapping.find(l.ToString()) != bindings_mapping.end()) {
 				unique_ptr<BoundColumnRefExpression> fixed_bcre = make_unique<BoundColumnRefExpression>(
 				    l.alias, l.return_type, bindings_mapping[l.ToString()], l.depth);
-				join->conditions.at(i).left = move(fixed_bcre);
+				join->conditions.at(condition_index).left = move(fixed_bcre);
 			}
 			if (bindings_mapping.find(r.ToString()) != bindings_mapping.end()) {
 				unique_ptr<BoundColumnRefExpression> fixed_bcre = make_unique<BoundColumnRefExpression>(
 				    r.alias, r.return_type, bindings_mapping[r.ToString()], r.depth);
-				join->conditions.at(i).right = move(fixed_bcre);
+				join->conditions.at(condition_index).right = move(fixed_bcre);
 			}
 		}
 	}
 	// fix other BoundColumnRefExpressions found in expressions (for e.g. LogicalProjection)
-	for (size_t i = 0; i < plan.expressions.size(); i++) {
+	for (size_t expr_index = 0; expr_index < plan.expressions.size(); expr_index++) {
 		// TODO: Might want to use LogicalProjection::table_index ??
-		auto &expr = *plan.expressions[i];
+		auto &expr = *plan.expressions[expr_index];
 		if (expr.GetExpressionClass() != ExpressionClass::BOUND_COLUMN_REF)
 			continue;
 		BoundColumnRefExpression e = (BoundColumnRefExpression &)expr;
 		if (bindings_mapping.find(e.ToString()) != bindings_mapping.end()) {
 			unique_ptr<BoundColumnRefExpression> fixed_bcre =
 			    make_unique<BoundColumnRefExpression>(e.alias, e.return_type, bindings_mapping[e.ToString()], e.depth);
-			plan.expressions.at(i) = move(fixed_bcre);
+			plan.expressions.at(expr_index) = move(fixed_bcre);
 		}
 	}
 	// recursively propagate operator tree
@@ -285,14 +337,6 @@ void ReOptimizer::FixColumnBindings(LogicalOperator &plan) {
 		FixColumnBindings(*child);
 	}
 }
-
-// FIXME: column binding issue can be fixed:
-// by counting how many times a column binding is referenced by a BoundColumnRefExpression
-// can be counted with a method like the one above
-// maybe count usages of each column binding and store in a map??
-// seems like this would only be useful in the CreateStepQuery method
-// Something like
-// ReOptimizer::GenerateLeftProjectionMap(LogicalOperator &plan, LogicalComparisonJoin &join, vector<index_t> map)
 
 vector<LogicalOperator *> ReOptimizer::ExtractJoinOperators(LogicalOperator &plan) {
 	// TODO: this selects the deepest rightmost join operator - prefer a better selection method

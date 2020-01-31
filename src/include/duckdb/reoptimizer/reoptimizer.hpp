@@ -39,6 +39,10 @@ public:
 private:
 	//! Creates a CREATE TEMPORARY TABLE query string for the first join to be executed in 'plan'
 	string CreateStepQuery(LogicalComparisonJoin &plan, const string temporary_table_name);
+	//! Generates the left projection map of a join (because it is always empty by default)
+	void GenerateLeftProjectionMap(LogicalOperator &plan, LogicalComparisonJoin &join);
+	//! Counts the number of references to a binding in the plan - used by GenerateLeftProjectionMap
+	int CountBindingReferences(LogicalOperator &plan, ColumnBinding binding);
 	//! Adjusts the original plan by replacing the join with a LogicalGet on the temporary table
 	unique_ptr<LogicalOperator> AdjustPlan(unique_ptr<LogicalOperator> plan, LogicalComparisonJoin &step,
 	                                       string temporary_table_name);
