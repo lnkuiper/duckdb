@@ -24,6 +24,23 @@ using namespace std;
 using namespace duckdb;
 
 // TODO: write tests that figure out if this shit actually works
+// FIXME: avoid use of unique_ptr::get - this copies the whole thang
+/**
+ * One big fucking TODO:
+ * Need to actually set the value of left_projection_map in every LogicalComparisonJoin in the plan
+ * Already know how to compute this, just need to write the code for it
+ * 
+ * Editing the left_projection_map will screw with the projection maps of the parents
+ * - those will need to be changed as well
+ * 
+ * How the fuck do we begin? - might be too difficult to pull off
+ * 
+ * 
+ * 
+ * 
+ * Another approach could be to re-edit the plan after calling Optimize to re-add the column that it optimizes away
+ * This will lead to the same issues as with the other approach - projection maps will be fucked, AND it will be slower
+ *  */
 ReOptimizer::ReOptimizer(ClientContext &context, Binder &binder) : context(context), binder(binder) {
 }
 
@@ -53,7 +70,7 @@ unique_ptr<LogicalOperator> ReOptimizer::CreateStepPlan(unique_ptr<LogicalOperat
 	LogicalComparisonJoin *first_join = static_cast<LogicalComparisonJoin *>(joins.back());
 
 	context.profiler.StartPhase("create_step");
-	GenerateLeftProjectionMap(*plan, *first_join);
+	CreateBindingNameMapping(*plan);
 	string step_query = CreateStepQuery(*first_join, temporary_table_name);
 	context.profiler.EndPhase();
 
@@ -110,55 +127,33 @@ unique_ptr<LogicalOperator> ReOptimizer::CreateStepPlan(unique_ptr<LogicalOperat
 	return plan;
 }
 
-// FIXME: column binding issue can be fixed:
-// by counting how many times a column binding is referenced by a BoundColumnRefExpression
-// can be counted with a method like the one above
-// maybe count usages of each column binding and store in a map??
-// seems like this would only be useful in the CreateStepQuery method
-// Something like
-void ReOptimizer::GenerateLeftProjectionMap(LogicalOperator &plan, LogicalComparisonJoin &join) {
-	vector<ColumnBinding> left_bindings = join.children[0]->GetColumnBindings();
-	for (size_t binding_index = 0; binding_index < left_bindings.size(); binding_index++) {
-		ColumnBinding binding = left_bindings[binding_index];
-		if (CountBindingReferences(plan, binding) > 1) {
-			Printer::Print("COLUMN BINDING " + binding.ToString() + " REFERRED TO MORE THAN ONCE");
-			join.left_projection_map.push_back(binding_index);
-		}
-	}
-}
-
-int ReOptimizer::CountBindingReferences(LogicalOperator &plan, ColumnBinding binding) {
-	int reference_count = 0;
+void ReOptimizer::CreateBindingNameMapping(LogicalOperator &plan) {
 	if (plan.children.empty())
-		return reference_count;
-	// count references in JoinConditions
+		return;
+	// find bindings in JoinConditions
 	if (plan.type == LogicalOperatorType::COMPARISON_JOIN) {
 		LogicalComparisonJoin *join = static_cast<LogicalComparisonJoin *>(&plan);
 		for (size_t condition_index = 0; condition_index < join->conditions.size(); condition_index++) {
 			JoinCondition &join_condition = join->conditions[condition_index];
 			BoundColumnRefExpression l = (BoundColumnRefExpression &)*join_condition.left.get();
 			BoundColumnRefExpression r = (BoundColumnRefExpression &)*join_condition.right.get();
-			if (l.binding == binding)
-				reference_count++;
-			else if (r.binding == binding)
-				reference_count++;
+			binding_name_mapping[l.binding.ToString()] = l.alias;
+			binding_name_mapping[r.binding.ToString()] = r.alias;
+		}
+	} else {
+		// find in expressions (e.g. for LogicalProjection)
+		for (size_t expr_index = 0; expr_index < plan.expressions.size(); expr_index++) {
+			auto &expr = *plan.expressions[expr_index];
+			if (expr.GetExpressionClass() != ExpressionClass::BOUND_COLUMN_REF)
+				continue;
+			BoundColumnRefExpression e = (BoundColumnRefExpression &)expr;
+			binding_name_mapping[e.binding.ToString()] = e.alias;
 		}
 	}
-	// count references found in expressions
-	for (size_t expr_index = 0; expr_index < plan.expressions.size(); expr_index++) {
-		auto &expr = *plan.expressions[expr_index];
-		if (expr.GetExpressionClass() != ExpressionClass::BOUND_COLUMN_REF)
-			continue;
-		BoundColumnRefExpression e = (BoundColumnRefExpression &)expr;
-		if (e.binding == binding)
-			reference_count++;
-	}
 	// recursively propagate operator tree
-	int child_reference_count = 0;
 	for (auto &child : plan.children) {
-		child_reference_count += CountBindingReferences(*child, binding);
+		CreateBindingNameMapping(*child);
 	}
-	return reference_count + child_reference_count;
 }
 
 string ReOptimizer::CreateStepQuery(LogicalComparisonJoin &join, const string temporary_table_name) {
@@ -206,32 +201,22 @@ string ReOptimizer::CreateStepQuery(LogicalComparisonJoin &join, const string te
 		queried_tables.push_back(schema + "." + table_name + " AS " + table_alias);
 
 		// TODO: working on this - big shit
-		TableCatalogEntry *table = GetTable(schema, table_name);
+		// TableCatalogEntry *table = GetTable(schema, table_name);
 
 		// FIXME: left_projection_map is empty - projecting all columns - some of which are removed later
 		vector<ColumnBinding> child_bindings = logical_get->GetColumnBindings();
 		vector<column_t> projection_map = child_index == 0 ? join.left_projection_map : join.right_projection_map;
-		// take all bindings if empty
+		// take all bindings if empty FIXME: probably not needed anymore
 		if (projection_map.empty()) {
 			for (size_t proj_index = 0; proj_index < child_bindings.size(); proj_index++) {
 				projection_map.push_back(proj_index);
 			}
 		}
 
-		Printer::Print("************");
-		Printer::Print(table->name);
-		for (ColumnDefinition &col_def : table->columns) {
-			Printer::Print(col_def.name + " : " + to_string(col_def.oid));
-		}
-		Printer::Print("************");
-
 		// projection map stores indices of bindings, the bindings have column indices
 		for (column_t binding_index : projection_map) {
-			for (ColumnDefinition &col_def : table->columns) {
-				if (child_bindings[binding_index].column_index == col_def.oid) {
-					queried_columns.push_back(table_alias + "." + col_def.name + " AS " + col_def.name);
-				}
-			}
+			string col_name = binding_name_mapping[child_bindings[binding_index].ToString()];
+			queried_columns.push_back(table_alias + "." + col_name + " AS " + col_name);
 		}
 	}
 	// join conditions
@@ -252,7 +237,7 @@ unique_ptr<LogicalOperator> ReOptimizer::AdjustPlan(unique_ptr<LogicalOperator> 
 	unique_ptr<LogicalGet> temp_table_get = make_unique<LogicalGet>(table, 0, vector<column_t>());
 
 	// replace 'step' with 'temp_table_get' in 'plan'
-	bindings_mapping = {}; // reset
+	new_bindings_mapping = {}; // reset
 	ReplaceLogicalOperator(*plan, step, table);
 	return plan;
 }
@@ -277,10 +262,28 @@ void ReOptimizer::ReplaceLogicalOperator(LogicalOperator &plan, LogicalCompariso
 			// binder.bind_context.ReplaceBindingIndex(binder.bind_context.GetBindingAlias(right_table_name),
 			// depth);
 
-			// create mapping to account for new depth of bindings
+			// create mapping to account for new depth of bindings - FIXME: creates too many column bindings because no left map
+			// FIXME: already fixed this in query creation, but we did not set the map there (perhaps do this anyway? - need unique_ptr)
+			// also need to keep own index instead of taking child column index, since we shove everything to the left when one gets removed
+			// -----------------------------------------------------------------------------------------------
+			// vector<column_t> column_ids;
+			// int column_index = 0;
+			// for (size_t i = 0; i < old_op.children.size(); i++) {
+			// 	auto &child = old_op.children[i];
+			// 	vector<column_t> projection_map = i == 0 ? left_projection_map : old_op.right_projection_map;
+			// 	vector<ColumnBinding> child_bindings = child->GetColumnBindings();
+			// 	for (column_t col : projection_map) {
+			// 		new_bindings_mapping[child_bindings[col].ToString()] = ColumnBinding(depth, column_index);
+			// 		column_ids.push_back(column_index);
+			// 		column_index++;
+			// 	}
+			// }
+			// -----------------------------------------------------------------------------------------------
+
+			// int column_index = 0; ????? FIXME:
 			for (auto &child : old_op.children) {
 				for (ColumnBinding child_cb : child->GetColumnBindings()) {
-					bindings_mapping[child_cb.ToString()] = ColumnBinding(depth, child_cb.column_index);
+					new_bindings_mapping[child_cb.ToString()] = ColumnBinding(depth, child_cb.column_index);
 				}
 			}
 			vector<column_t> column_ids;
@@ -307,14 +310,14 @@ void ReOptimizer::FixColumnBindings(LogicalOperator &plan) {
 			JoinCondition &jc = join->conditions[condition_index];
 			BoundColumnRefExpression l = (BoundColumnRefExpression &)*jc.left.get();
 			BoundColumnRefExpression r = (BoundColumnRefExpression &)*jc.right.get();
-			if (bindings_mapping.find(l.ToString()) != bindings_mapping.end()) {
+			if (new_bindings_mapping.find(l.ToString()) != new_bindings_mapping.end()) {
 				unique_ptr<BoundColumnRefExpression> fixed_bcre = make_unique<BoundColumnRefExpression>(
-				    l.alias, l.return_type, bindings_mapping[l.ToString()], l.depth);
+				    l.alias, l.return_type, new_bindings_mapping[l.ToString()], l.depth);
 				join->conditions.at(condition_index).left = move(fixed_bcre);
 			}
-			if (bindings_mapping.find(r.ToString()) != bindings_mapping.end()) {
+			if (new_bindings_mapping.find(r.ToString()) != new_bindings_mapping.end()) {
 				unique_ptr<BoundColumnRefExpression> fixed_bcre = make_unique<BoundColumnRefExpression>(
-				    r.alias, r.return_type, bindings_mapping[r.ToString()], r.depth);
+				    r.alias, r.return_type, new_bindings_mapping[r.ToString()], r.depth);
 				join->conditions.at(condition_index).right = move(fixed_bcre);
 			}
 		}
@@ -326,9 +329,9 @@ void ReOptimizer::FixColumnBindings(LogicalOperator &plan) {
 		if (expr.GetExpressionClass() != ExpressionClass::BOUND_COLUMN_REF)
 			continue;
 		BoundColumnRefExpression e = (BoundColumnRefExpression &)expr;
-		if (bindings_mapping.find(e.ToString()) != bindings_mapping.end()) {
+		if (new_bindings_mapping.find(e.ToString()) != new_bindings_mapping.end()) {
 			unique_ptr<BoundColumnRefExpression> fixed_bcre =
-			    make_unique<BoundColumnRefExpression>(e.alias, e.return_type, bindings_mapping[e.ToString()], e.depth);
+			    make_unique<BoundColumnRefExpression>(e.alias, e.return_type, new_bindings_mapping[e.ToString()], e.depth);
 			plan.expressions.at(expr_index) = move(fixed_bcre);
 		}
 	}

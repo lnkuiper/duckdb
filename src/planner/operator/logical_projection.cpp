@@ -1,5 +1,7 @@
 #include "duckdb/planner/operator/logical_projection.hpp"
 
+#include "duckdb/common/printer.hpp"
+
 using namespace duckdb;
 using namespace std;
 
@@ -8,6 +10,12 @@ LogicalProjection::LogicalProjection(index_t table_index, vector<unique_ptr<Expr
 }
 
 vector<ColumnBinding> LogicalProjection::GetColumnBindings() {
+	vector<ColumnBinding> cbs = GenerateColumnBindings(table_index, expressions.size());
+	string testing = "PROJECTION " + ParamsToString() + " Bindings: ";
+	for (ColumnBinding cb : cbs) {
+		testing += cb.ToString();
+	}
+	Printer::Print(testing);
 	return GenerateColumnBindings(table_index, expressions.size());
 }
 

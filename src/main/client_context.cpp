@@ -176,7 +176,7 @@ unique_ptr<PreparedStatementData> ClientContext::CreatePreparedStatement(const s
 #endif
 		profiler.StartPhase("optimizer");
 		Optimizer optimizer(planner.binder, *this);
-		plan = optimizer.Optimize(move(plan));
+		plan = optimizer.Optimize(move(plan), true);
 		assert(plan);
 		profiler.EndPhase();
 #ifdef DEBUG
@@ -219,7 +219,7 @@ unique_ptr<PreparedStatementData> ClientContext::CreatePreparedStatementReOpt(co
 #endif
 		profiler.StartPhase("optimizer");
 		Optimizer optimizer(planner.binder, *this);
-		plan = optimizer.Optimize(move(plan));
+		plan = optimizer.Optimize(move(plan), true);
 		assert(plan);
 		profiler.EndPhase();
 #ifdef DEBUG
@@ -240,7 +240,7 @@ unique_ptr<PreparedStatementData> ClientContext::CreatePreparedStatementReOpt(co
 
 		profiler.StartPhase("optimizer");
 		Optimizer optimizer(reoptimizer.binder, *this);
-		plan = optimizer.Optimize(move(plan));
+		plan = optimizer.Optimize(move(plan), false);
 		assert(plan);
 		profiler.EndPhase();
 	}

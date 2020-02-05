@@ -1,5 +1,6 @@
 #include "duckdb/planner/operator/logical_join.hpp"
 
+#include "duckdb/common/printer.hpp"
 #include "duckdb/planner/expression/bound_columnref_expression.hpp"
 #include "duckdb/planner/expression_iterator.hpp"
 
@@ -21,9 +22,33 @@ vector<ColumnBinding> LogicalJoin::GetColumnBindings() {
 		left_bindings.push_back(ColumnBinding(mark_index, 0));
 		return left_bindings;
 	}
+	string testing = "JOIN " + ParamsToString() + " Bindings: ";
+	for (ColumnBinding cb : children[0]->GetColumnBindings()) {
+		testing += cb.ToString();
+	}
+	testing += " - ";
+	for (ColumnBinding cb : children[1]->GetColumnBindings()) {
+		testing += cb.ToString();
+	}
+	testing += ", l:";
+	for (index_t i : left_projection_map) {
+		testing += to_string(i);
+	}
+	testing += ", r:";
+	for (index_t i : right_projection_map) {
+		testing += to_string(i);
+	}
+
 	// for other join types we project both the LHS and the RHS
 	auto right_bindings = MapBindings(children[1]->GetColumnBindings(), right_projection_map);
 	left_bindings.insert(left_bindings.end(), right_bindings.begin(), right_bindings.end());
+
+	testing += " || ";
+	for (ColumnBinding cb : left_bindings) {
+		testing += cb.ToString();
+	}
+	Printer::Print(testing);
+
 	return left_bindings;
 }
 

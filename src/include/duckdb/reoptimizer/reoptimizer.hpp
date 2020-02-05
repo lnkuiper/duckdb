@@ -37,12 +37,10 @@ public:
 	int remaining_joins = 0;
 
 private:
+	//! Fill binding_name_mapping with (binding -> alias)
+	void CreateBindingNameMapping(LogicalOperator &plan);
 	//! Creates a CREATE TEMPORARY TABLE query string for the first join to be executed in 'plan'
 	string CreateStepQuery(LogicalComparisonJoin &plan, const string temporary_table_name);
-	//! Generates the left projection map of a join (because it is always empty by default)
-	void GenerateLeftProjectionMap(LogicalOperator &plan, LogicalComparisonJoin &join);
-	//! Counts the number of references to a binding in the plan - used by GenerateLeftProjectionMap
-	int CountBindingReferences(LogicalOperator &plan, ColumnBinding binding);
 	//! Adjusts the original plan by replacing the join with a LogicalGet on the temporary table
 	unique_ptr<LogicalOperator> AdjustPlan(unique_ptr<LogicalOperator> plan, LogicalComparisonJoin &step,
 	                                       string temporary_table_name);
@@ -62,8 +60,10 @@ private:
 	//! Utility to join strings like in Java, Python
 	string JoinStrings(vector<string> strings, string delimiter);
 
+	//! Binding to name mapping (created by CountBindingReferences)
+	unordered_map<string, string> binding_name_mapping;
 	//! The new column bindings (after replacing JOIN with GET)
-	unordered_map<string, ColumnBinding> bindings_mapping;
+	unordered_map<string, ColumnBinding> new_bindings_mapping;
 };
 
 } // namespace duckdb

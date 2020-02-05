@@ -20,6 +20,8 @@ class LogicalComparisonJoin : public LogicalJoin {
 public:
 	LogicalComparisonJoin(JoinType type, LogicalOperatorType logical_type = LogicalOperatorType::COMPARISON_JOIN);
 
+	vector<ColumnBinding> GetColumnBindings() override;
+
 	//! The conditions of the join
 	vector<JoinCondition> conditions;
 
