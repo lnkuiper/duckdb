@@ -192,9 +192,6 @@ string ReOptimizer::CreateStepQuery(LogicalComparisonJoin &join, const string te
 		default:
 			throw new ReOptimizerException("Expected child of join to be GET or FILTER, got '%s' instead", child->type);
 		}
-		// Set queried table name values for use later (FIXME: might not be needed - see TODO in ReplaceLogicalOperator)
-		// if (i == 0) left_table_name = logical_get->table->name;
-		// if (i == 1) right_table_name = logical_get->table->name;
 
 		string schema = logical_get->table->schema->name;
 		string table_name = logical_get->table->name;
@@ -256,12 +253,6 @@ void ReOptimizer::ReplaceLogicalOperator(LogicalOperator &plan, LogicalCompariso
 		LogicalComparisonJoin *join = static_cast<LogicalComparisonJoin *>(child.get());
 
 		if (join->ParamsToString() == old_op.ParamsToString()) {
-			// TODO: find out if these two lines are needed (seems like NO, maybe when Optimize again?)
-			// binder.bind_context.ReplaceBindingIndex(binder.bind_context.GetBindingAlias(left_table_name),
-			// depth);
-			// binder.bind_context.ReplaceBindingIndex(binder.bind_context.GetBindingAlias(right_table_name),
-			// depth);
-
 			// create mapping to account for new depth of bindings - FIXME: creates too many column bindings because no left map
 			// FIXME: already fixed this in query creation, but we did not set the map there (perhaps do this anyway? - need unique_ptr)
 			// also need to keep own index instead of taking child column index, since we shove everything to the left when one gets removed

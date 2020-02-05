@@ -25,10 +25,6 @@ public:
 	//! Executes the first join, then adapts the plan accordingly FIXME: rename
 	unique_ptr<LogicalOperator> CreateStepPlan(unique_ptr<LogicalOperator> plan, const string temporary_table_name);
 
-	//! Names of the left and right tables of the first join
-	// string left_table_name;
-	// string right_table_name;
-
 	//! The client context
 	ClientContext &context;
 	//! The binder
