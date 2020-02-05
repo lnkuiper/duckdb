@@ -20,19 +20,26 @@ class Binder;
 
 class ReOptimizer {
 public:
-	ReOptimizer(ClientContext &context, Binder &binder);
+	ReOptimizer(ClientContext &context);
 
 	//! Executes the first join, then adapts the plan accordingly FIXME: rename
 	unique_ptr<LogicalOperator> CreateStepPlan(unique_ptr<LogicalOperator> plan, const string temporary_table_name);
 
 	//! The client context
 	ClientContext &context;
-	//! The binder
-	Binder &binder;
 
+	//! The amount of remaining joins in the plan given to the last call to CreateStepPlan
 	int remaining_joins = 0;
 
+public:
+	//! Empty all left projection maps again (required by PhysicalPlanGenerator - PhysicalHashJoin assert)
+	static unique_ptr<LogicalOperator> EmptyLeftProjectionMaps(unique_ptr<LogicalOperator> plan);
+
 private:
+	//! Returns all join operators in the plan - the last element is the first one to be executed
+	vector<LogicalOperator *> ExtractJoinOperators(LogicalOperator &plan);
+	//! Generate left projection map for joins in the plan, and change right map accordingly
+	unique_ptr<LogicalOperator> GenerateProjectionMaps(unique_ptr<LogicalOperator> plan);
 	//! Fill binding_name_mapping with (binding -> alias)
 	void CreateBindingNameMapping(LogicalOperator &plan);
 	//! Creates a CREATE TEMPORARY TABLE query string for the first join to be executed in 'plan'
@@ -40,18 +47,13 @@ private:
 	//! Adjusts the original plan by replacing the join with a LogicalGet on the temporary table
 	unique_ptr<LogicalOperator> AdjustPlan(unique_ptr<LogicalOperator> plan, LogicalComparisonJoin &step,
 	                                       string temporary_table_name);
+	//! Get a (works around autocommit stuff)
+	TableCatalogEntry *GetTable(string schema, string table_name);
 	//! Replaces the join 'old_op' in 'plan' with the given operator 'new_op'
 	void ReplaceLogicalOperator(LogicalOperator &plan, LogicalComparisonJoin &old_op, TableCatalogEntry *table,
 	                            index_t depth = 3);
 	//! Fixes column bindings after replacing JOIN with GET
 	void FixColumnBindings(LogicalOperator &plan);
-
-	//! Returns all join operators in the plan - the last element is the first one to be executed
-	vector<LogicalOperator *> ExtractJoinOperators(LogicalOperator &plan);
-	//! Extracts pointers to TableCatalogEntry for each LogicalGet in 'plan'
-	std::set<TableCatalogEntry *> ExtractGetTables(LogicalOperator &plan);
-	//! Get a (works around autocommit stuff)
-	TableCatalogEntry *GetTable(string schema, string table_name);
 
 	//! Utility to join strings like in Java, Python
 	string JoinStrings(vector<string> strings, string delimiter);

@@ -67,7 +67,7 @@ public:
 
 } // namespace duckdb
 
-unique_ptr<LogicalOperator> Optimizer::Optimize(unique_ptr<LogicalOperator> plan, bool remove_unused) {
+unique_ptr<LogicalOperator> Optimizer::Optimize(unique_ptr<LogicalOperator> plan) {
 	// first we perform expression rewrites using the ExpressionRewriter
 	// this does not change the logical plan structure, but only simplifies the expression trees
 	context.profiler.StartPhase("expression_rewriter");
@@ -109,17 +109,15 @@ unique_ptr<LogicalOperator> Optimizer::Optimize(unique_ptr<LogicalOperator> plan
 	// cse_optimizer.VisitOperator(*plan);
 	// context.profiler.EndPhase();
 
-	if (remove_unused) {
-		context.profiler.StartPhase("unused_columns");
-		RemoveUnusedColumns unused(true);
-		unused.VisitOperator(*plan);
-		context.profiler.EndPhase();
+	context.profiler.StartPhase("unused_columns");
+	RemoveUnusedColumns unused(true);
+	unused.VisitOperator(*plan);
+	context.profiler.EndPhase();
 
-		context.profiler.StartPhase("column_lifetime");
-		ColumnLifetimeAnalyzer column_lifetime(true);
-		column_lifetime.VisitOperator(*plan);
-		context.profiler.EndPhase();
-	}
+	context.profiler.StartPhase("column_lifetime");
+	ColumnLifetimeAnalyzer column_lifetime(true);
+	column_lifetime.VisitOperator(*plan);
+	context.profiler.EndPhase();
 
 	// transform ORDER BY + LIMIT to TopN
 	context.profiler.StartPhase("top_n");

@@ -176,7 +176,7 @@ unique_ptr<PreparedStatementData> ClientContext::CreatePreparedStatement(const s
 #endif
 		profiler.StartPhase("optimizer");
 		Optimizer optimizer(planner.binder, *this);
-		plan = optimizer.Optimize(move(plan), true);
+		plan = optimizer.Optimize(move(plan));
 		assert(plan);
 		profiler.EndPhase();
 #ifdef DEBUG
@@ -219,7 +219,7 @@ unique_ptr<PreparedStatementData> ClientContext::CreatePreparedStatementReOpt(co
 #endif
 		profiler.StartPhase("optimizer");
 		Optimizer optimizer(planner.binder, *this);
-		plan = optimizer.Optimize(move(plan), true);
+		plan = optimizer.Optimize(move(plan));
 		assert(plan);
 		profiler.EndPhase();
 #ifdef DEBUG
@@ -227,7 +227,7 @@ unique_ptr<PreparedStatementData> ClientContext::CreatePreparedStatementReOpt(co
 #endif
 
 	profiler.StartPhase("reoptimizer");
-	ReOptimizer reoptimizer = ReOptimizer(*this, planner.binder);
+	ReOptimizer reoptimizer = ReOptimizer(*this);
 	hash<string> hasher;
 	const string tablename_prefix = "_reopt_temp_" + to_string(hasher(query));
 	for (int i = 0; true; i++) {
@@ -239,11 +239,12 @@ unique_ptr<PreparedStatementData> ClientContext::CreatePreparedStatementReOpt(co
 			break;
 
 		profiler.StartPhase("optimizer");
-		Optimizer optimizer(reoptimizer.binder, *this);
-		plan = optimizer.Optimize(move(plan), false);
+		Optimizer optimizer(planner.binder, *this);
+		plan = optimizer.Optimize(move(plan));
 		assert(plan);
 		profiler.EndPhase();
 	}
+	plan = ReOptimizer::EmptyLeftProjectionMaps(move(plan));
 	profiler.EndPhase();
 
 	profiler.StartPhase("physical_planner");

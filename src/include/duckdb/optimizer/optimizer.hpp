@@ -19,7 +19,7 @@ class Optimizer {
 public:
 	Optimizer(Binder &binder, ClientContext &context);
 
-	unique_ptr<LogicalOperator> Optimize(unique_ptr<LogicalOperator> plan, bool remove_unused);
+	unique_ptr<LogicalOperator> Optimize(unique_ptr<LogicalOperator> plan);
 
 	ClientContext &context;
 	Binder &binder;
