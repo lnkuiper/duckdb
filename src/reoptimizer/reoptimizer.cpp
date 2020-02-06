@@ -43,8 +43,7 @@ unique_ptr<LogicalOperator> ReOptimizer::ReOptimize(unique_ptr<LogicalOperator> 
 	return plan;
 }
 
-unique_ptr<LogicalOperator> ReOptimizer::SubQuery(unique_ptr<LogicalOperator> plan,
-                                                        const string temporary_table_name) {
+unique_ptr<LogicalOperator> ReOptimizer::SubQuery(unique_ptr<LogicalOperator> plan, const string temporary_table_name) {
 	vector<LogicalOperator *> joins = ExtractJoinOperators(*plan);
 	remaining_joins = joins.size();
 	if (remaining_joins <= 1)
@@ -76,7 +75,7 @@ unique_ptr<LogicalOperator> ReOptimizer::SubQuery(unique_ptr<LogicalOperator> pl
 	context.profiler.EndPhase();
 
 	context.profiler.StartPhase("create_subquery");
-	string subquery = CreateStepQuery(*first_join, temporary_table_name);
+	string subquery = CreateSubQuery(*first_join, temporary_table_name);
 	context.profiler.EndPhase();
 
 	Printer::Print(subquery);
@@ -189,7 +188,8 @@ unique_ptr<LogicalOperator> ReOptimizer::GenerateProjectionMaps(unique_ptr<Logic
 		}
 		// add index of needed bindings, and keep track of removed columns
 		auto *child_join = static_cast<LogicalComparisonJoin *>(plan->children[1].get());
-		vector<ColumnBinding> left_cbs = LogicalOperator::MapBindings(child_join->children[0]->GetColumnBindings(), child_join->left_projection_map);
+		vector<ColumnBinding> left_cbs =
+		    LogicalOperator::MapBindings(child_join->children[0]->GetColumnBindings(), child_join->left_projection_map);
 		vector<column_t> removed_columns;
 		for (column_t cb_index = 0; cb_index < left_cbs.size(); cb_index++) {
 			bool keep = false;
@@ -210,7 +210,7 @@ unique_ptr<LogicalOperator> ReOptimizer::GenerateProjectionMaps(unique_ptr<Logic
 			column_t decr = 0;
 			for (column_t removed_col : removed_columns) {
 				if (removed_col < join->right_projection_map[rpi]) {
-					decr ++;
+					decr++;
 				}
 			}
 			join->right_projection_map[rpi] -= decr;
@@ -252,7 +252,7 @@ void ReOptimizer::CreateBindingNameMapping(LogicalOperator &plan) {
 	}
 }
 
-string ReOptimizer::CreateStepQuery(LogicalComparisonJoin &join, const string temporary_table_name) {
+string ReOptimizer::CreateSubQuery(LogicalComparisonJoin &join, const string temporary_table_name) {
 	vector<string> queried_tables;
 	vector<string> queried_columns;
 	vector<string> where_conditions;
@@ -318,16 +318,14 @@ string ReOptimizer::CreateStepQuery(LogicalComparisonJoin &join, const string te
 	       JoinStrings(where_conditions, " AND ") + ");";
 }
 
-unique_ptr<LogicalOperator> ReOptimizer::AdjustPlan(unique_ptr<LogicalOperator> plan, LogicalComparisonJoin &step,
+unique_ptr<LogicalOperator> ReOptimizer::AdjustPlan(unique_ptr<LogicalOperator> plan, LogicalComparisonJoin &old_op,
                                                     const string temporary_table_name) {
 	TableCatalogEntry *table = GetTable("main", temporary_table_name);
-
 	// Create a LogicalGet for the newly made temporary table (empty column_ids - filled in "ReplaceLogicalOperator")
 	unique_ptr<LogicalGet> temp_table_get = make_unique<LogicalGet>(table, 0, vector<column_t>());
-
-	// replace 'step' with 'temp_table_get' in 'plan'
+	// replace 'subplan' with 'temp_table_get' in 'plan'
 	new_bindings_mapping = {}; // reset
-	ReplaceLogicalOperator(*plan, step, table);
+	ReplaceLogicalOperator(*plan, old_op, table);
 	remaining_joins--;
 	return plan;
 }
@@ -403,8 +401,8 @@ void ReOptimizer::FixColumnBindings(LogicalOperator &plan) {
 			continue;
 		auto e = (BoundColumnRefExpression &)expr;
 		if (new_bindings_mapping.find(e.ToString()) != new_bindings_mapping.end()) {
-			unique_ptr<BoundColumnRefExpression> fixed_bcre =
-			    make_unique<BoundColumnRefExpression>(e.alias, e.return_type, new_bindings_mapping[e.ToString()], e.depth);
+			unique_ptr<BoundColumnRefExpression> fixed_bcre = make_unique<BoundColumnRefExpression>(
+			    e.alias, e.return_type, new_bindings_mapping[e.ToString()], e.depth);
 			plan.expressions.at(expr_index) = move(fixed_bcre);
 		}
 	}

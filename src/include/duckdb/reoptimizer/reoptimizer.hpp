@@ -33,9 +33,9 @@ private:
 	//! Fill binding_name_mapping with (binding -> alias)
 	void CreateBindingNameMapping(LogicalOperator &plan);
 	//! Creates a CREATE TEMPORARY TABLE query string for the first join to be executed in 'plan'
-	string CreateStepQuery(LogicalComparisonJoin &plan, const string temporary_table_name);
+	string CreateSubQuery(LogicalComparisonJoin &plan, const string temporary_table_name);
 	//! Adjusts the original plan by replacing the join with a LogicalGet on the temporary table
-	unique_ptr<LogicalOperator> AdjustPlan(unique_ptr<LogicalOperator> plan, LogicalComparisonJoin &step,
+	unique_ptr<LogicalOperator> AdjustPlan(unique_ptr<LogicalOperator> plan, LogicalComparisonJoin &old_op,
 	                                       string temporary_table_name);
 	//! Get a (works around autocommit stuff)
 	TableCatalogEntry *GetTable(string schema, string table_name);
