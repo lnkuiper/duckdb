@@ -56,9 +56,9 @@ private:
 	Binder &binder;
 
 	//! Binding to name mapping (created by CountBindingReferences)
-	unordered_map<string, string> binding_name_mapping;
+	unordered_map<string, string> binding_to_alias;
 	//! The new column bindings (after replacing JOIN with GET)
-	unordered_map<string, ColumnBinding> new_bindings_mapping;
+	unordered_map<string, ColumnBinding> rebind_mapping;
 
 	//! The amount of remaining joins in the plan given to the last call to CreateSubQuery
 	int remaining_joins = 0;
