@@ -119,9 +119,6 @@ private:
 
 	//! Internally prepare a SQL statement. Caller must hold the context_lock.
 	unique_ptr<PreparedStatementData> CreatePreparedStatement(const string &query, unique_ptr<SQLStatement> statement);
-	//! Copy of CreatePreparedStatement - with re-optimization
-	unique_ptr<PreparedStatementData> CreatePreparedStatementReOpt(const string &query,
-	                                                               unique_ptr<SQLStatement> statement);
 	//! Internally execute a prepared SQL statement. Caller must hold the context_lock.
 	unique_ptr<QueryResult> ExecutePreparedStatement(const string &query, PreparedStatementData &statement,
 	                                                 vector<Value> bound_values, bool allow_stream_result);

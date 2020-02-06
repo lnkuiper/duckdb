@@ -183,69 +183,12 @@ unique_ptr<PreparedStatementData> ClientContext::CreatePreparedStatement(const s
 	}
 #endif
 
-	profiler.StartPhase("physical_planner");
-	// now convert logical query plan into a physical query plan
-	PhysicalPlanGenerator physical_planner(*this);
-	auto physical_plan = physical_planner.CreatePlan(move(plan));
-	profiler.EndPhase();
-
-	result->dependencies = move(physical_planner.dependencies);
-	result->types = physical_plan->types;
-	result->plan = move(physical_plan);
-	return result;
-}
-
-unique_ptr<PreparedStatementData> ClientContext::CreatePreparedStatementReOpt(const string &query,
-                                                                              unique_ptr<SQLStatement> statement) {
-	StatementType statement_type = statement->type;
-	auto result = make_unique<PreparedStatementData>(statement_type);
-
-	profiler.StartPhase("planner");
-	Planner planner(*this);
-	planner.CreatePlan(move(statement));
-	assert(planner.plan);
-	profiler.EndPhase();
-
-	auto plan = move(planner.plan);
-	// extract the result column names from the plan
-	result->read_only = planner.read_only;
-	result->requires_valid_transaction = planner.requires_valid_transaction;
-	result->names = planner.names;
-	result->sql_types = planner.sql_types;
-	result->value_map = move(planner.value_map);
-
-#ifdef DEBUG
-	if (enable_optimizer) {
-#endif
-		profiler.StartPhase("optimizer");
-		Optimizer optimizer(planner.binder, *this);
-		plan = optimizer.Optimize(move(plan));
-		assert(plan);
-		profiler.EndPhase();
-#ifdef DEBUG
-	}
-#endif
-
-	profiler.StartPhase("reoptimizer");
-	ReOptimizer reoptimizer = ReOptimizer(*this);
-	hash<string> hasher;
-	const string tablename_prefix = "_reopt_temp_" + to_string(hasher(query));
-	for (int i = 0; true; i++) {
-		const string temp_table_name = tablename_prefix + "_" + to_string(i);
-		plan = reoptimizer.CreateStepPlan(move(plan), temp_table_name);
-
-		// if 0 or 1 joins remain the plan can be finished normally
-		if (reoptimizer.remaining_joins <= 1)
-			break;
-
-		profiler.StartPhase("optimizer");
-		Optimizer optimizer(planner.binder, *this);
-		plan = optimizer.Optimize(move(plan));
-		assert(plan);
+	if (enable_reoptimizer && plan->type == LogicalOperatorType::PREPARE) {
+		profiler.StartPhase("reoptimizer");
+		ReOptimizer reoptimizer = ReOptimizer(*this, planner.binder);
+		plan = reoptimizer.ReOptimize(move(plan), query);
 		profiler.EndPhase();
 	}
-	plan = ReOptimizer::EmptyLeftProjectionMaps(move(plan));
-	profiler.EndPhase();
 
 	profiler.StartPhase("physical_planner");
 	// now convert logical query plan into a physical query plan
@@ -386,15 +329,10 @@ void ClientContext::RemovePreparedStatement(PreparedStatement *statement) {
 
 unique_ptr<QueryResult> ClientContext::RunStatementInternal(const string &query, unique_ptr<SQLStatement> statement,
                                                             bool allow_stream_result) {
+	// prepare the query for execution
+	auto prepared = CreatePreparedStatement(query, move(statement));
 	// by default, no values are bound
 	vector<Value> bound_values;
-	// prepare the query for execution
-	unique_ptr<PreparedStatementData> prepared;
-	if (enable_reoptimizer && statement->type == StatementType::PREPARE) {
-		prepared = CreatePreparedStatementReOpt(query, move(statement));
-	} else {
-		prepared = CreatePreparedStatement(query, move(statement));
-	}
 	// execute the prepared statement
 	return ExecutePreparedStatement(query, *prepared, move(bound_values), allow_stream_result);
 }

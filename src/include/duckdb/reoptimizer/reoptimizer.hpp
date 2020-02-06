@@ -8,8 +8,6 @@
 
 #pragma once
 
-#include <set>
-
 #include "duckdb/main/client_context.hpp"
 #include "duckdb/planner/binder.hpp"
 #include "duckdb/planner/column_binding.hpp"
@@ -20,22 +18,14 @@ class Binder;
 
 class ReOptimizer {
 public:
-	ReOptimizer(ClientContext &context);
+	ReOptimizer(ClientContext &context, Binder &binder);
 
-	//! Executes the first join, then adapts the plan accordingly FIXME: rename
-	unique_ptr<LogicalOperator> CreateStepPlan(unique_ptr<LogicalOperator> plan, const string temporary_table_name);
-
-	//! The client context
-	ClientContext &context;
-
-	//! The amount of remaining joins in the plan given to the last call to CreateStepPlan
-	int remaining_joins = 0;
-
-public:
-	//! Empty all left projection maps again (required by PhysicalPlanGenerator - PhysicalHashJoin assert)
-	static unique_ptr<LogicalOperator> EmptyLeftProjectionMaps(unique_ptr<LogicalOperator> plan);
+	//! Reoptimization loop until only 1 join remains
+	unique_ptr<LogicalOperator> ReOptimize(unique_ptr<LogicalOperator> plan, const string query);
 
 private:
+	//! Executes the first join, then adapts the plan accordingly FIXME
+	unique_ptr<LogicalOperator> SubQuery(unique_ptr<LogicalOperator> plan, const string temporary_table_name);
 	//! Returns all join operators in the plan - the last element is the first one to be executed
 	vector<LogicalOperator *> ExtractJoinOperators(LogicalOperator &plan);
 	//! Generate left projection map for joins in the plan, and change right map accordingly
@@ -54,14 +44,24 @@ private:
 	                            index_t depth = 3);
 	//! Fixes column bindings after replacing JOIN with GET
 	void FixColumnBindings(LogicalOperator &plan);
+	//! Empty all left projection maps again (required by PhysicalPlanGenerator - PhysicalHashJoin assert)
+	unique_ptr<LogicalOperator> ClearLeftProjectionMaps(unique_ptr<LogicalOperator> plan);
 
 	//! Utility to join strings like in Java, Python
 	string JoinStrings(vector<string> strings, string delimiter);
+
+	//! The client context
+	ClientContext &context;
+	//! The binder
+	Binder &binder;
 
 	//! Binding to name mapping (created by CountBindingReferences)
 	unordered_map<string, string> binding_name_mapping;
 	//! The new column bindings (after replacing JOIN with GET)
 	unordered_map<string, ColumnBinding> new_bindings_mapping;
+
+	//! The amount of remaining joins in the plan given to the last call to CreateSubQuery
+	int remaining_joins = 0;
 };
 
 } // namespace duckdb

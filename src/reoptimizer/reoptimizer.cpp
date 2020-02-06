@@ -4,6 +4,7 @@
 #include "duckdb/common/unordered_map.hpp"
 #include "duckdb/common/enums/expression_type.hpp"
 #include "duckdb/common/enums/logical_operator_type.hpp"
+#include "duckdb/optimizer/optimizer.hpp"
 #include "duckdb/planner/expression/bound_columnref_expression.hpp"
 #include "duckdb/planner/expression/bound_comparison_expression.hpp"
 #include "duckdb/planner/operator/logical_comparison_join.hpp"
@@ -11,16 +12,38 @@
 #include "duckdb/planner/operator/logical_get.hpp"
 #include "duckdb/planner/operator/logical_join.hpp"
 #include "duckdb/planner/operator/logical_projection.hpp"
-// #include "duckdb/transaction/transaction.hpp"
 
 using namespace std;
 using namespace duckdb;
 
 // TODO: write tests that figure out if this shit actually works
-ReOptimizer::ReOptimizer(ClientContext &context) : context(context) {
+ReOptimizer::ReOptimizer(ClientContext &context, Binder &binder) : context(context), binder(binder) {
 }
 
-unique_ptr<LogicalOperator> ReOptimizer::CreateStepPlan(unique_ptr<LogicalOperator> plan,
+unique_ptr<LogicalOperator> ReOptimizer::ReOptimize(unique_ptr<LogicalOperator> plan, const string query) {
+	const string tablename_prefix = "_reopt_temp_" + to_string(hash<string>{}(query));
+	for (int i = 0; true; i++) {
+		const string temp_table_name = tablename_prefix + "_" + to_string(i);
+		plan = SubQuery(move(plan), temp_table_name);
+		// if 0 or 1 joins remain the plan can be finished normally
+		if (remaining_joins <= 1)
+			break;
+		context.profiler.StartPhase("optimizer");
+		bool enabled = context.profiler.IsEnabled();
+		context.profiler.Disable(); // not interested in optimizer sub-phases
+		Optimizer optimizer(binder, context);
+		plan = optimizer.Optimize(move(plan));
+		if (enabled)
+			context.profiler.Enable();
+		context.profiler.EndPhase();
+	}
+	context.profiler.StartPhase("clear_left_proj_maps");
+	plan = ClearLeftProjectionMaps(move(plan));
+	context.profiler.EndPhase();
+	return plan;
+}
+
+unique_ptr<LogicalOperator> ReOptimizer::SubQuery(unique_ptr<LogicalOperator> plan,
                                                         const string temporary_table_name) {
 	vector<LogicalOperator *> joins = ExtractJoinOperators(*plan);
 	remaining_joins = joins.size();
@@ -52,28 +75,28 @@ unique_ptr<LogicalOperator> ReOptimizer::CreateStepPlan(unique_ptr<LogicalOperat
 	CreateBindingNameMapping(*plan);
 	context.profiler.EndPhase();
 
-	context.profiler.StartPhase("create_step");
-	string step_query = CreateStepQuery(*first_join, temporary_table_name);
+	context.profiler.StartPhase("create_subquery");
+	string subquery = CreateStepQuery(*first_join, temporary_table_name);
 	context.profiler.EndPhase();
 
-	Printer::Print(step_query);
+	Printer::Print(subquery);
 
-	context.profiler.StartPhase("execute_step");
+	context.profiler.StartPhase("execute_subquery");
 	// store state of autocommit and profiler
 	bool auto_commit = context.transaction.IsAutoCommit();
 	bool profiler_enabled = context.profiler.IsEnabled();
 	// disable both
 	context.transaction.SetAutoCommit(false);
 	context.profiler.Disable();
-	// hack in a query - without autocommit or profiling (otherwise we get segfault / assertion fail)
-	context.QueryWithoutLock(step_query, false);
+	// hack in a query - without autocommit, profiling or lock (else segfault / assertion fail / deadlock)
+	context.QueryWithoutLock(subquery, false);
 	// restore the state of autocommit and profiler
 	if (profiler_enabled)
 		context.profiler.Enable();
 	context.transaction.SetAutoCommit(auto_commit);
 	context.profiler.EndPhase();
 
-	context.profiler.StartPhase("edit_plan");
+	context.profiler.StartPhase("adjust_plan");
 	plan = AdjustPlan(move(plan), *first_join, temporary_table_name);
 	context.profiler.EndPhase();
 
@@ -115,11 +138,11 @@ unique_ptr<LogicalOperator> ReOptimizer::GenerateProjectionMaps(unique_ptr<Logic
 	for (auto &child : plan->children) {
 		if (child->type == LogicalOperatorType::COMPARISON_JOIN || child->type == LogicalOperatorType::PROJECTION) {
 			done = false;
+			break;
 		}
 	}
 	if (done)
 		return plan;
-
 	// store the column bindings that are needed by the parents of the child join
 	vector<ColumnBinding> column_bindings;
 	if (plan->type == LogicalOperatorType::PROJECTION) {
@@ -164,10 +187,9 @@ unique_ptr<LogicalOperator> ReOptimizer::GenerateProjectionMaps(unique_ptr<Logic
 					column_bindings.push_back(new_cb);
 			}
 		}
-		
+		// add index of needed bindings, and keep track of removed columns
 		auto *child_join = static_cast<LogicalComparisonJoin *>(plan->children[1].get());
 		vector<ColumnBinding> left_cbs = LogicalOperator::MapBindings(child_join->children[0]->GetColumnBindings(), child_join->left_projection_map);
-		// add index of needed bindings, and keep track of removed columns
 		vector<column_t> removed_columns;
 		for (column_t cb_index = 0; cb_index < left_cbs.size(); cb_index++) {
 			bool keep = false;
@@ -179,7 +201,6 @@ unique_ptr<LogicalOperator> ReOptimizer::GenerateProjectionMaps(unique_ptr<Logic
 			}
 			if (keep) {
 				child_join->left_projection_map.push_back(cb_index);
-				// Printer::Print("Pushing " + to_string(cb_index) + " into " + child_join->ParamsToString());
 			} else {
 				removed_columns.push_back(cb_index);
 			}
@@ -393,7 +414,7 @@ void ReOptimizer::FixColumnBindings(LogicalOperator &plan) {
 	}
 }
 
-unique_ptr<LogicalOperator> ReOptimizer::EmptyLeftProjectionMaps(unique_ptr<LogicalOperator> plan) {
+unique_ptr<LogicalOperator> ReOptimizer::ClearLeftProjectionMaps(unique_ptr<LogicalOperator> plan) {
 	if (plan->children.empty())
 		return plan;
 	if (plan->type == LogicalOperatorType::COMPARISON_JOIN) {
@@ -401,7 +422,7 @@ unique_ptr<LogicalOperator> ReOptimizer::EmptyLeftProjectionMaps(unique_ptr<Logi
 		join->left_projection_map.clear();
 	}
 	for (size_t i = 0; i < plan->children.size(); i++) {
-		plan->children[i] = EmptyLeftProjectionMaps(move(plan->children[i]));
+		plan->children[i] = ClearLeftProjectionMaps(move(plan->children[i]));
 	}
 	return plan;
 }
