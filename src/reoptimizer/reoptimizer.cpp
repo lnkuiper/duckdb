@@ -23,24 +23,19 @@ ReOptimizer::ReOptimizer(ClientContext &context, Binder &binder) : context(conte
 unique_ptr<LogicalOperator> ReOptimizer::ReOptimize(unique_ptr<LogicalOperator> plan, const string query) {
 	const string tablename_prefix = "_reopt_temp_" + to_string(hash<string>{}(query));
 	for (int iter = 0; true; iter++) {
-		context.profiler.StartPhase(to_string(iter)); // time each iteration
+		// profiling for each iteration
+		context.profiler.StartPhase(to_string(iter));
+		// Create and execute subquery, adjust plan
 		const string temp_table_name = tablename_prefix + "_" + to_string(iter);
-		plan = SubQuery(move(plan), temp_table_name);
-		// if 0 or 1 joins remain the plan can be finished normally
-		if (remaining_joins <= 1) {
+		plan = PerformPartialPlan(move(plan), temp_table_name);
+		if (done) {
 			context.profiler.EndPhase();
 			break;
 		}
 		context.profiler.StartPhase("optimizer");
-		// not interested in optimizer sub-phases
-		bool enabled = context.profiler.IsEnabled();
-		context.profiler.Disable();
-		Optimizer optimizer(binder, context);
-		plan = optimizer.Optimize(move(plan));
-		if (enabled)
-			context.profiler.Enable();
+		plan = CallOptimizer(move(plan));
 		context.profiler.EndPhase();
-		// end iteration phase
+		// end iteration profiling phase
 		context.profiler.EndPhase();
 	}
 	context.profiler.StartPhase("clear_left_proj_maps");
@@ -49,14 +44,14 @@ unique_ptr<LogicalOperator> ReOptimizer::ReOptimize(unique_ptr<LogicalOperator> 
 	return plan;
 }
 
-unique_ptr<LogicalOperator> ReOptimizer::SubQuery(unique_ptr<LogicalOperator> plan, const string temporary_table_name) {
-	vector<LogicalOperator *> joins = ExtractJoinOperators(*plan);
-	remaining_joins = joins.size();
-	if (remaining_joins <= 1)
-		return plan;
+unique_ptr<LogicalOperator> ReOptimizer::PerformPartialPlan(unique_ptr<LogicalOperator> plan, const string temporary_table_name) {
+	context.profiler.StartPhase("decide_subquery");
+	auto *subquery_plan = DecideSubQueryPlan(*plan);
+	context.profiler.EndPhase();
 
-	// auto *first_join = static_cast<LogicalComparisonJoin *>(joins.back());
-	auto *first_join = static_cast<LogicalComparisonJoin *>(joins[remaining_joins - 2]);
+	if (done)
+		return plan;
+	auto *join_subquery_plan = static_cast<LogicalComparisonJoin *>(subquery_plan);
 
 	plan->Print();
 	// Printer::Print("----------------------------- before");
@@ -84,28 +79,17 @@ unique_ptr<LogicalOperator> ReOptimizer::SubQuery(unique_ptr<LogicalOperator> pl
 	context.profiler.StartPhase("create_subquery");
 	vector<string> queried_tables;
 	vector<string> where_conditions;
-	string subquery = CreateSubQuery(*first_join, temporary_table_name, queried_tables, where_conditions);
+	string subquery = CreateSubQuery(*join_subquery_plan, temporary_table_name, queried_tables, where_conditions);
 	context.profiler.EndPhase();
 
 	Printer::Print(subquery);
 
 	context.profiler.StartPhase("execute_subquery");
-	// store state of autocommit and profiler
-	bool auto_commit = context.transaction.IsAutoCommit();
-	bool profiler_enabled = context.profiler.IsEnabled();
-	// disable both
-	context.transaction.SetAutoCommit(false);
-	context.profiler.Disable();
-	// hack in a query - without autocommit, profiling or lock (else segfault / assertion fail / deadlock)
-	context.QueryWithoutLock(subquery, false);
-	// restore the state of autocommit and profiler
-	if (profiler_enabled)
-		context.profiler.Enable();
-	context.transaction.SetAutoCommit(auto_commit);
+	ExecuteSubQuery(subquery);
 	context.profiler.EndPhase();
 
 	context.profiler.StartPhase("adjust_plan");
-	plan = AdjustPlan(move(plan), *first_join, temporary_table_name);
+	plan = AdjustPlan(move(plan), *join_subquery_plan, temporary_table_name);
 	context.profiler.EndPhase();
 
 	context.profiler.StartPhase("fix_bindings");
@@ -115,6 +99,20 @@ unique_ptr<LogicalOperator> ReOptimizer::SubQuery(unique_ptr<LogicalOperator> pl
 	plan->Print();
 
 	return plan;
+}
+
+LogicalOperator *ReOptimizer::DecideSubQueryPlan(LogicalOperator &plan) {
+	vector<LogicalOperator *> joins = ExtractJoinOperators(plan);
+	if (joins.empty()) {
+		done = true;
+		return &plan;
+	}
+
+	// TODO: implement selection procedure
+	// select last one for now - deciding this is basically the whole re-optimization strategy
+	// the selection procedure might also decide that we are done, instead of selecting an index
+	index_t selected_join_i = joins.size() - 1;
+	return joins[selected_join_i];
 }
 
 vector<LogicalOperator *> ReOptimizer::ExtractJoinOperators(LogicalOperator &plan) {
@@ -232,7 +230,6 @@ unique_ptr<LogicalOperator> ReOptimizer::GenerateProjectionMaps(unique_ptr<Logic
 	return plan;
 }
 
-// TODO: also create table_index -> table_name mapping
 void ReOptimizer::CreateMaps(LogicalOperator &plan) {
 	// if (plan.children.empty())
 	// 	return;
@@ -262,7 +259,6 @@ void ReOptimizer::CreateMaps(LogicalOperator &plan) {
 	}
 }
 
-// TODO: make this recursive so an arbitrary join operator can be made into a subquery
 string ReOptimizer::CreateSubQuery(LogicalComparisonJoin &join, const string temporary_table_name,
                                    vector<string> &queried_tables, vector<string> &where_conditions) {
 	// join conditions
@@ -317,8 +313,6 @@ string ReOptimizer::CreateSubQuery(LogicalComparisonJoin &join, const string tem
 				                               child->type);
 			}
 			// extract queried tables
-			Printer::Print(logical_get->table->schema->name + "." + logical_get->table->name + " AS t" +
-			                         to_string(logical_get->table_index));
 			queried_tables.push_back(logical_get->table->schema->name + "." + logical_get->table->name + " AS t" +
 			                         to_string(logical_get->table_index));
 		}
@@ -341,7 +335,6 @@ unique_ptr<LogicalOperator> ReOptimizer::AdjustPlan(unique_ptr<LogicalOperator> 
 	// replace 'subplan' with 'temp_table_get' in 'plan'
 	rebind_mapping = {}; // reset
 	ReplaceLogicalOperator(*plan, old_op, table);
-	remaining_joins--;
 	return plan;
 }
 
@@ -425,6 +418,40 @@ void ReOptimizer::FixColumnBindings(LogicalOperator &plan) {
 	for (auto &child : plan.children) {
 		FixColumnBindings(*child);
 	}
+}
+
+// FIXME: disabling optimizer indeed causes less overhead, but it's not very clean
+// we already have an optimized subquery plan at this point
+// slapping a create table and project on top of it should be doable... right?
+// also don't know if not having filter pushdown sucks - join order should be fixed tho (by how query is made)
+void ReOptimizer::ExecuteSubQuery(const string subquery) {
+	// store state of autocommit, profiler and optimizer
+	bool auto_commit = context.transaction.IsAutoCommit();
+	bool profiler = context.profiler.IsEnabled();
+	bool optimizer = context.enable_optimizer;
+	// disable them
+	context.transaction.SetAutoCommit(false);
+	context.profiler.Disable();
+	context.enable_optimizer = false;
+	// hack in a query - without autocommit, profiling, optimizer or lock
+	// this prevents segfault / assertion fail / unnecessary overhead / deadlock respectively
+	context.QueryWithoutLock(subquery, false);
+	// restore the state of autocommit and profiler
+	if (profiler)
+		context.profiler.Enable();
+	context.transaction.SetAutoCommit(auto_commit);
+	context.enable_optimizer = optimizer;
+}
+
+unique_ptr<LogicalOperator> ReOptimizer::CallOptimizer(unique_ptr<LogicalOperator> plan) {
+	// not interested in optimizer sub-phases
+	bool enabled = context.profiler.IsEnabled();
+	context.profiler.Disable();
+	Optimizer optimizer(binder, context);
+	plan = optimizer.Optimize(move(plan));
+	if (enabled)
+		context.profiler.Enable();
+	return plan;
 }
 
 unique_ptr<LogicalOperator> ReOptimizer::ClearLeftProjectionMaps(unique_ptr<LogicalOperator> plan) {

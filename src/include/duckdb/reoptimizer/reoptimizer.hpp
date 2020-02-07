@@ -24,8 +24,10 @@ public:
 	unique_ptr<LogicalOperator> ReOptimize(unique_ptr<LogicalOperator> plan, const string query);
 
 private:
-	//! Executes the first join, then adapts the plan accordingly FIXME
-	unique_ptr<LogicalOperator> SubQuery(unique_ptr<LogicalOperator> plan, const string temporary_table_name);
+	//! First half of the re-optimization iteration procedure: perform subquery and adjust plan
+	unique_ptr<LogicalOperator> PerformPartialPlan(unique_ptr<LogicalOperator> plan, const string temporary_table_name);
+	//! Decides which join in the plan to execute as subquery
+	LogicalOperator *DecideSubQueryPlan(LogicalOperator &plan);
 	//! Returns all join operators in the plan - the last element is the first one to be executed
 	vector<LogicalOperator *> ExtractJoinOperators(LogicalOperator &plan);
 	//! Generate left projection map for joins in the plan, and change right map accordingly
@@ -38,13 +40,17 @@ private:
 	//! Adjusts the original plan by replacing the join with a LogicalGet on the temporary table
 	unique_ptr<LogicalOperator> AdjustPlan(unique_ptr<LogicalOperator> plan, LogicalComparisonJoin &old_op,
 	                                       string temporary_table_name);
-	//! Get a (works around autocommit stuff)
+	//! Call Catalog::GetTable (works around autocommit stuff)
 	TableCatalogEntry *GetTable(string schema, string table_name);
 	//! Replaces the join 'old_op' in 'plan' with the given operator 'new_op'
 	void ReplaceLogicalOperator(LogicalOperator &plan, LogicalComparisonJoin &old_op, TableCatalogEntry *table,
 	                            index_t depth = 3);
 	//! Fixes column bindings after replacing JOIN with GET
 	void FixColumnBindings(LogicalOperator &plan);
+	//! Executes a query in the middle of the re-optimization process
+	void ExecuteSubQuery(const string subquery);
+	//! Second half of the re-optimization iteration procedure: call Optimizer::Optimize on the adjusted plan
+	unique_ptr<LogicalOperator> CallOptimizer(unique_ptr<LogicalOperator> plan);
 	//! Empty all left projection maps again (required by PhysicalPlanGenerator - PhysicalHashJoin assert)
 	unique_ptr<LogicalOperator> ClearLeftProjectionMaps(unique_ptr<LogicalOperator> plan);
 
@@ -61,8 +67,8 @@ private:
 	//! The new column bindings (after replacing JOIN with GET)
 	unordered_map<string, ColumnBinding> rebind_mapping;
 
-	//! The amount of remaining joins in the plan given to the last call to CreateSubQuery
-	size_t remaining_joins = 0;
+	//! Whether we are done re-optimizing the plan
+	bool done = false;
 };
 
 } // namespace duckdb

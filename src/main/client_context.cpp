@@ -183,7 +183,8 @@ unique_ptr<PreparedStatementData> ClientContext::CreatePreparedStatement(const s
 	}
 #endif
 
-	if (enable_reoptimizer && plan->type == LogicalOperatorType::PREPARE) {
+	if (enable_reoptimizer && plan->type == LogicalOperatorType::PREPARE &&
+	    plan->children[0]->type != LogicalOperatorType::CREATE_TABLE) {
 		profiler.StartPhase("reoptimizer");
 		ReOptimizer reoptimizer = ReOptimizer(*this, planner.binder);
 		plan = reoptimizer.ReOptimize(move(plan), query);
