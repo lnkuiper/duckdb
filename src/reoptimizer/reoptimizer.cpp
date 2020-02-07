@@ -259,6 +259,7 @@ void ReOptimizer::CreateMaps(LogicalOperator &plan) {
 	}
 }
 
+// TODO: perhaps instead of sending a subquery, we add project + create table onto the plan and hack it in
 string ReOptimizer::CreateSubQuery(LogicalComparisonJoin &join, const string temporary_table_name,
                                    vector<string> &queried_tables, vector<string> &where_conditions) {
 	// join conditions
