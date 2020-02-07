@@ -22,19 +22,25 @@ ReOptimizer::ReOptimizer(ClientContext &context, Binder &binder) : context(conte
 
 unique_ptr<LogicalOperator> ReOptimizer::ReOptimize(unique_ptr<LogicalOperator> plan, const string query) {
 	const string tablename_prefix = "_reopt_temp_" + to_string(hash<string>{}(query));
-	for (int i = 0; true; i++) {
-		const string temp_table_name = tablename_prefix + "_" + to_string(i);
+	for (int iter = 0; true; iter++) {
+		context.profiler.StartPhase(to_string(iter)); // time each iteration
+		const string temp_table_name = tablename_prefix + "_" + to_string(iter);
 		plan = SubQuery(move(plan), temp_table_name);
 		// if 0 or 1 joins remain the plan can be finished normally
-		if (remaining_joins <= 1)
+		if (remaining_joins <= 1) {
+			context.profiler.EndPhase();
 			break;
+		}
 		context.profiler.StartPhase("optimizer");
+		// not interested in optimizer sub-phases
 		bool enabled = context.profiler.IsEnabled();
-		context.profiler.Disable(); // not interested in optimizer sub-phases
+		context.profiler.Disable();
 		Optimizer optimizer(binder, context);
 		plan = optimizer.Optimize(move(plan));
 		if (enabled)
 			context.profiler.Enable();
+		context.profiler.EndPhase();
+		// end iteration phase
 		context.profiler.EndPhase();
 	}
 	context.profiler.StartPhase("clear_left_proj_maps");
@@ -49,7 +55,8 @@ unique_ptr<LogicalOperator> ReOptimizer::SubQuery(unique_ptr<LogicalOperator> pl
 	if (remaining_joins <= 1)
 		return plan;
 
-	auto *first_join = static_cast<LogicalComparisonJoin *>(joins.back());
+	// auto *first_join = static_cast<LogicalComparisonJoin *>(joins.back());
+	auto *first_join = static_cast<LogicalComparisonJoin *>(joins[remaining_joins - 2]);
 
 	plan->Print();
 	// Printer::Print("----------------------------- before");
@@ -71,11 +78,13 @@ unique_ptr<LogicalOperator> ReOptimizer::SubQuery(unique_ptr<LogicalOperator> pl
 	context.profiler.EndPhase();
 
 	context.profiler.StartPhase("map_binding_names");
-	CreateBindingNameMapping(*plan);
+	CreateMaps(*plan);
 	context.profiler.EndPhase();
 
 	context.profiler.StartPhase("create_subquery");
-	string subquery = CreateSubQuery(*first_join, temporary_table_name);
+	vector<string> queried_tables;
+	vector<string> where_conditions;
+	string subquery = CreateSubQuery(*first_join, temporary_table_name, queried_tables, where_conditions);
 	context.profiler.EndPhase();
 
 	Printer::Print(subquery);
@@ -109,7 +118,7 @@ unique_ptr<LogicalOperator> ReOptimizer::SubQuery(unique_ptr<LogicalOperator> pl
 }
 
 vector<LogicalOperator *> ReOptimizer::ExtractJoinOperators(LogicalOperator &plan) {
-	// this selects the deepest rightmost join operator - DuckDB only uses right-heavy
+	// the deepest join operators appear at the end of the vector - DuckDB only uses right-heavy
 	vector<LogicalOperator *> joins;
 	if (plan.children.empty())
 		return joins;
@@ -223,18 +232,19 @@ unique_ptr<LogicalOperator> ReOptimizer::GenerateProjectionMaps(unique_ptr<Logic
 	return plan;
 }
 
-void ReOptimizer::CreateBindingNameMapping(LogicalOperator &plan) {
-	if (plan.children.empty())
-		return;
+// TODO: also create table_index -> table_name mapping
+void ReOptimizer::CreateMaps(LogicalOperator &plan) {
+	// if (plan.children.empty())
+	// 	return;
 	// find bindings in JoinConditions
 	if (plan.type == LogicalOperatorType::COMPARISON_JOIN) {
 		auto *join = static_cast<LogicalComparisonJoin *>(&plan);
-		for (size_t condition_i = 0; condition_i < join->conditions.size(); condition_i++) {
-			JoinCondition &join_condition = join->conditions[condition_i];
+		for (size_t cond_i = 0; cond_i < join->conditions.size(); cond_i++) {
+			JoinCondition &join_condition = join->conditions[cond_i];
 			auto l = (BoundColumnRefExpression &)*join_condition.left.get();
 			auto r = (BoundColumnRefExpression &)*join_condition.right.get();
-			binding_to_alias[l.binding.ToString()] = l.alias;
-			binding_to_alias[r.binding.ToString()] = r.alias;
+			bta[l.binding.ToString()] = l.alias;
+			bta[r.binding.ToString()] = r.alias;
 		}
 	} else {
 		// find in expressions (e.g. for LogicalProjection)
@@ -243,78 +253,83 @@ void ReOptimizer::CreateBindingNameMapping(LogicalOperator &plan) {
 			if (expr.GetExpressionClass() != ExpressionClass::BOUND_COLUMN_REF)
 				continue;
 			auto bcre = (BoundColumnRefExpression &)expr;
-			binding_to_alias[bcre.binding.ToString()] = bcre.alias;
+			bta[bcre.binding.ToString()] = bcre.alias;
 		}
 	}
 	// recursively propagate operator tree
 	for (auto &child : plan.children) {
-		CreateBindingNameMapping(*child);
+		CreateMaps(*child);
 	}
 }
 
 // TODO: make this recursive so an arbitrary join operator can be made into a subquery
-string ReOptimizer::CreateSubQuery(LogicalComparisonJoin &join, const string temporary_table_name) {
-	vector<string> queried_tables;
-	vector<string> queried_columns;
-	vector<string> where_conditions;
-	for (size_t child_i = 0; child_i < join.children.size(); child_i++) {
-		auto &child = join.children.at(child_i);
-		string table_alias = "t" + to_string(child_i);
-		// retrieve GET immediately, or as child of filter
-		LogicalGet *logical_get;
-		switch (child->type) {
-		case LogicalOperatorType::GET: {
-			logical_get = static_cast<LogicalGet *>(child.get());
-			break;
-		}
-		case LogicalOperatorType::FILTER: {
-			assert(child->children.size() == 1);
-			auto *logical_filter = static_cast<LogicalFilter *>(child.get());
-			for (auto &expr : logical_filter->expressions) {
-				if (expr->GetExpressionClass() != ExpressionClass::BOUND_COMPARISON)
-					throw new ReOptimizerException("Expected filter class to be BOUND_COMPARISON, got '%s' instead",
-					                               expr->GetExpressionClass());
-				auto *bce = static_cast<BoundComparisonExpression *>(expr.get());
-				// filter conditions -table reference is 'always' placed on the left, constant on the right
-				if (bce->right->return_type == TypeId::VARCHAR) // strings need to be escaped with quotes
-					where_conditions.push_back(table_alias + "." + bce->left->alias +
-					                           ExpressionTypeToOperator(bce->type) + "'" + bce->right->ToString() +
-					                           "'");
-				else
-					where_conditions.push_back(table_alias + "." + expr->GetName());
-			}
-			logical_get = static_cast<LogicalGet *>(logical_filter->children.at(0).get());
-			break;
-		}
-		default:
-			throw new ReOptimizerException("Expected child of join to be GET or FILTER, got '%s' instead", child->type);
-		}
-		// add table name of this GET
-		string schema = logical_get->table->schema->name;
-		string table_name = logical_get->table->name;
-		queried_tables.push_back(schema + "." + table_name + " AS " + table_alias);
-		// bindings tell which columns are selected
-		vector<ColumnBinding> child_bindings = logical_get->GetColumnBindings();
-		vector<column_t> projection_map = child_i == 0 ? join.left_projection_map : join.right_projection_map;
-		// take all bindings if empty
-		if (projection_map.empty()) {
-			for (size_t proj_i = 0; proj_i < child_bindings.size(); proj_i++) {
-				projection_map.push_back(proj_i);
-			}
-		}
-		// add selected columns to queried_columns
-		for (column_t binding_i : projection_map) {
-			string col_name = binding_to_alias[child_bindings[binding_i].ToString()];
-			queried_columns.push_back(table_alias + "." + col_name + " AS " + col_name);
-		}
-	}
+string ReOptimizer::CreateSubQuery(LogicalComparisonJoin &join, const string temporary_table_name,
+                                   vector<string> &queried_tables, vector<string> &where_conditions) {
 	// join conditions
-	for (auto &cond : join.conditions) {
-		where_conditions.push_back("t0." + cond.left->GetName() + " = t1." + cond.right->GetName());
+	for (size_t cond_i = 0; cond_i < join.conditions.size(); cond_i++) {
+		JoinCondition &join_condition = join.conditions[cond_i];
+		auto l_bind = ((BoundColumnRefExpression &)*join_condition.left.get()).binding;
+		auto r_bind = ((BoundColumnRefExpression &)*join_condition.right.get()).binding;
+		where_conditions.push_back("t" + to_string(l_bind.table_index) + "." + bta[l_bind.ToString()] + " = " + "t" +
+		                           to_string(r_bind.table_index) + "." + bta[r_bind.ToString()]);
 	}
+	for (size_t child_i = 0; child_i < join.children.size(); child_i++) {
+		auto &child = join.children[child_i];
+		if (child->type == LogicalOperatorType::COMPARISON_JOIN) {
+			// recursively propagate operator tree
+			auto child_join = static_cast<LogicalComparisonJoin *>(child.get());
+			CreateSubQuery(*child_join, temporary_table_name, queried_tables, where_conditions);
+		} else {
+			LogicalGet *logical_get;
+			switch (child->type) {
+			case LogicalOperatorType::GET: {
+				logical_get = static_cast<LogicalGet *>(child.get());
+				break;
+			}
+			case LogicalOperatorType::FILTER: {
+				// extract filter conditions
+				assert(child->children.size() == 1);
+				auto *logical_filter = static_cast<LogicalFilter *>(child.get());
+				for (auto &expr : logical_filter->expressions) {
+					if (expr->GetExpressionClass() != ExpressionClass::BOUND_COMPARISON)
+						throw new ReOptimizerException("Expected filter class to be BOUND_COMPARISON, got '%s'",
+						                               expr->GetExpressionClass());
+					auto *bce = static_cast<BoundComparisonExpression *>(expr.get());
+					// filter conditions -table reference is 'always' placed on the left, constant on the right
+					if (bce->GetExpressionClass() != ExpressionClass::BOUND_COLUMN_REF)
+						throw new ReOptimizerException("Expected LHS of comparison to be BOUND_COLUMN_REF, got '%s'",
+						                               bce->GetExpressionClass());
+					auto binding = static_cast<BoundColumnRefExpression *>(bce->left.get())->binding;
+					string lhs = "t" + to_string(binding.table_index) + "." + bta[binding.ToString()];
+					if (bce->right->return_type == TypeId::VARCHAR) {
+						// strings need to be escaped with quotes
+						where_conditions.push_back(lhs + ExpressionTypeToOperator(bce->type) + "'" +
+						                           bce->right->ToString() + "'");
+					} else {
+						where_conditions.push_back(lhs + ExpressionTypeToOperator(bce->type) + bce->right->ToString());
+					}
+				}
+				logical_get = static_cast<LogicalGet *>(logical_filter->children[0].get());
+				break;
+			}
+			default:
+				throw new ReOptimizerException("Expected child of JOIN to be JOIN, GET or FILTER, got '%s'",
+				                               child->type);
+			}
+			// extract queried tables
+			Printer::Print(logical_get->table->schema->name + "." + logical_get->table->name + " AS t" +
+			                         to_string(logical_get->table_index));
+			queried_tables.push_back(logical_get->table->schema->name + "." + logical_get->table->name + " AS t" +
+			                         to_string(logical_get->table_index));
+		}
+	}
+	// selected columns only for the top-level join
+	vector<string> selected_columns;
+	for (auto cb : join.GetColumnBindings())
+		selected_columns.push_back("t" + to_string(cb.table_index) + "." + bta[cb.ToString()]);
 	// create query and return
 	return "CREATE TEMPORARY TABLE main." + temporary_table_name + " AS (" + "SELECT " +
-	       JoinStrings(queried_columns, ", ") + " " + "FROM " + JoinStrings(queried_tables, ", ") + " " + "WHERE " +
+	       JoinStrings(selected_columns, ", ") + " " + "FROM " + JoinStrings(queried_tables, ", ") + " " + "WHERE " +
 	       JoinStrings(where_conditions, " AND ") + ");";
 }
 
@@ -349,7 +364,7 @@ void ReOptimizer::ReplaceLogicalOperator(LogicalOperator &plan, LogicalCompariso
 		return;
 	// search children
 	for (size_t child_i = 0; child_i < plan.children.size(); child_i++) {
-		auto &child = plan.children.at(child_i);
+		auto &child = plan.children[child_i];
 		if (child->type != LogicalOperatorType::COMPARISON_JOIN)
 			continue;
 		auto *join = static_cast<LogicalComparisonJoin *>(child.get());
@@ -365,7 +380,7 @@ void ReOptimizer::ReplaceLogicalOperator(LogicalOperator &plan, LogicalCompariso
 				column_ids.push_back(column_id);
 
 			unique_ptr<LogicalGet> replacement_operator = make_unique<LogicalGet>(table, depth, column_ids);
-			plan.children.at(child_i) = move(replacement_operator);
+			plan.children[child_i] = move(replacement_operator);
 			return;
 		}
 	}
@@ -385,12 +400,12 @@ void ReOptimizer::FixColumnBindings(LogicalOperator &plan) {
 			if (rebind_mapping.find(l.ToString()) != rebind_mapping.end()) {
 				unique_ptr<BoundColumnRefExpression> fixed_bcre = make_unique<BoundColumnRefExpression>(
 				    l.alias, l.return_type, rebind_mapping[l.ToString()], l.depth);
-				join->conditions.at(condition_i).left = move(fixed_bcre);
+				join->conditions[condition_i].left = move(fixed_bcre);
 			}
 			if (rebind_mapping.find(r.ToString()) != rebind_mapping.end()) {
 				unique_ptr<BoundColumnRefExpression> fixed_bcre = make_unique<BoundColumnRefExpression>(
 				    r.alias, r.return_type, rebind_mapping[r.ToString()], r.depth);
-				join->conditions.at(condition_i).right = move(fixed_bcre);
+				join->conditions[condition_i].right = move(fixed_bcre);
 			}
 		}
 	}
@@ -403,7 +418,7 @@ void ReOptimizer::FixColumnBindings(LogicalOperator &plan) {
 		if (rebind_mapping.find(e.ToString()) != rebind_mapping.end()) {
 			unique_ptr<BoundColumnRefExpression> fixed_bcre =
 			    make_unique<BoundColumnRefExpression>(e.alias, e.return_type, rebind_mapping[e.ToString()], e.depth);
-			plan.expressions.at(expr_i) = move(fixed_bcre);
+			plan.expressions[expr_i] = move(fixed_bcre);
 		}
 	}
 	// recursively propagate operator tree
@@ -428,7 +443,7 @@ unique_ptr<LogicalOperator> ReOptimizer::ClearLeftProjectionMaps(unique_ptr<Logi
 string ReOptimizer::JoinStrings(vector<string> strings, string delimiter) {
 	string joined_strings = "";
 	for (size_t i = 0; i < strings.size(); i++) {
-		joined_strings += strings.at(i);
+		joined_strings += strings[i];
 		if (i < strings.size() - 1)
 			joined_strings += delimiter;
 	}

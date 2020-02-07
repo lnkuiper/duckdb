@@ -187,6 +187,7 @@ unique_ptr<PreparedStatementData> ClientContext::CreatePreparedStatement(const s
 		profiler.StartPhase("reoptimizer");
 		ReOptimizer reoptimizer = ReOptimizer(*this, planner.binder);
 		plan = reoptimizer.ReOptimize(move(plan), query);
+		assert(plan);
 		profiler.EndPhase();
 	}
 

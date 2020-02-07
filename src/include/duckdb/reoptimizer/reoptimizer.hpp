@@ -31,9 +31,10 @@ private:
 	//! Generate left projection map for joins in the plan, and change right map accordingly
 	unique_ptr<LogicalOperator> GenerateProjectionMaps(unique_ptr<LogicalOperator> plan);
 	//! Fill binding_name_mapping with (binding -> alias)
-	void CreateBindingNameMapping(LogicalOperator &plan);
+	void CreateMaps(LogicalOperator &plan);
 	//! Creates a CREATE TEMPORARY TABLE query string for the first join to be executed in 'plan'
-	string CreateSubQuery(LogicalComparisonJoin &plan, const string temporary_table_name);
+	string CreateSubQuery(LogicalComparisonJoin &plan, const string temporary_table_name,
+	                      vector<string> &queried_tables, vector<string> &where_conditions);
 	//! Adjusts the original plan by replacing the join with a LogicalGet on the temporary table
 	unique_ptr<LogicalOperator> AdjustPlan(unique_ptr<LogicalOperator> plan, LogicalComparisonJoin &old_op,
 	                                       string temporary_table_name);
@@ -55,13 +56,13 @@ private:
 	//! The binder
 	Binder &binder;
 
-	//! Binding to name mapping (created by CountBindingReferences)
-	unordered_map<string, string> binding_to_alias;
+	//! Binding to column alias mapping (created by CreateMaps)
+	unordered_map<string, string> bta;
 	//! The new column bindings (after replacing JOIN with GET)
 	unordered_map<string, ColumnBinding> rebind_mapping;
 
 	//! The amount of remaining joins in the plan given to the last call to CreateSubQuery
-	int remaining_joins = 0;
+	size_t remaining_joins = 0;
 };
 
 } // namespace duckdb
