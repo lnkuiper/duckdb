@@ -14,6 +14,8 @@
 #include "duckdb/optimizer/topn_optimizer.hpp"
 #include "duckdb/planner/binder.hpp"
 #include "duckdb/planner/expression/bound_columnref_expression.hpp"
+#include "duckdb/planner/expression/bound_comparison_expression.hpp"
+#include "duckdb/planner/expression/bound_conjunction_expression.hpp"
 #include "duckdb/planner/expression/bound_operator_expression.hpp"
 #include "duckdb/planner/expression/common_subexpression.hpp"
 #include "duckdb/planner/operator/list.hpp"
@@ -67,7 +69,8 @@ public:
 
 } // namespace duckdb
 
-unique_ptr<LogicalOperator> Optimizer::Optimize(unique_ptr<LogicalOperator> plan) {
+unique_ptr<LogicalOperator>
+Optimizer::Optimize(unique_ptr<LogicalOperator> plan, unordered_map<string, index_t> injected_cardinalities) {
 	// first we perform expression rewrites using the ExpressionRewriter
 	// this does not change the logical plan structure, but only simplifies the expression trees
 	context.profiler.StartPhase("expression_rewriter");
@@ -99,7 +102,7 @@ unique_ptr<LogicalOperator> Optimizer::Optimize(unique_ptr<LogicalOperator> plan
 	// then we perform the join ordering optimization
 	// this also rewrites cross products + filters into joins and performs filter pushdowns
 	context.profiler.StartPhase("join_order");
-	JoinOrderOptimizer optimizer;
+	JoinOrderOptimizer optimizer(injected_cardinalities);
 	plan = optimizer.Optimize(move(plan));
 	context.profiler.EndPhase();
 

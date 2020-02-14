@@ -19,7 +19,8 @@ class Optimizer {
 public:
 	Optimizer(Binder &binder, ClientContext &context);
 
-	unique_ptr<LogicalOperator> Optimize(unique_ptr<LogicalOperator> plan);
+	unique_ptr<LogicalOperator> Optimize(unique_ptr<LogicalOperator> plan,
+	                                     unordered_map<string, index_t> injected_cardinalities = unordered_map<string, index_t>());
 
 	ClientContext &context;
 	Binder &binder;

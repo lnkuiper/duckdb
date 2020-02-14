@@ -1,5 +1,6 @@
 #include "duckdb/reoptimizer/reoptimizer.hpp"
 
+#include "duckdb/catalog/catalog_entry/table_catalog_entry.hpp"
 #include "duckdb/common/exception.hpp"
 #include "duckdb/common/unordered_map.hpp"
 #include "duckdb/common/enums/expression_type.hpp"
@@ -12,9 +13,10 @@
 #include "duckdb/planner/operator/logical_get.hpp"
 #include "duckdb/planner/operator/logical_join.hpp"
 #include "duckdb/planner/operator/logical_projection.hpp"
+#include "duckdb/storage/data_table.hpp"
 
-using namespace std;
 using namespace duckdb;
+using namespace std;
 
 // TODO: write tests that figure out if this shit actually works
 ReOptimizer::ReOptimizer(ClientContext &context, Binder &binder) : context(context), binder(binder) {
@@ -22,10 +24,11 @@ ReOptimizer::ReOptimizer(ClientContext &context, Binder &binder) : context(conte
 
 unique_ptr<LogicalOperator> ReOptimizer::ReOptimize(unique_ptr<LogicalOperator> plan, const string query) {
 	const string tablename_prefix = "_reopt_temp_" + to_string(hash<string>{}(query));
+	// re-optimization loop
 	for (int iter = 0; true; iter++) {
 		// profiling for each iteration
 		context.profiler.StartPhase(to_string(iter));
-		// Create and execute subquery, adjust plan
+		// create and execute subquery, adjust plan accordingly
 		const string temp_table_name = tablename_prefix + "_" + to_string(iter);
 		plan = PerformPartialPlan(move(plan), temp_table_name);
 		if (done) {
@@ -35,6 +38,8 @@ unique_ptr<LogicalOperator> ReOptimizer::ReOptimize(unique_ptr<LogicalOperator> 
 		context.profiler.StartPhase("optimizer");
 		plan = CallOptimizer(move(plan));
 		context.profiler.EndPhase();
+		// if (ExtractJoinOperators(*plan).size() <= 1)
+		// 	break;
 		// end iteration profiling phase
 		context.profiler.EndPhase();
 	}
@@ -44,7 +49,8 @@ unique_ptr<LogicalOperator> ReOptimizer::ReOptimize(unique_ptr<LogicalOperator> 
 	return plan;
 }
 
-unique_ptr<LogicalOperator> ReOptimizer::PerformPartialPlan(unique_ptr<LogicalOperator> plan, const string temporary_table_name) {
+unique_ptr<LogicalOperator> ReOptimizer::PerformPartialPlan(unique_ptr<LogicalOperator> plan,
+                                                            const string temporary_table_name) {
 	context.profiler.StartPhase("decide_subquery");
 	auto *subquery_plan = DecideSubQueryPlan(*plan);
 	context.profiler.EndPhase();
@@ -53,7 +59,12 @@ unique_ptr<LogicalOperator> ReOptimizer::PerformPartialPlan(unique_ptr<LogicalOp
 		return plan;
 	auto *join_subquery_plan = static_cast<LogicalComparisonJoin *>(subquery_plan);
 
+	context.profiler.StartPhase("generate_projection_maps");
+	plan = GenerateProjectionMaps(move(plan));
+	context.profiler.EndPhase();
+
 	plan->Print();
+
 	// Printer::Print("----------------------------- before");
 	// plan->children[0]->GetColumnBindings();
 	// string bcres0 = "PROJECTION ";
@@ -67,10 +78,6 @@ unique_ptr<LogicalOperator> ReOptimizer::PerformPartialPlan(unique_ptr<LogicalOp
 	// Printer::Print(bcres0);
 	// plan->children[0]->children[0]->GetColumnBindings();
 	// Printer::Print("-----------------------------");
-
-	context.profiler.StartPhase("generate_projection_maps");
-	plan = GenerateProjectionMaps(move(plan));
-	context.profiler.EndPhase();
 
 	context.profiler.StartPhase("map_binding_names");
 	CreateMaps(*plan);
@@ -98,12 +105,26 @@ unique_ptr<LogicalOperator> ReOptimizer::PerformPartialPlan(unique_ptr<LogicalOp
 
 	plan->Print();
 
+	// Printer::Print("----------------------------- after");
+	// plan->children[0]->GetColumnBindings();
+	// string bcres1 = "PROJECTION ";
+	// for (size_t i = 0; i < plan->children[0]->expressions.size(); i++) {
+	// 	auto &e = *plan->children[0]->expressions[i];
+	// 	if (e.GetExpressionClass() == ExpressionClass::BOUND_COLUMN_REF) {
+	// 		BoundColumnRefExpression bcre = (BoundColumnRefExpression &) e;
+	// 		bcres1 += bcre.ToString();
+	// 	}
+	// }
+	// Printer::Print(bcres1);
+	// plan->children[0]->children[0]->GetColumnBindings();
+	// Printer::Print("-----------------------------");
+
 	return plan;
 }
 
 LogicalOperator *ReOptimizer::DecideSubQueryPlan(LogicalOperator &plan) {
 	vector<LogicalOperator *> joins = ExtractJoinOperators(plan);
-	if (joins.empty()) {
+	if (joins.size() <= 1) {
 		done = true;
 		return &plan;
 	}
@@ -137,6 +158,24 @@ vector<LogicalOperator *> ReOptimizer::ExtractJoinOperators(LogicalOperator &pla
 		joins.insert(joins.end(), child_joins.begin(), child_joins.end());
 	}
 	return joins;
+}
+
+//! Gets column bindings from a join, but assumes projection maps are actually filled
+static vector<ColumnBinding> GetColumnBindings(LogicalComparisonJoin &join) {
+	vector<ColumnBinding> cbs;
+	if (!join.left_projection_map.empty()) {
+		vector<ColumnBinding> left_cbs =
+			LogicalOperator::MapBindings(join.children[0]->GetColumnBindings(), join.left_projection_map);
+		for (auto cb : left_cbs)
+			cbs.push_back(cb);
+	}
+	if (!join.right_projection_map.empty()) {
+		vector<ColumnBinding> right_cbs =
+			LogicalOperator::MapBindings(join.children[1]->GetColumnBindings(), join.right_projection_map);
+		for (auto cb : right_cbs)
+			cbs.push_back(cb);
+	}
+	return cbs;
 }
 
 unique_ptr<LogicalOperator> ReOptimizer::GenerateProjectionMaps(unique_ptr<LogicalOperator> plan) {
@@ -181,7 +220,7 @@ unique_ptr<LogicalOperator> ReOptimizer::GenerateProjectionMaps(unique_ptr<Logic
 			column_bindings.push_back(l.binding);
 			column_bindings.push_back(r.binding);
 			// from bindings of this plan
-			for (auto new_cb : plan->GetColumnBindings()) {
+			for (auto new_cb : GetColumnBindings(*join)) {
 				bool found = false;
 				for (auto existing_cb : column_bindings) {
 					if (existing_cb == new_cb) {
@@ -231,8 +270,6 @@ unique_ptr<LogicalOperator> ReOptimizer::GenerateProjectionMaps(unique_ptr<Logic
 }
 
 void ReOptimizer::CreateMaps(LogicalOperator &plan) {
-	// if (plan.children.empty())
-	// 	return;
 	// find bindings in JoinConditions
 	if (plan.type == LogicalOperatorType::COMPARISON_JOIN) {
 		auto *join = static_cast<LogicalComparisonJoin *>(&plan);
@@ -318,9 +355,9 @@ string ReOptimizer::CreateSubQuery(LogicalComparisonJoin &join, const string tem
 			                         to_string(logical_get->table_index));
 		}
 	}
-	// selected columns only for the top-level join
+	// selected columns only for the top-level join (can't use join.GetColumnBindings() because empty proj map -> all)
 	vector<string> selected_columns;
-	for (auto cb : join.GetColumnBindings())
+	for (auto cb : GetColumnBindings(join))
 		selected_columns.push_back("t" + to_string(cb.table_index) + "." + bta[cb.ToString()]);
 	// create query and return
 	return "CREATE TEMPORARY TABLE main." + temporary_table_name + " AS (" + "SELECT " +
@@ -328,9 +365,42 @@ string ReOptimizer::CreateSubQuery(LogicalComparisonJoin &join, const string tem
 	       JoinStrings(where_conditions, " AND ") + ");";
 }
 
+//! Extracts table_index from GET operators
+static vector<index_t> ExtractTableIndices(LogicalOperator &plan) {
+	vector<index_t> indices;
+	if (plan.type == LogicalOperatorType::GET) {
+		auto *get = static_cast<LogicalGet *>(&plan);
+		indices.push_back(get->table_index);
+	} else {
+		vector<index_t> child_indices;
+		for (auto &child : plan.children) {
+			vector<index_t> child_indices = ExtractTableIndices(*child);
+			indices.insert(indices.end(), child_indices.begin(), child_indices.end());
+		}
+	}
+	return indices;
+}
+
+//! Set of table_index to key string for saved_cardinalities
+static string IndicesToString(vector<index_t> table_indices) {
+	sort(table_indices.begin(), table_indices.end());
+	string key = "";
+	for (index_t table_index : table_indices) {
+		key += to_string(table_index);
+	}
+	return key;
+}
+
+// TODO: derive information about the cardinality of the intermediate results using the cardinality of the temp table
+void ReOptimizer::SaveCardinality(LogicalOperator &plan, index_t cardinality) {
+	saved_cardinalities[IndicesToString(ExtractTableIndices(plan))] = cardinality;
+}
+
 unique_ptr<LogicalOperator> ReOptimizer::AdjustPlan(unique_ptr<LogicalOperator> plan, LogicalComparisonJoin &old_op,
                                                     const string temporary_table_name) {
 	TableCatalogEntry *table = GetTable("main", temporary_table_name);
+	// store cardinality
+	SaveCardinality(old_op, table->storage->cardinality);
 	// Create a LogicalGet for the newly made temporary table (empty column_ids - filled in "ReplaceLogicalOperator")
 	unique_ptr<LogicalGet> temp_table_get = make_unique<LogicalGet>(table, 0, vector<column_t>());
 	// replace 'subplan' with 'temp_table_get' in 'plan'
@@ -352,8 +422,7 @@ TableCatalogEntry *ReOptimizer::GetTable(string schema, string table_name) {
 	return table;
 }
 
-void ReOptimizer::ReplaceLogicalOperator(LogicalOperator &plan, LogicalComparisonJoin &old_op, TableCatalogEntry *table,
-                                         index_t depth) {
+void ReOptimizer::ReplaceLogicalOperator(LogicalOperator &plan, LogicalComparisonJoin &old_op, TableCatalogEntry *table, index_t depth) {
 	if (plan.children.empty())
 		return;
 	// search children
@@ -364,13 +433,12 @@ void ReOptimizer::ReplaceLogicalOperator(LogicalOperator &plan, LogicalCompariso
 		auto *join = static_cast<LogicalComparisonJoin *>(child.get());
 
 		if (join->ParamsToString() == old_op.ParamsToString()) {
-			for (auto &child : old_op.children) {
-				for (auto child_cb : child->GetColumnBindings()) {
-					rebind_mapping[child_cb.ToString()] = ColumnBinding(depth, child_cb.column_index);
-				}
-			}
+			vector<ColumnBinding> old_op_cbs = GetColumnBindings(*join);
+			for (column_t new_index = 0; new_index < old_op_cbs.size(); new_index++)
+				rebind_mapping[old_op_cbs[new_index].ToString()] = ColumnBinding(depth, new_index);
+
 			vector<column_t> column_ids;
-			for (column_t column_id = 0; column_id < old_op.GetColumnBindings().size(); column_id++)
+			for (column_t column_id = 0; column_id < table->columns.size(); column_id++)
 				column_ids.push_back(column_id);
 
 			unique_ptr<LogicalGet> replacement_operator = make_unique<LogicalGet>(table, depth, column_ids);
@@ -421,27 +489,32 @@ void ReOptimizer::FixColumnBindings(LogicalOperator &plan) {
 	}
 }
 
-// FIXME: disabling optimizer indeed causes less overhead, but it's not very clean
+// FIXME: disabling optimizer indeed causes less overhead (ONLY TESTED FOR SMALL QUERIES), but it's not very clean
 // we already have an optimized subquery plan at this point
 // slapping a create table and project on top of it should be doable... right?
 // also don't know if not having filter pushdown sucks - join order should be fixed tho (by how query is made)
+
+// FIXME: getting cardinality from data_storage only works on autocommit, assume no transactions for now
+// this might be because of the fact that cardinality is atomic?
 void ReOptimizer::ExecuteSubQuery(const string subquery) {
 	// store state of autocommit, profiler and optimizer
-	bool auto_commit = context.transaction.IsAutoCommit();
+	// bool auto_commit = context.transaction.IsAutoCommit();
+	context.transaction.Commit();
 	bool profiler = context.profiler.IsEnabled();
-	bool optimizer = context.enable_optimizer;
+	// bool optimizer = context.enable_optimizer;
 	// disable them
-	context.transaction.SetAutoCommit(false);
+	// context.transaction.SetAutoCommit(false);
 	context.profiler.Disable();
-	context.enable_optimizer = false;
+	// context.enable_optimizer = false;
 	// hack in a query - without autocommit, profiling, optimizer or lock
 	// this prevents segfault / assertion fail / unnecessary overhead / deadlock respectively
 	context.QueryWithoutLock(subquery, false);
-	// restore the state of autocommit and profiler
+	// restore the state of autocommit, profiler and optimizer
+	// context.transaction.SetAutoCommit(auto_commit);
+	context.transaction.BeginTransaction();
 	if (profiler)
 		context.profiler.Enable();
-	context.transaction.SetAutoCommit(auto_commit);
-	context.enable_optimizer = optimizer;
+	// context.enable_optimizer = optimizer;
 }
 
 unique_ptr<LogicalOperator> ReOptimizer::CallOptimizer(unique_ptr<LogicalOperator> plan) {
@@ -477,3 +550,4 @@ string ReOptimizer::JoinStrings(vector<string> strings, string delimiter) {
 	}
 	return joined_strings;
 }
+

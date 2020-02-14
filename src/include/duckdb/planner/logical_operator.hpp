@@ -68,6 +68,8 @@ public:
 		return max_cardinality;
 	}
 
+	index_t ComputeCost();
+
 protected:
 	//! Resolve types for this specific operator
 	virtual void ResolveTypes() = 0;

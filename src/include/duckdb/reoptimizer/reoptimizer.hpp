@@ -9,6 +9,7 @@
 #pragma once
 
 #include "duckdb/main/client_context.hpp"
+#include "duckdb/optimizer/join_order/relation.hpp"
 #include "duckdb/planner/binder.hpp"
 #include "duckdb/planner/column_binding.hpp"
 #include "duckdb/planner/logical_operator.hpp"
@@ -49,6 +50,8 @@ private:
 	void FixColumnBindings(LogicalOperator &plan);
 	//! Executes a query in the middle of the re-optimization process
 	void ExecuteSubQuery(const string subquery);
+	//! Stores the true/estimated cardinality of a plan in saved_cardinalities
+	void SaveCardinality(LogicalOperator &plan, index_t cardinality);
 	//! Second half of the re-optimization iteration procedure: call Optimizer::Optimize on the adjusted plan
 	unique_ptr<LogicalOperator> CallOptimizer(unique_ptr<LogicalOperator> plan);
 	//! Empty all left projection maps again (required by PhysicalPlanGenerator - PhysicalHashJoin assert)
@@ -66,6 +69,8 @@ private:
 	unordered_map<string, string> bta;
 	//! The new column bindings (after replacing JOIN with GET)
 	unordered_map<string, ColumnBinding> rebind_mapping;
+	//! Stores true/estimated cardinalities of sets of relations
+	unordered_map<string, index_t> saved_cardinalities;
 
 	//! Whether we are done re-optimizing the plan
 	bool done = false;

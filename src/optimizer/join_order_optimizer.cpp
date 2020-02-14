@@ -4,10 +4,16 @@
 #include "duckdb/planner/expression_iterator.hpp"
 #include "duckdb/planner/operator/list.hpp"
 
+#include "duckdb/common/printer.hpp"
+
 using namespace duckdb;
 using namespace std;
 
 using JoinNode = JoinOrderOptimizer::JoinNode;
+
+JoinOrderOptimizer::JoinOrderOptimizer(unordered_map<string, index_t> &injected_cardinalities)
+    : injected_cardinalities(injected_cardinalities) {
+}
 
 //! Returns true if A and B are disjoint, false otherwise
 template <class T> static bool Disjoint(unordered_set<T> &a, unordered_set<T> &b) {
@@ -71,7 +77,7 @@ bool JoinOrderOptimizer::ExtractJoinRelations(LogicalOperator &input_op, vector<
 		}
 		if (op->type == LogicalOperatorType::AGGREGATE_AND_GROUP_BY || op->type == LogicalOperatorType::WINDOW) {
 			// don't push filters through projection or aggregate and group by
-			JoinOrderOptimizer optimizer;
+			JoinOrderOptimizer optimizer(injected_cardinalities);
 			op->children[0] = optimizer.Optimize(move(op->children[0]));
 			return false;
 		}
@@ -103,7 +109,7 @@ bool JoinOrderOptimizer::ExtractJoinRelations(LogicalOperator &input_op, vector<
 		// new NULL values in the right side, so pushing this condition through the join leads to incorrect results
 		// for this reason, we just start a new JoinOptimizer pass in each of the children of the join
 		for (index_t i = 0; i < op->children.size(); i++) {
-			JoinOrderOptimizer optimizer;
+			JoinOrderOptimizer optimizer(injected_cardinalities);
 			op->children[i] = optimizer.Optimize(move(op->children[i]));
 		}
 		// after this we want to treat this node as one  "end node" (like e.g. a base relation)
@@ -117,6 +123,7 @@ bool JoinOrderOptimizer::ExtractJoinRelations(LogicalOperator &input_op, vector<
 		auto relation = make_unique<Relation>(&input_op, parent);
 		for (index_t it : bindings) {
 			relation_mapping[it] = relations.size();
+			inv_relation_mapping[relations.size()] = it;
 		}
 		relations.push_back(move(relation));
 		return true;
@@ -131,6 +138,7 @@ bool JoinOrderOptimizer::ExtractJoinRelations(LogicalOperator &input_op, vector<
 		auto get = (LogicalGet *)op;
 		auto relation = make_unique<Relation>(&input_op, parent);
 		relation_mapping[get->table_index] = relations.size();
+		inv_relation_mapping[relations.size()] = get->table_index;
 		relations.push_back(move(relation));
 		return true;
 	} else if (op->type == LogicalOperatorType::TABLE_FUNCTION) {
@@ -138,16 +146,18 @@ bool JoinOrderOptimizer::ExtractJoinRelations(LogicalOperator &input_op, vector<
 		auto table_function = (LogicalTableFunction *)op;
 		auto relation = make_unique<Relation>(&input_op, parent);
 		relation_mapping[table_function->table_index] = relations.size();
+		inv_relation_mapping[relations.size()] = table_function->table_index;
 		relations.push_back(move(relation));
 		return true;
 	} else if (op->type == LogicalOperatorType::PROJECTION) {
 		auto proj = (LogicalProjection *)op;
 		// we run the join order optimizer witin the subquery as well
-		JoinOrderOptimizer optimizer;
+		JoinOrderOptimizer optimizer(injected_cardinalities);
 		op->children[0] = optimizer.Optimize(move(op->children[0]));
 		// projection, add to the set of relations
 		auto relation = make_unique<Relation>(&input_op, parent);
 		relation_mapping[proj->table_index] = relations.size();
+		inv_relation_mapping[relations.size()] = proj->table_index;
 		relations.push_back(move(relation));
 		return true;
 	}
@@ -162,7 +172,8 @@ static void UpdateExclusionSet(RelationSet *node, unordered_set<index_t> &exclus
 }
 
 //! Create a new JoinTree node by joining together two previous JoinTree nodes
-static unique_ptr<JoinNode> CreateJoinTree(RelationSet *set, NeighborInfo *info, JoinNode *left, JoinNode *right) {
+unique_ptr<JoinNode> JoinOrderOptimizer::CreateJoinTree(RelationSet *set, NeighborInfo *info, JoinNode *left,
+                                                        JoinNode *right) {
 	// for the hash join we want the right side (build side) to have the smallest cardinality
 	// also just a heuristic but for now...
 	// FIXME: we should probably actually benchmark that as well
@@ -178,11 +189,18 @@ static unique_ptr<JoinNode> CreateJoinTree(RelationSet *set, NeighborInfo *info,
 		// cross product
 		expected_cardinality = left->cardinality * right->cardinality;
 	} else {
-		// normal join, expect foreign key join
-		expected_cardinality = std::max(left->cardinality, right->cardinality);
+		// re-optimization cardinality injection
+		string key = GetCardinalityKey(set);
+		if (injected_cardinalities.find(key) != injected_cardinalities.end()) {
+			expected_cardinality = injected_cardinalities[key];
+		} else {
+			// normal join, expect foreign key join
+			expected_cardinality = std::max(left->cardinality, right->cardinality);
+		}
 	}
-	// cost is expected_cardinality plus the cost of the previous plans
-	index_t cost = expected_cardinality;
+	// cost is expected_cardinality plus the cost of the previous plans FIXME: change back to just expected_cardinality
+	// ?
+	index_t cost = expected_cardinality + left->cost + right->cost;
 	return make_unique<JoinNode>(set, info, left, right, expected_cardinality, cost);
 }
 
@@ -734,6 +752,37 @@ unique_ptr<LogicalOperator> JoinOrderOptimizer::Optimize(unique_ptr<LogicalOpera
 		final_plan = plans.find(total_relation);
 		assert(final_plan != plans.end());
 	}
+	// Printer::Print("--- PRINTING PLAN COST ---");
+	// Printer::Print(ToString(final_plan->second.get()));
+
 	// now perform the actual reordering
 	return RewritePlan(move(plan), final_plan->second.get());
+}
+
+string JoinOrderOptimizer::ToString(JoinNode *node, index_t depth) const {
+	string result = to_string(node->cost);
+	if (node->left != nullptr && node->right != nullptr) {
+		result += "\n" + string(depth * 4, ' ');
+		result += ToString(node->left, depth + 1);
+
+		result += "\n" + string(depth * 4, ' ');
+		result += ToString(node->right, depth + 1);
+
+		result += "";
+	}
+
+	return result;
+}
+
+string JoinOrderOptimizer::GetCardinalityKey(RelationSet *set) {
+	vector<index_t> ordered_table_indices;
+	for (size_t i = 0; i < set->count; i++) {
+		ordered_table_indices.push_back(inv_relation_mapping[set->relations[i]]);
+	}
+	sort(ordered_table_indices.begin(), ordered_table_indices.end());
+	string key = "";
+	for (index_t table_index : ordered_table_indices) {
+		key += to_string(table_index);
+	}
+	return key;
 }
