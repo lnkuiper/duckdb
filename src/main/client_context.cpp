@@ -52,7 +52,7 @@ void ClientContext::Cleanup() {
 		statement->is_invalidated = true;
 	}
 	for (auto &appender : appenders) {
-		appender->Invalidate("Connection has been closed!");
+		appender->Invalidate("Connection has been closed!", false);
 	}
 	CleanupInternal();
 }
@@ -283,7 +283,7 @@ unique_ptr<PreparedStatement> ClientContext::Prepare(string query) {
 			throw Exception(result->error);
 		}
 		auto prepared_catalog = (PreparedStatementCatalogEntry *)prepared_statements->GetRootEntry(prepare_name);
-		auto prepared_object = make_unique<PreparedStatement>(this, prepare_name, *prepared_catalog->prepared,
+		auto prepared_object = make_unique<PreparedStatement>(this, prepare_name, query, *prepared_catalog->prepared,
 		                                                      parser.n_prepared_parameters);
 		prepared_statement_objects.insert(prepared_object.get());
 		return prepared_object;
@@ -292,7 +292,7 @@ unique_ptr<PreparedStatement> ClientContext::Prepare(string query) {
 	}
 }
 
-unique_ptr<QueryResult> ClientContext::Execute(string name, vector<Value> &values, bool allow_stream_result) {
+unique_ptr<QueryResult> ClientContext::Execute(string name, vector<Value> &values, bool allow_stream_result, string query) {
 	lock_guard<mutex> client_guard(context_lock);
 	try {
 		InitialCleanup();
@@ -307,7 +307,7 @@ unique_ptr<QueryResult> ClientContext::Execute(string name, vector<Value> &value
 		execute->values.push_back(make_unique<ConstantExpression>(SQLTypeFromInternalType(val.type), val));
 	}
 
-	return RunStatement("", move(execute), allow_stream_result);
+	return RunStatement(query, move(execute), allow_stream_result);
 }
 void ClientContext::RemovePreparedStatement(PreparedStatement *statement) {
 	lock_guard<mutex> client_guard(context_lock);
@@ -361,7 +361,7 @@ unique_ptr<QueryResult> ClientContext::RunStatement(const string &query, unique_
 		statement = move(copied_statement);
 	}
 	// start the profiler
-	profiler.StartQuery(query);
+	profiler.StartQuery(query, *statement);
 	try {
 		result = RunStatementInternal(query, move(statement), allow_stream_result);
 	} catch (StandardException &ex) {
@@ -489,7 +489,7 @@ void ClientContext::Invalidate() {
 	}
 	// and close any open appenders
 	for (auto &appender : appenders) {
-		appender->Invalidate("Database that this appender belongs to has been closed!");
+		appender->Invalidate("Database that this appender belongs to has been closed!", false);
 	}
 	appenders.clear();
 }

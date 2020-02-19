@@ -9,6 +9,7 @@
 #include "duckdb/main/database.hpp"
 #include "duckdb/planner/expression/bound_function_expression.hpp"
 #include "duckdb/transaction/transaction.hpp"
+#include "duckdb/common/vector_operations/unary_executor.hpp"
 
 using namespace std;
 
@@ -84,17 +85,11 @@ static int64_t next_sequence_value(Transaction &transaction, SequenceCatalogEntr
 }
 
 static void nextval_function(DataChunk &args, ExpressionState &state, Vector &result) {
+	assert(result.SameCardinality(args.data[0]));
 	auto &func_expr = (BoundFunctionExpression &)state.expr;
 	auto &info = (NextvalBindData &)*func_expr.bind_info;
-	assert(args.column_count == 1 && args.data[0].type == TypeId::VARCHAR);
+	assert(args.column_count() == 1 && args.data[0].type == TypeId::VARCHAR);
 	auto &input = args.data[0];
-	if (state.root.executor->chunk) {
-		result.count = state.root.executor->chunk->size();
-		result.sel_vector = state.root.executor->chunk->sel_vector;
-	} else {
-		result.count = input.count;
-		result.sel_vector = input.sel_vector;
-	}
 	Transaction &transaction = info.context.ActiveTransaction();
 	if (info.sequence) {
 		// sequence to use is hard coded
@@ -106,17 +101,14 @@ static void nextval_function(DataChunk &args, ExpressionState &state, Vector &re
 		});
 	} else {
 		// sequence to use comes from the input
-		assert(result.count == input.count && result.sel_vector == input.sel_vector);
-		auto result_data = (int64_t *)result.GetData();
-		VectorOperations::ExecType<const char *>(input, [&](const char *value, index_t i, index_t k) {
-			// first get the sequence schema/name
+		UnaryExecutor::Execute<const char*, int64_t, true>(input, result, [&](const char *value) {
 			string schema, seq;
 			string seqname = string(value);
 			parse_schema_and_sequence(seqname, schema, seq);
 			// fetch the sequence from the catalog
 			auto sequence = info.context.catalog.GetSequence(info.context.ActiveTransaction(), schema, seq);
 			// finally get the next value from the sequence
-			result_data[i] = next_sequence_value(transaction, sequence);
+			return next_sequence_value(transaction, sequence);
 		});
 	}
 }
@@ -128,9 +120,11 @@ static unique_ptr<FunctionData> nextval_bind(BoundFunctionExpression &expr, Clie
 		// parameter to nextval function is a foldable constant
 		// evaluate the constant and perform the catalog lookup already
 		Value seqname = ExpressionExecutor::EvaluateScalar(*expr.children[0]);
-		assert(seqname.type == TypeId::VARCHAR);
-		parse_schema_and_sequence(seqname.str_value, schema, seq);
-		sequence = context.catalog.GetSequence(context.ActiveTransaction(), schema, seq);
+		if (!seqname.is_null) {
+			assert(seqname.type == TypeId::VARCHAR);
+			parse_schema_and_sequence(seqname.str_value, schema, seq);
+			sequence = context.catalog.GetSequence(context.ActiveTransaction(), schema, seq);
+		}
 	}
 	return make_unique<NextvalBindData>(context, sequence);
 }
