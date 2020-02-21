@@ -6,6 +6,7 @@
 #include "duckdb/common/enums/expression_type.hpp"
 #include "duckdb/common/enums/logical_operator_type.hpp"
 #include "duckdb/optimizer/optimizer.hpp"
+#include "duckdb/optimizer/join_order_optimizer.hpp"
 #include "duckdb/planner/expression/bound_columnref_expression.hpp"
 #include "duckdb/planner/expression/bound_comparison_expression.hpp"
 #include "duckdb/planner/operator/logical_comparison_join.hpp"
@@ -35,6 +36,7 @@ unique_ptr<LogicalOperator> ReOptimizer::ReOptimize(unique_ptr<LogicalOperator> 
 			context.profiler.EndPhase();
 			break;
 		}
+		// TODO: if q-error is low we could get away without calling optimizer (or some other criterion)
 		context.profiler.StartPhase("optimizer");
 		plan = CallOptimizer(move(plan));
 		context.profiler.EndPhase();
@@ -95,6 +97,10 @@ unique_ptr<LogicalOperator> ReOptimizer::PerformPartialPlan(unique_ptr<LogicalOp
 	ExecuteSubQuery(subquery);
 	context.profiler.EndPhase();
 
+	context.profiler.StartPhase("inject_cardinalities");
+	InjectCardinalities(*join_subquery_plan, temporary_table_name);
+	context.profiler.EndPhase();
+
 	context.profiler.StartPhase("adjust_plan");
 	plan = AdjustPlan(move(plan), *join_subquery_plan, temporary_table_name);
 	context.profiler.EndPhase();
@@ -102,6 +108,11 @@ unique_ptr<LogicalOperator> ReOptimizer::PerformPartialPlan(unique_ptr<LogicalOp
 	context.profiler.StartPhase("fix_bindings");
 	FixColumnBindings(*plan);
 	context.profiler.EndPhase();
+
+	// TODO: implement
+	// context.profiler.StartPhase("create_next_plan");
+	// plan = CreateNextPlan(move(plan));
+	// context.profiler.EndPhase();
 
 	plan->Print();
 
@@ -165,13 +176,13 @@ static vector<ColumnBinding> GetColumnBindings(LogicalComparisonJoin &join) {
 	vector<ColumnBinding> cbs;
 	if (!join.left_projection_map.empty()) {
 		vector<ColumnBinding> left_cbs =
-			LogicalOperator::MapBindings(join.children[0]->GetColumnBindings(), join.left_projection_map);
+		    LogicalOperator::MapBindings(join.children[0]->GetColumnBindings(), join.left_projection_map);
 		for (auto cb : left_cbs)
 			cbs.push_back(cb);
 	}
 	if (!join.right_projection_map.empty()) {
 		vector<ColumnBinding> right_cbs =
-			LogicalOperator::MapBindings(join.children[1]->GetColumnBindings(), join.right_projection_map);
+		    LogicalOperator::MapBindings(join.children[1]->GetColumnBindings(), join.right_projection_map);
 		for (auto cb : right_cbs)
 			cbs.push_back(cb);
 	}
@@ -365,42 +376,65 @@ string ReOptimizer::CreateSubQuery(LogicalComparisonJoin &join, const string tem
 	       JoinStrings(where_conditions, " AND ") + ");";
 }
 
-//! Extracts table_index from GET operators
-static vector<index_t> ExtractTableIndices(LogicalOperator &plan) {
-	vector<index_t> indices;
+//! Extracts table names from GET operators
+static vector<string> GetRelationSet(LogicalOperator &plan) {
+	vector<string> relations;
 	if (plan.type == LogicalOperatorType::GET) {
 		auto *get = static_cast<LogicalGet *>(&plan);
-		indices.push_back(get->table_index);
+		relations.push_back(get->table->schema->name + "." + get->table->name);
 	} else {
-		vector<index_t> child_indices;
 		for (auto &child : plan.children) {
-			vector<index_t> child_indices = ExtractTableIndices(*child);
-			indices.insert(indices.end(), child_indices.begin(), child_indices.end());
+			vector<string> child_indices = GetRelationSet(*child);
+			relations.insert(relations.end(), child_indices.begin(), child_indices.end());
 		}
 	}
-	return indices;
+	sort(relations.begin(), relations.end());
+	return relations;
 }
 
-//! Set of table_index to key string for saved_cardinalities
-static string IndicesToString(vector<index_t> table_indices) {
-	sort(table_indices.begin(), table_indices.end());
-	string key = "";
-	for (index_t table_index : table_indices) {
-		key += to_string(table_index);
+void ReOptimizer::InjectCardinalities(LogicalOperator &plan, string temp_table_name) {
+	// TODO: derive information about the cardinality of the intermediate results, implement
+	cardinalities[JoinStrings(GetRelationSet(plan), ",")] = GetTable("main", temp_table_name)->storage->cardinality;
+}
+
+unique_ptr<LogicalOperator> ReOptimizer::CreateNextPlan(unique_ptr<LogicalOperator> plan) {
+	index_t lowest_cost = 0;
+	unique_ptr<LogicalOperator> best_plan;
+	for (auto subset : TempTablePowerset()) {
+		// TODO: create plan using leaf nodes
+		unique_ptr<LogicalOperator> tentative_plan;
+		// TODO: figure out if this works (bindings might get fucked, but would rather this than call Optimizer)
+		JoinOrderOptimizer optimizer(cardinalities);
+		tentative_plan = optimizer.Optimize(move(plan));
+		// TODO: create cost function that uses injected cardinalities
+		index_t cost = tentative_plan->ComputeCost();
+		if (cost < lowest_cost) {
+			lowest_cost = cost;
+			best_plan = move(tentative_plan);
+		}
 	}
-	return key;
+	// TODO: perhaps call optimizer here?
+	return best_plan;
 }
 
-// TODO: derive information about the cardinality of the intermediate results using the cardinality of the temp table
-void ReOptimizer::SaveCardinality(LogicalOperator &plan, index_t cardinality) {
-	saved_cardinalities[IndicesToString(ExtractTableIndices(plan))] = cardinality;
+vector<vector<string>> ReOptimizer::TempTablePowerset() {
+	size_t powerset_size = pow(2, temp_tables.size());
+	vector<vector<string>> powerset(powerset_size);
+	for (size_t i = 0; i < powerset_size; i++) {
+		vector<string> subset;
+		for (size_t j = 0; j < temp_tables.size(); j++) {
+			if (i & (1 << j)) {
+				subset.push_back(temp_tables[j]);
+			}
+		}
+		powerset.push_back(subset);
+	}
+	return powerset;
 }
 
 unique_ptr<LogicalOperator> ReOptimizer::AdjustPlan(unique_ptr<LogicalOperator> plan, LogicalComparisonJoin &old_op,
                                                     const string temporary_table_name) {
 	TableCatalogEntry *table = GetTable("main", temporary_table_name);
-	// store cardinality
-	SaveCardinality(old_op, table->storage->cardinality);
 	// Create a LogicalGet for the newly made temporary table (empty column_ids - filled in "ReplaceLogicalOperator")
 	unique_ptr<LogicalGet> temp_table_get = make_unique<LogicalGet>(table, 0, vector<column_t>());
 	// replace 'subplan' with 'temp_table_get' in 'plan'
@@ -422,7 +456,8 @@ TableCatalogEntry *ReOptimizer::GetTable(string schema, string table_name) {
 	return table;
 }
 
-void ReOptimizer::ReplaceLogicalOperator(LogicalOperator &plan, LogicalComparisonJoin &old_op, TableCatalogEntry *table, index_t depth) {
+void ReOptimizer::ReplaceLogicalOperator(LogicalOperator &plan, LogicalComparisonJoin &old_op, TableCatalogEntry *table,
+                                         index_t depth) {
 	if (plan.children.empty())
 		return;
 	// search children
@@ -550,4 +585,3 @@ string ReOptimizer::JoinStrings(vector<string> strings, string delimiter) {
 	}
 	return joined_strings;
 }
-

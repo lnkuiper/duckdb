@@ -190,17 +190,19 @@ unique_ptr<JoinNode> JoinOrderOptimizer::CreateJoinTree(RelationSet *set, Neighb
 		expected_cardinality = left->cardinality * right->cardinality;
 	} else {
 		// re-optimization cardinality injection
-		string key = GetCardinalityKey(set);
-		if (injected_cardinalities.find(key) != injected_cardinalities.end()) {
-			expected_cardinality = injected_cardinalities[key];
-		} else {
-			// normal join, expect foreign key join
-			expected_cardinality = std::max(left->cardinality, right->cardinality);
-		}
+		// string key = GetCardinalityKey(set);
+		// Printer::Print("lookup cardinality " + key);
+		// if (injected_cardinalities.find(key) != injected_cardinalities.end()) {
+		// 	Printer::Print("injected cardinality");
+		// 	expected_cardinality = injected_cardinalities[key];
+		// } else {
+		// 	// normal join, expect foreign key join
+		// 	expected_cardinality = std::max(left->cardinality, right->cardinality);
+		// }
+		expected_cardinality = std::max(left->cardinality, right->cardinality);
 	}
-	// cost is expected_cardinality plus the cost of the previous plans FIXME: change back to just expected_cardinality
-	// ?
-	index_t cost = expected_cardinality + left->cost + right->cost;
+	// cost is expected_cardinality plus the cost of the previous plans FIXME: change back to expected_cardinality?
+	index_t cost = expected_cardinality; // + left->cost + right->cost;
 	return make_unique<JoinNode>(set, info, left, right, expected_cardinality, cost);
 }
 
