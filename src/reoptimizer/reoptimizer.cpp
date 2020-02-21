@@ -376,7 +376,7 @@ string ReOptimizer::CreateSubQuery(LogicalComparisonJoin &join, const string tem
 	       JoinStrings(where_conditions, " AND ") + ");";
 }
 
-//! Extracts table names from GET operators
+//! Extracts table names from GET leaf nodes
 static vector<string> GetRelationSet(LogicalOperator &plan) {
 	vector<string> relations;
 	if (plan.type == LogicalOperatorType::GET) {
