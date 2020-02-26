@@ -32,17 +32,21 @@ public:
 	}
 
 	//! Add a string to the string heap, returns a pointer to the string
-	const char *AddString(const char *data, index_t len);
+	string_t AddString(const char *data, idx_t len);
 	//! Add a string to the string heap, returns a pointer to the string
-	const char *AddString(const char *data);
+	string_t AddString(const char *data);
 	//! Add a string to the string heap, returns a pointer to the string
-	const char *AddString(const string &data);
+	string_t AddString(const string &data);
+	//! Add a string to the string heap, returns a pointer to the string
+	string_t AddString(const string_t &data);
+	//! Allocates space for an empty string of size "len" on the heap
+	string_t EmptyString(idx_t len);
 	//! Add all strings from a different string heap to this string heap
 	void MergeHeap(StringHeap &heap);
 
 private:
 	struct StringChunk {
-		StringChunk(index_t size) : current_position(0), maximum_size(size) {
+		StringChunk(idx_t size) : current_position(0), maximum_size(size) {
 			data = unique_ptr<char[]>(new char[maximum_size]);
 		}
 		~StringChunk() {
@@ -55,8 +59,8 @@ private:
 		}
 
 		unique_ptr<char[]> data;
-		index_t current_position;
-		index_t maximum_size;
+		idx_t current_position;
+		idx_t maximum_size;
 		unique_ptr<StringChunk> prev;
 	};
 	StringChunk *tail;

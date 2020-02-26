@@ -20,20 +20,12 @@ class Deserializer;
 
 struct blob_t {
 	data_ptr_t data;
-	index_t size;
+	idx_t size;
 };
 
-struct string_t {
-	string_t() = default;
-	string_t(char *data, uint32_t length) : data(data), length(length) {
-	}
+struct string_t;
 
-	char *data;
-	uint32_t length;
-};
-
-template <class T>
-using child_list_t = std::vector<std::pair<std::string, T>>;
+template <class T> using child_list_t = std::vector<std::pair<std::string, T>>;
 
 struct list_entry_t {
 	list_entry_t() = default;
@@ -241,7 +233,6 @@ public:
 	static const SQLType LIST;
 	static const SQLType ANY;
 
-
 	//! A list of all NUMERIC types (integral and floating point types)
 	static const vector<SQLType> NUMERIC;
 	//! A list of all INTEGRAL types
@@ -293,7 +284,7 @@ template <class T> bool IsValidType() {
 extern const TypeId ROW_TYPE;
 
 string TypeIdToString(TypeId type);
-index_t GetTypeIdSize(TypeId type);
+idx_t GetTypeIdSize(TypeId type);
 bool TypeIsConstantSize(TypeId type);
 bool TypeIsIntegral(TypeId type);
 bool TypeIsNumeric(TypeId type);

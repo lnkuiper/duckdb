@@ -8,7 +8,7 @@ using namespace duckdb;
 using namespace std;
 
 class BufferedWriter {
-	constexpr static index_t BUFFER_SIZE = 4096 * 4;
+	constexpr static idx_t BUFFER_SIZE = 4096 * 4;
 
 public:
 	BufferedWriter(string &path) : pos(0) {
@@ -30,7 +30,7 @@ public:
 		to_csv.close();
 	}
 
-	void Write(const char *buf, index_t len) {
+	void Write(const char *buf, idx_t len) {
 		if (len >= BUFFER_SIZE) {
 			Flush();
 			to_csv.write(buf, len);
@@ -49,15 +49,15 @@ public:
 
 private:
 	char buffer[BUFFER_SIZE];
-	index_t pos = 0;
+	idx_t pos = 0;
 
 	ofstream to_csv;
 };
 
 string AddEscapes(string &to_be_escaped, string escape, string val) {
-	index_t i = 0;
+	idx_t i = 0;
 	string new_val = "";
-	index_t found = val.find(to_be_escaped);
+	idx_t found = val.find(to_be_escaped);
 
 	while (found != string::npos) {
 		while (i < found) {
@@ -74,16 +74,17 @@ string AddEscapes(string &to_be_escaped, string escape, string val) {
 	return new_val;
 }
 
-static void WriteQuotedString(BufferedWriter &writer, const char *str_value, string &delimiter, string &quote,
+static void WriteQuotedString(BufferedWriter &writer, string_t str_value, string &delimiter, string &quote,
                               string &escape, string &null_str, bool write_quoted) {
 	// used for adding escapes
 	bool add_escapes = false;
-	string new_val = str_value;
+	auto str_data = str_value.GetData();
+	string new_val(str_data, str_value.GetSize());
 
 	// check for \n, \r, \n\r in string
 	if (!write_quoted) {
-		for (const char *val = str_value; *val; val++) {
-			if (*val == '\n' || *val == '\r') {
+		for (idx_t i = 0; i < str_value.GetSize(); i++) {
+			if (str_data[i] == '\n' || str_data[i] == '\r') {
 				// newline, write a quoted string
 				write_quoted = true;
 			}
@@ -136,13 +137,13 @@ static void WriteQuotedString(BufferedWriter &writer, const char *str_value, str
 
 void PhysicalCopyToFile::GetChunkInternal(ClientContext &context, DataChunk &chunk, PhysicalOperatorState *state) {
 	auto &info = *this->info;
-	index_t total = 0;
+	idx_t total = 0;
 
 	string newline = "\n";
 	BufferedWriter writer(info.file_path);
 	if (info.header) {
 		// write the header line
-		for (index_t i = 0; i < names.size(); i++) {
+		for (idx_t i = 0; i < names.size(); i++) {
 			if (i != 0) {
 				writer.Write(info.delimiter);
 			}
@@ -152,7 +153,7 @@ void PhysicalCopyToFile::GetChunkInternal(ClientContext &context, DataChunk &chu
 	}
 	// create a chunk with VARCHAR columns
 	vector<TypeId> types;
-	for (index_t col_idx = 0; col_idx < state->child_chunk.column_count(); col_idx++) {
+	for (idx_t col_idx = 0; col_idx < state->child_chunk.column_count(); col_idx++) {
 		types.push_back(TypeId::VARCHAR);
 	}
 	DataChunk cast_chunk;
@@ -165,7 +166,7 @@ void PhysicalCopyToFile::GetChunkInternal(ClientContext &context, DataChunk &chu
 		}
 		// cast the columns of the chunk to varchar
 		cast_chunk.SetCardinality(state->child_chunk);
-		for (index_t col_idx = 0; col_idx < state->child_chunk.column_count(); col_idx++) {
+		for (idx_t col_idx = 0; col_idx < state->child_chunk.column_count(); col_idx++) {
 			if (sql_types[col_idx].id == SQLTypeId::VARCHAR) {
 				// VARCHAR, just create a reference
 				cast_chunk.data[col_idx].Reference(state->child_chunk.data[col_idx]);
@@ -176,9 +177,9 @@ void PhysicalCopyToFile::GetChunkInternal(ClientContext &context, DataChunk &chu
 			}
 		}
 		// now loop over the vectors and output the values
-		VectorOperations::Exec(cast_chunk.data[0], [&](index_t i, index_t k) {
+		VectorOperations::Exec(cast_chunk.data[0], [&](idx_t i, idx_t k) {
 			// write values
-			for (index_t col_idx = 0; col_idx < state->child_chunk.column_count(); col_idx++) {
+			for (idx_t col_idx = 0; col_idx < state->child_chunk.column_count(); col_idx++) {
 				if (col_idx != 0) {
 					writer.Write(info.delimiter);
 				}
@@ -189,7 +190,7 @@ void PhysicalCopyToFile::GetChunkInternal(ClientContext &context, DataChunk &chu
 				}
 
 				// non-null value, fetch the string value from the cast chunk
-				auto str_data = (const char **)cast_chunk.data[col_idx].GetData();
+				auto str_data = (string_t *)cast_chunk.data[col_idx].GetData();
 				auto str_value = str_data[i];
 				WriteQuotedString(writer, str_value, info.delimiter, info.quote, info.escape, info.null_str,
 				                  info.force_quote[col_idx]);

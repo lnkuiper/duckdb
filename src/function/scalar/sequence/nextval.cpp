@@ -29,29 +29,6 @@ struct NextvalBindData : public FunctionData {
 	}
 };
 
-static void parse_schema_and_sequence(string input, string &schema, string &name) {
-	index_t start = 0;
-	for (const char *istr = input.c_str(); *istr; istr++) {
-		if (*istr == '.') {
-			// separator
-			index_t len = istr - input.c_str();
-			if (len == 0) {
-				throw ParserException("invalid name syntax");
-			}
-			if (start > 0) {
-				throw ParserException("invalid name syntax");
-			}
-			schema = input.substr(0, len);
-			start = len + 1;
-		}
-	}
-	if (start == 0) {
-		schema = DEFAULT_SCHEMA;
-		name = input;
-	} else {
-		name = input.substr(start, input.size() - start);
-	}
-}
 
 static int64_t next_sequence_value(Transaction &transaction, SequenceCatalogEntry *seq) {
 	lock_guard<mutex> seqlock(seq->lock);
@@ -95,16 +72,16 @@ static void nextval_function(DataChunk &args, ExpressionState &state, Vector &re
 		// sequence to use is hard coded
 		// increment the sequence
 		auto result_data = (int64_t *)result.GetData();
-		VectorOperations::Exec(result, [&](index_t i, index_t k) {
+		VectorOperations::Exec(result, [&](idx_t i, idx_t k) {
 			// get the next value from the sequence
 			result_data[i] = next_sequence_value(transaction, info.sequence);
 		});
 	} else {
 		// sequence to use comes from the input
-		UnaryExecutor::Execute<const char*, int64_t, true>(input, result, [&](const char *value) {
+		UnaryExecutor::Execute<string_t, int64_t, true>(input, result, [&](string_t value) {
 			string schema, seq;
-			string seqname = string(value);
-			parse_schema_and_sequence(seqname, schema, seq);
+			string seqname = value.GetString();
+			Catalog::ParseRangeVar(seqname, schema, seq);
 			// fetch the sequence from the catalog
 			auto sequence = info.context.catalog.GetSequence(info.context.ActiveTransaction(), schema, seq);
 			// finally get the next value from the sequence
@@ -122,7 +99,7 @@ static unique_ptr<FunctionData> nextval_bind(BoundFunctionExpression &expr, Clie
 		Value seqname = ExpressionExecutor::EvaluateScalar(*expr.children[0]);
 		if (!seqname.is_null) {
 			assert(seqname.type == TypeId::VARCHAR);
-			parse_schema_and_sequence(seqname.str_value, schema, seq);
+			Catalog::ParseRangeVar(seqname.str_value, schema, seq);
 			sequence = context.catalog.GetSequence(context.ActiveTransaction(), schema, seq);
 		}
 	}

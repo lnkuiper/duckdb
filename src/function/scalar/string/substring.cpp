@@ -8,8 +8,8 @@ using namespace std;
 
 namespace duckdb {
 
-static const char *substring_scalar_function(const char *input_string, int offset, int length,
-                                             unique_ptr<char[]> &output, index_t &current_len) {
+static string_t substring_scalar_function(string_t input, int offset, int length, unique_ptr<char[]> &output,
+                                          idx_t &current_len) {
 	// reduce offset by one because SQL starts counting at 1
 	offset--;
 
@@ -17,7 +17,7 @@ static const char *substring_scalar_function(const char *input_string, int offse
 		throw Exception("SUBSTRING cannot handle negative offsets");
 	}
 
-	index_t required_len = strlen(input_string) + 1;
+	idx_t required_len = input.GetSize() + 1;
 	if (required_len > current_len) {
 		// need a resize
 		current_len = required_len;
@@ -25,23 +25,25 @@ static const char *substring_scalar_function(const char *input_string, int offse
 	}
 
 	// UTF8 chars can use more than one byte
-	index_t input_char_offset = 0;
-	index_t input_byte_offset = 0;
-	index_t output_byte_offset = 0;
+	idx_t input_char_offset = 0;
+	idx_t input_byte_offset = 0;
+	idx_t output_byte_offset = 0;
+
+	auto input_string = input.GetData();
 
 	while (input_string[input_byte_offset]) {
 		char b = input_string[input_byte_offset++];
 		input_char_offset += (b & 0xC0) != 0x80;
-		if (input_char_offset > (index_t)(offset + length)) {
+		if (input_char_offset > (idx_t)(offset + length)) {
 			break;
 		}
-		if (input_char_offset > (index_t)offset) {
+		if (input_char_offset > (idx_t)offset) {
 			output[output_byte_offset++] = b;
 		}
 	}
 	// terminate output
 	output[output_byte_offset] = '\0';
-	return output.get();
+	return string_t(output.get(), output_byte_offset);
 }
 
 static void substring_function(DataChunk &args, ExpressionState &state, Vector &result) {
@@ -51,10 +53,10 @@ static void substring_function(DataChunk &args, ExpressionState &state, Vector &
 	auto &offset_vector = args.data[1];
 	auto &length_vector = args.data[2];
 
-	index_t current_len = 0;
+	idx_t current_len = 0;
 	unique_ptr<char[]> output;
-	TernaryExecutor::Execute<const char *, int, int, const char *, true>(
-	    input_vector, offset_vector, length_vector, result, [&](const char *input_string, int offset, int length) {
+	TernaryExecutor::Execute<string_t, int, int, string_t, true>(
+	    input_vector, offset_vector, length_vector, result, [&](string_t input_string, int offset, int length) {
 		    return result.AddString(substring_scalar_function(input_string, offset, length, output, current_len));
 	    });
 }

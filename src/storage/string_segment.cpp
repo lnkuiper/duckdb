@@ -7,7 +7,7 @@
 using namespace duckdb;
 using namespace std;
 
-StringSegment::StringSegment(BufferManager &manager, index_t row_start, block_id_t block)
+StringSegment::StringSegment(BufferManager &manager, idx_t row_start, block_id_t block)
     : UncompressedSegment(manager, TypeId::VARCHAR, row_start) {
 	this->max_vector_count = 0;
 	this->dictionary_offset = 0;
@@ -47,7 +47,7 @@ void StringSegment::ExpandStringSegment(data_ptr_t baseptr) {
 
 	if (string_updates) {
 		auto new_string_updates = unique_ptr<string_update_info_t[]>(new string_update_info_t[max_vector_count]);
-		for (index_t i = 0; i < max_vector_count - 1; i++) {
+		for (idx_t i = 0; i < max_vector_count - 1; i++) {
 			new_string_updates[i] = move(string_updates[i]);
 		}
 		new_string_updates[max_vector_count - 1] = 0;
@@ -66,7 +66,7 @@ void StringSegment::InitializeScan(ColumnScanState &state) {
 //===--------------------------------------------------------------------===//
 // Fetch base data
 //===--------------------------------------------------------------------===//
-void StringSegment::FetchBaseData(ColumnScanState &state, index_t vector_index, Vector &result) {
+void StringSegment::FetchBaseData(ColumnScanState &state, idx_t vector_index, Vector &result) {
 	// clear any previously locked buffers and get the primary buffer handle
 	auto handle = state.primary_handle.get();
 	state.handles.clear();
@@ -75,32 +75,32 @@ void StringSegment::FetchBaseData(ColumnScanState &state, index_t vector_index, 
 	FetchBaseData(state, handle->node->buffer, vector_index, result, GetVectorCount(vector_index));
 }
 
-void StringSegment::FetchBaseData(ColumnScanState &state, data_ptr_t baseptr, index_t vector_index, Vector &result,
-                                  index_t count) {
+void StringSegment::FetchBaseData(ColumnScanState &state, data_ptr_t baseptr, idx_t vector_index, Vector &result,
+                                  idx_t count) {
 	auto base = baseptr + vector_index * vector_size;
 
 	auto &base_nullmask = *((nullmask_t *)base);
 	auto base_data = (int32_t *)(base + sizeof(nullmask_t));
-	auto result_data = (char **)result.GetData();
+	auto result_data = (string_t *)result.GetData();
 
 	if (string_updates && string_updates[vector_index]) {
 		// there are updates: merge them in
 		auto &info = *string_updates[vector_index];
-		index_t update_idx = 0;
-		for (index_t i = 0; i < count; i++) {
+		idx_t update_idx = 0;
+		for (idx_t i = 0; i < count; i++) {
 			if (update_idx < info.count && info.ids[update_idx] == i) {
 				// use update info
-				result_data[i] = ReadString(state.handles, info.block_ids[update_idx], info.offsets[update_idx]).data;
+				result_data[i] = ReadString(state.handles, info.block_ids[update_idx], info.offsets[update_idx]);
 				update_idx++;
 			} else {
 				// use base table info
-				result_data[i] = FetchStringFromDict(state.handles, baseptr, base_data[i]).data;
+				result_data[i] = FetchStringFromDict(state.handles, baseptr, base_data[i]);
 			}
 		}
 	} else {
 		// no updates: fetch only from the string dictionary
-		for (index_t i = 0; i < count; i++) {
-			result_data[i] = FetchStringFromDict(state.handles, baseptr, base_data[i]).data;
+		for (idx_t i = 0; i < count; i++) {
+			result_data[i] = FetchStringFromDict(state.handles, baseptr, base_data[i]);
 		}
 	}
 	result.nullmask = base_nullmask;
@@ -114,12 +114,12 @@ void StringSegment::FetchUpdateData(ColumnScanState &state, Transaction &transac
 	// fetch data from updates
 	auto handle = state.primary_handle.get();
 
-	auto result_data = (char **)result.GetData();
+	auto result_data = (string_t *)result.GetData();
 	UpdateInfo::UpdatesForTransaction(info, transaction, [&](UpdateInfo *current) {
 		auto info_data = (string_location_t *)current->tuple_data;
-		for (index_t i = 0; i < current->N; i++) {
+		for (idx_t i = 0; i < current->N; i++) {
 			auto string = FetchString(state.handles, handle->node->buffer, info_data[i]);
-			result_data[current->tuples[i]] = string.data;
+			result_data[current->tuples[i]] = string;
 			result.nullmask[current->tuples[i]] = current->nullmask[current->tuples[i]];
 		}
 	});
@@ -128,16 +128,16 @@ void StringSegment::FetchUpdateData(ColumnScanState &state, Transaction &transac
 //===--------------------------------------------------------------------===//
 // Fetch strings
 //===--------------------------------------------------------------------===//
-void StringSegment::FetchStringLocations(data_ptr_t baseptr, row_t *ids, index_t vector_index, index_t vector_offset,
-                                         index_t count, string_location_t result[]) {
+void StringSegment::FetchStringLocations(data_ptr_t baseptr, row_t *ids, idx_t vector_index, idx_t vector_offset,
+                                         idx_t count, string_location_t result[]) {
 	auto base = baseptr + vector_index * vector_size;
 	auto base_data = (int32_t *)(base + sizeof(nullmask_t));
 
 	if (string_updates && string_updates[vector_index]) {
 		// there are updates: merge them in
 		auto &info = *string_updates[vector_index];
-		index_t update_idx = 0;
-		for (index_t i = 0; i < count; i++) {
+		idx_t update_idx = 0;
+		for (idx_t i = 0; i < count; i++) {
 			auto id = ids[i] - vector_offset;
 			while (update_idx < info.count && info.ids[update_idx] < id) {
 				update_idx++;
@@ -154,7 +154,7 @@ void StringSegment::FetchStringLocations(data_ptr_t baseptr, row_t *ids, index_t
 		}
 	} else {
 		// no updates: fetch strings from base vector
-		for (index_t i = 0; i < count; i++) {
+		for (idx_t i = 0; i < count; i++) {
 			auto id = ids[i] - vector_offset;
 			result[i] = FetchStringLocation(baseptr, base_data[id]);
 		}
@@ -198,19 +198,17 @@ string_t StringSegment::FetchString(buffer_handle_set_t &handles, data_ptr_t bas
 		auto dict_pos = dict_end - location.offset;
 		auto string_length = *((uint16_t *)dict_pos);
 
-		string_t result;
-		result.length = string_length;
-		result.data = (char *)(dict_pos + sizeof(uint16_t));
-		return result;
+		auto str_ptr = (char *)(dict_pos + sizeof(uint16_t));
+		return string_t(str_ptr, string_length);
 	}
 }
 
 void StringSegment::FetchRow(ColumnFetchState &state, Transaction &transaction, row_t row_id, Vector &result,
-                             index_t result_idx) {
+                             idx_t result_idx) {
 	auto read_lock = lock.GetSharedLock();
 
-	index_t vector_index = row_id / STANDARD_VECTOR_SIZE;
-	index_t id_in_vector = row_id - vector_index * STANDARD_VECTOR_SIZE;
+	idx_t vector_index = row_id / STANDARD_VECTOR_SIZE;
+	idx_t id_in_vector = row_id - vector_index * STANDARD_VECTOR_SIZE;
 	assert(vector_index < max_vector_count);
 
 	data_ptr_t baseptr;
@@ -231,19 +229,19 @@ void StringSegment::FetchRow(ColumnFetchState &state, Transaction &transaction, 
 	auto base = baseptr + vector_index * vector_size;
 	auto &base_nullmask = *((nullmask_t *)base);
 	auto base_data = (int32_t *)(base + sizeof(nullmask_t));
-	auto result_data = (char **)result.GetData();
+	auto result_data = (string_t *)result.GetData();
 
-	result_data[result_idx] = nullptr;
+	bool found_data = false;
 	// first see if there is any updated version of this tuple we must fetch
 	if (versions && versions[vector_index]) {
 		UpdateInfo::UpdatesForTransaction(versions[vector_index], transaction, [&](UpdateInfo *current) {
 			auto info_data = (string_location_t *)current->tuple_data;
 			// loop over the tuples in this UpdateInfo
-			for (index_t i = 0; i < current->N; i++) {
+			for (idx_t i = 0; i < current->N; i++) {
 				if (current->tuples[i] == row_id) {
 					// found the relevant tuple
-					auto string = FetchString(state.handles, baseptr, info_data[i]);
-					result_data[result_idx] = string.data;
+					found_data = true;
+					result_data[result_idx] = FetchString(state.handles, baseptr, info_data[i]);
 					result.nullmask[result_idx] = current->nullmask[current->tuples[i]];
 					break;
 				} else if (current->tuples[i] > row_id) {
@@ -253,15 +251,15 @@ void StringSegment::FetchRow(ColumnFetchState &state, Transaction &transaction, 
 			}
 		});
 	}
-	if (!result_data[result_idx]) {
+	if (!found_data) {
 		// there was no updated version to be fetched: fetch the base version instead
 		if (string_updates && string_updates[vector_index]) {
 			// there are updates: check if we should use them
 			auto &info = *string_updates[vector_index];
-			for (index_t i = 0; i < info.count; i++) {
+			for (idx_t i = 0; i < info.count; i++) {
 				if (info.ids[i] == id_in_vector) {
 					// use the update
-					result_data[result_idx] = ReadString(state.handles, info.block_ids[i], info.offsets[i]).data;
+					result_data[result_idx] = ReadString(state.handles, info.block_ids[i], info.offsets[i]);
 					break;
 				} else if (info.ids[i] > id_in_vector) {
 					break;
@@ -269,7 +267,7 @@ void StringSegment::FetchRow(ColumnFetchState &state, Transaction &transaction, 
 			}
 		} else {
 			// no version was found yet: fetch base table version
-			result_data[result_idx] = FetchStringFromDict(state.handles, baseptr, base_data[id_in_vector]).data;
+			result_data[result_idx] = FetchStringFromDict(state.handles, baseptr, base_data[id_in_vector]);
 		}
 	}
 	result.nullmask[result_idx] = base_nullmask[id_in_vector];
@@ -278,14 +276,14 @@ void StringSegment::FetchRow(ColumnFetchState &state, Transaction &transaction, 
 //===--------------------------------------------------------------------===//
 // Append
 //===--------------------------------------------------------------------===//
-index_t StringSegment::Append(SegmentStatistics &stats, Vector &data, index_t offset, index_t count) {
+idx_t StringSegment::Append(SegmentStatistics &stats, Vector &data, idx_t offset, idx_t count) {
 	assert(data.type == TypeId::VARCHAR);
 	auto handle = manager.Pin(block_id);
 
-	index_t initial_count = tuple_count;
+	idx_t initial_count = tuple_count;
 	while (count > 0) {
 		// get the vector index of the vector to append to and see how many tuples we can append to that vector
-		index_t vector_index = tuple_count / STANDARD_VECTOR_SIZE;
+		idx_t vector_index = tuple_count / STANDARD_VECTOR_SIZE;
 		if (vector_index == max_vector_count) {
 			// we are at the maximum vector, check if there is space to increase the maximum vector count
 			// as a heuristic, we only allow another vector to be added if we have at least 32 bytes per string
@@ -297,8 +295,8 @@ index_t StringSegment::Append(SegmentStatistics &stats, Vector &data, index_t of
 				break;
 			}
 		}
-		index_t current_tuple_count = tuple_count - vector_index * STANDARD_VECTOR_SIZE;
-		index_t append_count = std::min(STANDARD_VECTOR_SIZE - current_tuple_count, count);
+		idx_t current_tuple_count = tuple_count - vector_index * STANDARD_VECTOR_SIZE;
+		idx_t append_count = std::min(STANDARD_VECTOR_SIZE - current_tuple_count, count);
 
 		// now perform the actual append
 		AppendData(stats, handle->node->buffer + vector_size * vector_index, handle->node->buffer + Storage::BLOCK_SIZE,
@@ -311,17 +309,17 @@ index_t StringSegment::Append(SegmentStatistics &stats, Vector &data, index_t of
 	return tuple_count - initial_count;
 }
 
-void StringSegment::AppendData(SegmentStatistics &stats, data_ptr_t target, data_ptr_t end, index_t target_offset,
-                               Vector &source, index_t offset, index_t count) {
+void StringSegment::AppendData(SegmentStatistics &stats, data_ptr_t target, data_ptr_t end, idx_t target_offset,
+                               Vector &source, idx_t offset, idx_t count) {
 	assert(offset + count <= source.size());
-	auto ldata = (char **)source.GetData();
+	auto ldata = (string_t *)source.GetData();
 	auto &result_nullmask = *((nullmask_t *)target);
 	auto result_data = (int32_t *)(target + sizeof(nullmask_t));
 
-	index_t remaining_strings = STANDARD_VECTOR_SIZE - (this->tuple_count % STANDARD_VECTOR_SIZE);
+	idx_t remaining_strings = STANDARD_VECTOR_SIZE - (this->tuple_count % STANDARD_VECTOR_SIZE);
 	VectorOperations::Exec(
 	    source.sel_vector(), count + offset,
-	    [&](index_t i, index_t k) {
+	    [&](idx_t i, idx_t k) {
 		    if (source.nullmask[i]) {
 			    // null value is stored as -1
 			    result_data[k - offset + target_offset] = 0;
@@ -330,8 +328,8 @@ void StringSegment::AppendData(SegmentStatistics &stats, data_ptr_t target, data
 		    } else {
 			    assert(dictionary_offset < Storage::BLOCK_SIZE);
 			    // non-null value, check if we can fit it within the block
-			    index_t string_length = strlen(ldata[i]);
-			    index_t total_length = string_length + 1 + sizeof(uint16_t);
+			    idx_t string_length = ldata[i].GetSize();
+			    idx_t total_length = string_length + 1 + sizeof(uint16_t);
 
 			    if (string_length > stats.max_string_length) {
 				    stats.max_string_length = string_length;
@@ -348,7 +346,7 @@ void StringSegment::AppendData(SegmentStatistics &stats, data_ptr_t target, data
 				    block_id_t block;
 				    int32_t offset;
 				    // write the string into the current string block
-				    WriteString(string_t(ldata[i], string_length), block, offset);
+				    WriteString(ldata[i], block, offset);
 
 				    dictionary_offset += BIG_STRING_MARKER_SIZE;
 				    auto dict_pos = end - dictionary_offset;
@@ -367,7 +365,7 @@ void StringSegment::AppendData(SegmentStatistics &stats, data_ptr_t target, data
 				    uint16_t string_length_u16 = string_length;
 				    memcpy(dict_pos, &string_length_u16, sizeof(uint16_t));
 				    // now write the actual string data into the dictionary
-				    memcpy(dict_pos + sizeof(uint16_t), ldata[i], string_length + 1);
+				    memcpy(dict_pos + sizeof(uint16_t), ldata[i].GetData(), string_length + 1);
 			    }
 			    // place the dictionary offset into the set of vectors
 			    result_data[k - offset + target_offset] = dictionary_offset;
@@ -378,7 +376,7 @@ void StringSegment::AppendData(SegmentStatistics &stats, data_ptr_t target, data
 }
 
 void StringSegment::WriteString(string_t string, block_id_t &result_block, int32_t &result_offset) {
-	assert(strlen(string.data) == string.length);
+	assert(strlen(string.GetData()) == string.GetSize());
 	if (overflow_writer) {
 		// overflow writer is set: write string there
 		overflow_writer->WriteString(string, result_block, result_offset);
@@ -389,13 +387,13 @@ void StringSegment::WriteString(string_t string, block_id_t &result_block, int32
 }
 
 void StringSegment::WriteStringMemory(string_t string, block_id_t &result_block, int32_t &result_offset) {
-	uint32_t total_length = string.length + 1 + sizeof(uint32_t);
+	uint32_t total_length = string.GetSize() + 1 + sizeof(uint32_t);
 	unique_ptr<BufferHandle> handle;
 	// check if the string fits in the current block
 	if (!head || head->offset + total_length >= head->size) {
 		// string does not fit, allocate space for it
 		// create a new string block
-		index_t alloc_size = std::max((index_t)total_length, (index_t)Storage::BLOCK_ALLOC_SIZE);
+		idx_t alloc_size = std::max((idx_t)total_length, (idx_t)Storage::BLOCK_ALLOC_SIZE);
 		auto new_block = make_unique<StringBlock>();
 		new_block->offset = 0;
 		new_block->size = alloc_size;
@@ -416,7 +414,7 @@ void StringSegment::WriteStringMemory(string_t string, block_id_t &result_block,
 	auto ptr = handle->node->buffer + head->offset;
 	memcpy(ptr, &string.length, sizeof(uint32_t));
 	ptr += sizeof(uint32_t);
-	memcpy(ptr, string.data, string.length + 1);
+	memcpy(ptr, string.GetData(), string.length + 1);
 	head->offset += total_length;
 }
 
@@ -434,7 +432,7 @@ string_t StringSegment::ReadString(buffer_handle_set_t &handles, block_id_t bloc
 		offset += sizeof(uint32_t);
 
 		// allocate a buffer to store the string
-		auto alloc_size = std::max((index_t)Storage::BLOCK_ALLOC_SIZE, (index_t)length + 1 + sizeof(uint32_t));
+		auto alloc_size = std::max((idx_t)Storage::BLOCK_ALLOC_SIZE, (idx_t)length + 1 + sizeof(uint32_t));
 		auto target_handle = manager.Allocate(alloc_size, true);
 		auto target_ptr = target_handle->node->buffer;
 		// write the length in this block as well
@@ -442,8 +440,7 @@ string_t StringSegment::ReadString(buffer_handle_set_t &handles, block_id_t bloc
 		target_ptr += sizeof(uint32_t);
 		// now append the string to the single buffer
 		while (remaining > 0) {
-			index_t to_write =
-			    std::min((index_t)remaining, (index_t)(Storage::BLOCK_SIZE - sizeof(block_id_t) - offset));
+			idx_t to_write = std::min((idx_t)remaining, (idx_t)(Storage::BLOCK_SIZE - sizeof(block_id_t) - offset));
 			memcpy(target_ptr, handle->node->buffer + offset, to_write);
 
 			remaining -= to_write;
@@ -479,10 +476,9 @@ string_t StringSegment::ReadString(buffer_handle_set_t &handles, block_id_t bloc
 
 string_t StringSegment::ReadString(data_ptr_t target, int32_t offset) {
 	auto ptr = target + offset;
-	string_t result;
-	result.length = *((uint32_t *)ptr);
-	result.data = (char *)(ptr + sizeof(uint32_t));
-	return result;
+	auto str_length = *((uint32_t *)ptr);
+	auto str_ptr = (char *)(ptr + sizeof(uint32_t));
+	return string_t(str_ptr, str_length);
 }
 
 void StringSegment::WriteStringMarker(data_ptr_t target, block_id_t block_id, int32_t offset) {
@@ -505,15 +501,15 @@ void StringSegment::ReadStringMarker(data_ptr_t target, block_id_t &block_id, in
 // String Update
 //===--------------------------------------------------------------------===//
 string_update_info_t StringSegment::CreateStringUpdate(SegmentStatistics &stats, Vector &update, row_t *ids,
-                                                       index_t vector_offset) {
+                                                       idx_t vector_offset) {
 	auto info = make_unique<StringUpdateInfo>();
 	info->count = update.size();
-	auto strings = (char **)update.GetData();
-	for (index_t i = 0; i < update.size(); i++) {
+	auto strings = (string_t *)update.GetData();
+	for (idx_t i = 0; i < update.size(); i++) {
 		info->ids[i] = ids[i] - vector_offset;
 		// copy the string into the block
 		if (!update.nullmask[i]) {
-			WriteString(string_t(strings[i], strlen(strings[i])), info->block_ids[i], info->offsets[i]);
+			WriteString(strings[i], info->block_ids[i], info->offsets[i]);
 		} else {
 			info->block_ids[i] = INVALID_BLOCK;
 			info->offsets[i] = 0;
@@ -523,25 +519,25 @@ string_update_info_t StringSegment::CreateStringUpdate(SegmentStatistics &stats,
 }
 
 string_update_info_t StringSegment::MergeStringUpdate(SegmentStatistics &stats, Vector &update, row_t *ids,
-                                                      index_t vector_offset, StringUpdateInfo &update_info) {
+                                                      idx_t vector_offset, StringUpdateInfo &update_info) {
 	auto info = make_unique<StringUpdateInfo>();
 
 	// perform a merge between the new and old indexes
-	auto strings = (char **)update.GetData();
-	auto pick_new = [&](index_t id, index_t idx, index_t count) {
+	auto strings = (string_t *)update.GetData();
+	auto pick_new = [&](idx_t id, idx_t idx, idx_t count) {
 		info->ids[count] = id;
 		if (!update.nullmask[idx]) {
-			WriteString(string_t(strings[idx], strlen(strings[idx])), info->block_ids[count], info->offsets[count]);
+			WriteString(strings[idx], info->block_ids[count], info->offsets[count]);
 		} else {
 			info->block_ids[count] = INVALID_BLOCK;
 			info->offsets[count] = 0;
 		}
 	};
-	auto merge = [&](index_t id, index_t aidx, index_t bidx, index_t count) {
+	auto merge = [&](idx_t id, idx_t aidx, idx_t bidx, idx_t count) {
 		// merge: only pick new entry
 		pick_new(id, aidx, count);
 	};
-	auto pick_old = [&](index_t id, index_t bidx, index_t count) {
+	auto pick_old = [&](idx_t id, idx_t bidx, idx_t count) {
 		// pick old entry
 		info->ids[count] = id;
 		info->block_ids[count] = update_info.block_ids[bidx];
@@ -556,7 +552,7 @@ string_update_info_t StringSegment::MergeStringUpdate(SegmentStatistics &stats, 
 //===--------------------------------------------------------------------===//
 // Update Info
 //===--------------------------------------------------------------------===//
-void StringSegment::MergeUpdateInfo(UpdateInfo *node, Vector &update, row_t *ids, index_t vector_offset,
+void StringSegment::MergeUpdateInfo(UpdateInfo *node, Vector &update, row_t *ids, idx_t vector_offset,
                                     string_location_t base_data[], nullmask_t base_nullmask) {
 	auto info_data = (string_location_t *)node->tuple_data;
 
@@ -568,13 +564,13 @@ void StringSegment::MergeUpdateInfo(UpdateInfo *node, Vector &update, row_t *ids
 	memcpy(old_data, node->tuple_data, node->N * sizeof(string_location_t));
 
 	// now we perform a merge of the new ids with the old ids
-	auto merge = [&](index_t id, index_t aidx, index_t bidx, index_t count) {
+	auto merge = [&](idx_t id, idx_t aidx, idx_t bidx, idx_t count) {
 		// new_id and old_id are the same, insert the old data in the UpdateInfo
 		assert(old_data[bidx].IsValid());
 		info_data[count] = old_data[bidx];
 		node->tuples[count] = id;
 	};
-	auto pick_new = [&](index_t id, index_t aidx, index_t count) {
+	auto pick_new = [&](idx_t id, idx_t aidx, idx_t count) {
 		// new_id comes before the old id, insert the base table data into the update info
 		assert(base_data[aidx].IsValid());
 		info_data[count] = base_data[aidx];
@@ -582,7 +578,7 @@ void StringSegment::MergeUpdateInfo(UpdateInfo *node, Vector &update, row_t *ids
 
 		node->tuples[count] = id;
 	};
-	auto pick_old = [&](index_t id, index_t bidx, index_t count) {
+	auto pick_old = [&](idx_t id, idx_t bidx, idx_t count) {
 		// old_id comes before new_id, insert the old data
 		assert(old_data[bidx].IsValid());
 		info_data[count] = old_data[bidx];
@@ -596,7 +592,7 @@ void StringSegment::MergeUpdateInfo(UpdateInfo *node, Vector &update, row_t *ids
 // Update
 //===--------------------------------------------------------------------===//
 void StringSegment::Update(ColumnData &column_data, SegmentStatistics &stats, Transaction &transaction, Vector &update,
-                           row_t *ids, index_t vector_index, index_t vector_offset, UpdateInfo *node) {
+                           row_t *ids, idx_t vector_index, idx_t vector_offset, UpdateInfo *node) {
 	if (!string_updates) {
 		string_updates = unique_ptr<string_update_info_t[]>(new string_update_info_t[max_vector_count]);
 	}
@@ -623,7 +619,7 @@ void StringSegment::Update(ColumnData &column_data, SegmentStatistics &stats, Tr
 	}
 
 	// now update the original nullmask
-	for (index_t i = 0; i < update.size(); i++) {
+	for (idx_t i = 0; i < update.size(); i++) {
 		base_nullmask[ids[i] - vector_offset] = update.nullmask[i];
 	}
 
@@ -648,7 +644,7 @@ void StringSegment::Update(ColumnData &column_data, SegmentStatistics &stats, Tr
 void StringSegment::RollbackUpdate(UpdateInfo *info) {
 	auto lock_handle = lock.GetExclusiveLock();
 
-	index_t new_count = 0;
+	idx_t new_count = 0;
 	auto &update_info = *string_updates[info->vector_index];
 	auto string_locations = (string_location_t *)info->tuple_data;
 
@@ -657,13 +653,13 @@ void StringSegment::RollbackUpdate(UpdateInfo *info) {
 	auto baseptr = handle->node->buffer;
 	auto base = baseptr + info->vector_index * vector_size;
 	auto &base_nullmask = *((nullmask_t *)base);
-	for (index_t i = 0; i < info->N; i++) {
+	for (idx_t i = 0; i < info->N; i++) {
 		base_nullmask[info->tuples[i]] = info->nullmask[info->tuples[i]];
 	}
 
 	// now put the original values back into the update info
-	index_t old_idx = 0;
-	for (index_t i = 0; i < update_info.count; i++) {
+	idx_t old_idx = 0;
+	for (idx_t i = 0; i < update_info.count; i++) {
 		if (old_idx >= info->N || update_info.ids[i] != info->tuples[old_idx]) {
 			assert(old_idx >= info->N || update_info.ids[i] < info->tuples[old_idx]);
 			// this entry is not rolled back: insert entry directly

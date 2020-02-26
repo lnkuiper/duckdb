@@ -13,7 +13,7 @@ using namespace std;
 template <class T> static void storage_read_loop(Vector &input, Vector &target) {
 	auto source_data = (T *)input.GetData();
 	auto target_data = (T *)target.GetData();
-	VectorOperations::Exec(input, [&](index_t i, index_t k) {
+	VectorOperations::Exec(input, [&](idx_t i, idx_t k) {
 		target_data[k] = source_data[i];
 		if (IsNullValue<T>(target_data[k])) {
 			target.nullmask[k] = true;
@@ -51,7 +51,7 @@ void VectorOperations::ReadFromStorage(Vector &source, Vector &target) {
 		storage_read_loop<uint64_t>(source, target);
 		break;
 	case TypeId::VARCHAR:
-		storage_read_loop<const char *>(source, target);
+		storage_read_loop<string_t>(source, target);
 		break;
 	default:
 		throw NotImplementedException("Unimplemented type for copy");

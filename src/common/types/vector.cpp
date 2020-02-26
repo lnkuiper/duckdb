@@ -68,7 +68,7 @@ void Vector::Reference(Vector &other) {
 	}
 }
 
-void Vector::Slice(Vector &other, index_t offset) {
+void Vector::Slice(Vector &other, idx_t offset) {
 	assert(!other.sel_vector());
 
 	// create a reference to the other vector
@@ -79,7 +79,7 @@ void Vector::Slice(Vector &other, index_t offset) {
 	}
 }
 
-void Vector::Initialize(TypeId new_type, bool zero_data, index_t count) {
+void Vector::Initialize(TypeId new_type, bool zero_data, idx_t count) {
 	if (new_type != TypeId::INVALID) {
 		type = new_type;
 	}
@@ -95,7 +95,7 @@ void Vector::Initialize(TypeId new_type, bool zero_data, index_t count) {
 	}
 }
 
-void Vector::SetValue(index_t index, Value val) {
+void Vector::SetValue(idx_t index, Value val) {
 	Value newVal = val.CastAs(type);
 
 	nullmask[index] = newVal.is_null;
@@ -128,7 +128,7 @@ void Vector::SetValue(index_t index, Value val) {
 		((uintptr_t *)data)[index] = newVal.value_.pointer;
 		break;
 	case TypeId::VARCHAR: {
-		((const char **)data)[index] = AddString(newVal.str_value);
+		((string_t *)data)[index] = AddString(newVal.str_value);
 		break;
 	}
 	case TypeId::STRUCT: {
@@ -156,7 +156,7 @@ void Vector::SetValue(index_t index, Value val) {
 	}
 }
 
-Value Vector::GetValue(index_t index) const {
+Value Vector::GetValue(idx_t index) const {
 	if (vector_type == VectorType::CONSTANT_VECTOR) {
 		index = 0;
 	} else {
@@ -185,9 +185,8 @@ Value Vector::GetValue(index_t index) const {
 	case TypeId::DOUBLE:
 		return Value::DOUBLE(((double *)data)[index]);
 	case TypeId::VARCHAR: {
-		char *str = ((char **)data)[index];
-		assert(str);
-		return Value(string(str));
+		auto str = ((string_t *)data)[index];
+		return Value(str.GetString());
 	}
 	case TypeId::STRUCT: {
 		Value ret(TypeId::STRUCT);
@@ -204,7 +203,7 @@ Value Vector::GetValue(index_t index) const {
 		// get offset and length
 		auto offlen = ((list_entry_t *)data)[index];
 		assert(children.size() == 1);
-		for (index_t i = offlen.offset; i < offlen.offset + offlen.length; i++) {
+		for (idx_t i = offlen.offset; i < offlen.offset + offlen.length; i++) {
 			ret.list_value.push_back(children[0].second->GetValue(i));
 		}
 		return ret;
@@ -248,7 +247,7 @@ string Vector::ToString() const {
 	string retval = VectorTypeToString(vector_type) + " " + TypeIdToString(type) + ": " + to_string(count) + " = [ ";
 	switch (vector_type) {
 	case VectorType::FLAT_VECTOR:
-		for (index_t i = 0; i < count; i++) {
+		for (idx_t i = 0; i < count; i++) {
 			retval += GetValue(sel ? sel[i] : i).ToString() + (i == count - 1 ? "" : ", ");
 		}
 		break;
@@ -258,8 +257,8 @@ string Vector::ToString() const {
 	case VectorType::SEQUENCE_VECTOR: {
 		int64_t start, increment;
 		GetSequence(start, increment);
-		for (index_t i = 0; i < count; i++) {
-			index_t idx = sel ? sel[i] : i;
+		for (idx_t i = 0; i < count; i++) {
+			idx_t idx = sel ? sel[i] : i;
 			retval += to_string(start + increment * idx) + (i == count - 1 ? "" : ", ");
 		}
 		break;
@@ -277,10 +276,10 @@ void Vector::Print() {
 }
 
 template <class T>
-static void flatten_constant_vector_loop(data_ptr_t data, data_ptr_t old_data, index_t count, sel_t *sel_vector) {
+static void flatten_constant_vector_loop(data_ptr_t data, data_ptr_t old_data, idx_t count, sel_t *sel_vector) {
 	auto constant = *((T *)old_data);
 	auto output = (T *)data;
-	VectorOperations::Exec(sel_vector, count, [&](index_t i, index_t k) { output[i] = constant; });
+	VectorOperations::Exec(sel_vector, count, [&](idx_t i, idx_t k) { output[i] = constant; });
 }
 
 void Vector::Normalify() {
@@ -331,7 +330,7 @@ void Vector::Normalify() {
 			flatten_constant_vector_loop<uintptr_t>(data, old_data, count, sel);
 			break;
 		case TypeId::VARCHAR:
-			flatten_constant_vector_loop<const char *>(data, old_data, count, sel);
+			flatten_constant_vector_loop<string_t>(data, old_data, count, sel);
 			break;
 		case TypeId::STRUCT:
 			for (auto &child : GetChildren()) {
@@ -386,17 +385,13 @@ void Vector::Verify() {
 		// of them are deallocated/corrupt
 		if (vector_type == VectorType::CONSTANT_VECTOR) {
 			if (!nullmask[0]) {
-				auto string = ((const char **)data)[0];
-				assert(string);
-				assert(strlen(string) != (size_t)-1);
-				assert(Value::IsUTF8String(string));
+				auto string = ((string_t *)data)[0];
+				string.Verify();
 			}
 		} else {
-			VectorOperations::ExecType<const char *>(*this, [&](const char *string, uint64_t i, uint64_t k) {
+			VectorOperations::ExecType<string_t>(*this, [&](string_t string, uint64_t i, uint64_t k) {
 				if (!nullmask[i]) {
-					assert(string);
-					assert(strlen(string) != (size_t)-1);
-					assert(Value::IsUTF8String(string));
+					string.Verify();
 				}
 			});
 		}
@@ -404,21 +399,41 @@ void Vector::Verify() {
 #endif
 }
 
-const char *Vector::AddString(const char *data, index_t len) {
+string_t Vector::AddString(const char *data, idx_t len) {
+	return AddString(string_t(data, len));
+}
+
+string_t Vector::AddString(const char *data) {
+	return AddString(string_t(data, strlen(data)));
+}
+
+string_t Vector::AddString(const string &data) {
+	return AddString(string_t(data.c_str(), data.size()));
+}
+
+string_t Vector::AddString(string_t data) {
+	if (data.IsInlined()) {
+		// string will be inlined: no need to store in string heap
+		return data;
+	}
 	if (!auxiliary) {
 		auxiliary = make_buffer<VectorStringBuffer>();
 	}
 	assert(auxiliary->type == VectorBufferType::STRING_BUFFER);
 	auto &string_buffer = (VectorStringBuffer &)*auxiliary;
-	return string_buffer.AddString(data, len);
+	return string_buffer.AddString(data);
 }
 
-const char *Vector::AddString(const char *data) {
-	return AddString(data, strlen(data));
-}
-
-const char *Vector::AddString(const string &data) {
-	return AddString(data.c_str(), data.size());
+string_t Vector::EmptyString(idx_t len) {
+	if (len < string_t::INLINE_LENGTH) {
+		return string_t(len);
+	}
+	if (!auxiliary) {
+		auxiliary = make_buffer<VectorStringBuffer>();
+	}
+	assert(auxiliary->type == VectorBufferType::STRING_BUFFER);
+	auto &string_buffer = (VectorStringBuffer &)*auxiliary;
+	return string_buffer.EmptyString(len);
 }
 
 void Vector::AddHeapReference(Vector &other) {

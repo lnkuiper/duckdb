@@ -15,9 +15,9 @@ namespace duckdb {
 
 class Key {
 public:
-	Key(unique_ptr<data_t[]> data, index_t len);
+	Key(unique_ptr<data_t[]> data, idx_t len);
 
-	index_t len;
+	idx_t len;
 	unique_ptr<data_t[]> data;
 
 public:
@@ -56,7 +56,7 @@ template <> unique_ptr<data_t[]> Key::CreateData(int64_t value, bool is_little_e
 template <> unique_ptr<data_t[]> Key::CreateData(double value, bool is_little_endian);
 template <> unique_ptr<data_t[]> Key::CreateData(float value, bool is_little_endian);
 
-template <> unique_ptr<Key> Key::CreateKey(string element, bool is_little_endian);
-template <> unique_ptr<Key> Key::CreateKey(char *value, bool is_little_endian);
+template <> unique_ptr<Key> Key::CreateKey(string_t value, bool is_little_endian);
+template <> unique_ptr<Key> Key::CreateKey(const char *value, bool is_little_endian);
 
 } // namespace duckdb

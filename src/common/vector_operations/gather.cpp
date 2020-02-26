@@ -12,12 +12,12 @@ using namespace duckdb;
 using namespace std;
 
 struct GatherLoopSetNull {
-	template <class T, class OP> static void Operation(Vector &src, Vector &result, index_t offset) {
+	template <class T, class OP> static void Operation(Vector &src, Vector &result, idx_t offset) {
 		auto source = (data_ptr_t *)src.GetData();
 		auto ldata = (T *)result.GetData();
 		auto rsel = result.sel_vector();
 		if (rsel) {
-			VectorOperations::Exec(src, [&](index_t i, index_t k) {
+			VectorOperations::Exec(src, [&](idx_t i, idx_t k) {
 				data_ptr_t ptr = source[i] + offset;
 				T source_value = *((T *)ptr);
 				if (IsNullValue<T>(source_value)) {
@@ -27,7 +27,7 @@ struct GatherLoopSetNull {
 				}
 			});
 		} else {
-			VectorOperations::Exec(src, [&](index_t i, index_t k) {
+			VectorOperations::Exec(src, [&](idx_t i, idx_t k) {
 				data_ptr_t ptr = source[i] + offset;
 				T source_value = *((T *)ptr);
 				if (IsNullValue<T>(source_value)) {
@@ -41,18 +41,18 @@ struct GatherLoopSetNull {
 };
 
 struct GatherLoopIgnoreNull {
-	template <class T, class OP> static void Operation(Vector &src, Vector &result, index_t offset) {
+	template <class T, class OP> static void Operation(Vector &src, Vector &result, idx_t offset) {
 		auto source = (data_ptr_t *)src.GetData();
 		auto ldata = (T *)result.GetData();
 		auto rsel = result.sel_vector();
 		if (rsel) {
-			VectorOperations::Exec(src, [&](index_t i, index_t k) {
+			VectorOperations::Exec(src, [&](idx_t i, idx_t k) {
 				data_ptr_t ptr = source[i] + offset;
 				T source_value = *((T *)ptr);
 				ldata[rsel[k]] = OP::Operation(source_value, ldata[i]);
 			});
 		} else {
-			VectorOperations::Exec(src, [&](index_t i, index_t k) {
+			VectorOperations::Exec(src, [&](idx_t i, idx_t k) {
 				data_ptr_t ptr = source[i] + offset;
 				T source_value = *((T *)ptr);
 				ldata[k] = OP::Operation(source_value, ldata[i]);
@@ -61,7 +61,7 @@ struct GatherLoopIgnoreNull {
 	}
 };
 
-template <class LOOP, class OP> static void generic_gather_loop(Vector &source, Vector &dest, index_t offset = 0) {
+template <class LOOP, class OP> static void generic_gather_loop(Vector &source, Vector &dest, idx_t offset = 0) {
 	if (source.type != TypeId::POINTER) {
 		throw InvalidTypeException(source.type, "Cannot gather from non-pointer type!");
 	}
@@ -90,14 +90,14 @@ template <class LOOP, class OP> static void generic_gather_loop(Vector &source, 
 		LOOP::template Operation<uint64_t, OP>(source, dest, offset);
 		break;
 	case TypeId::VARCHAR:
-		LOOP::template Operation<char *, OP>(source, dest, offset);
+		LOOP::template Operation<string_t, OP>(source, dest, offset);
 		break;
 	default:
 		throw NotImplementedException("Unimplemented type for gather");
 	}
 }
 
-void VectorOperations::Gather::Set(Vector &source, Vector &dest, bool set_null, index_t offset) {
+void VectorOperations::Gather::Set(Vector &source, Vector &dest, bool set_null, idx_t offset) {
 	assert(source.size() == dest.size());
 	if (set_null) {
 		generic_gather_loop<GatherLoopSetNull, PickLeft>(source, dest, offset);

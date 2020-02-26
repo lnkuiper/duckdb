@@ -12,7 +12,7 @@
 using namespace duckdb;
 using namespace std;
 
-template <class OP> static index_t templated_select_operation(Vector &left, Vector &right, sel_t result[]) {
+template <class OP> static idx_t templated_select_operation(Vector &left, Vector &right, sel_t result[]) {
 	// the inplace loops take the result as the last parameter
 	switch (left.type) {
 	case TypeId::BOOL:
@@ -31,32 +31,32 @@ template <class OP> static index_t templated_select_operation(Vector &left, Vect
 	case TypeId::DOUBLE:
 		return BinaryExecutor::Select<double, double, OP>(left, right, result);
 	case TypeId::VARCHAR:
-		return BinaryExecutor::Select<const char *, const char *, OP>(left, right, result);
+		return BinaryExecutor::Select<string_t, string_t, OP>(left, right, result);
 	default:
 		throw InvalidTypeException(left.type, "Invalid type for comparison");
 	}
 }
 
-index_t VectorOperations::SelectEquals(Vector &left, Vector &right, sel_t result[]) {
+idx_t VectorOperations::SelectEquals(Vector &left, Vector &right, sel_t result[]) {
 	return templated_select_operation<duckdb::Equals>(left, right, result);
 }
 
-index_t VectorOperations::SelectNotEquals(Vector &left, Vector &right, sel_t result[]) {
+idx_t VectorOperations::SelectNotEquals(Vector &left, Vector &right, sel_t result[]) {
 	return templated_select_operation<duckdb::NotEquals>(left, right, result);
 }
 
-index_t VectorOperations::SelectGreaterThanEquals(Vector &left, Vector &right, sel_t result[]) {
+idx_t VectorOperations::SelectGreaterThanEquals(Vector &left, Vector &right, sel_t result[]) {
 	return templated_select_operation<duckdb::GreaterThanEquals>(left, right, result);
 }
 
-index_t VectorOperations::SelectLessThanEquals(Vector &left, Vector &right, sel_t result[]) {
+idx_t VectorOperations::SelectLessThanEquals(Vector &left, Vector &right, sel_t result[]) {
 	return templated_select_operation<duckdb::LessThanEquals>(left, right, result);
 }
 
-index_t VectorOperations::SelectGreaterThan(Vector &left, Vector &right, sel_t result[]) {
+idx_t VectorOperations::SelectGreaterThan(Vector &left, Vector &right, sel_t result[]) {
 	return templated_select_operation<duckdb::GreaterThan>(left, right, result);
 }
 
-index_t VectorOperations::SelectLessThan(Vector &left, Vector &right, sel_t result[]) {
+idx_t VectorOperations::SelectLessThan(Vector &left, Vector &right, sel_t result[]) {
 	return templated_select_operation<duckdb::LessThan>(left, right, result);
 }
