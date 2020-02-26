@@ -70,7 +70,7 @@ unique_ptr<LogicalOperator> ReOptimizer::PerformPartialPlan(unique_ptr<LogicalOp
 	Printer::Print("----------------------------- before");
 	plan->children[0]->GetColumnBindings();
 	string bcres0 = "PROJECTION ";
-	for (size_t i = 0; i < plan->children[0]->expressions.size(); i++) {
+	for (idx_t i = 0; i < plan->children[0]->expressions.size(); i++) {
 		auto &e = *plan->children[0]->expressions[i];
 		if (e.GetExpressionClass() == ExpressionClass::BOUND_COLUMN_REF) {
 			BoundColumnRefExpression bcre = (BoundColumnRefExpression &) e;
@@ -120,7 +120,7 @@ unique_ptr<LogicalOperator> ReOptimizer::PerformPartialPlan(unique_ptr<LogicalOp
 	Printer::Print("----------------------------- after");
 	plan->children[0]->GetColumnBindings();
 	string bcres1 = "PROJECTION ";
-	for (size_t i = 0; i < plan->children[0]->expressions.size(); i++) {
+	for (idx_t i = 0; i < plan->children[0]->expressions.size(); i++) {
 		auto &e = *plan->children[0]->expressions[i];
 		if (e.GetExpressionClass() == ExpressionClass::BOUND_COLUMN_REF) {
 			BoundColumnRefExpression bcre = (BoundColumnRefExpression &) e;
@@ -145,7 +145,7 @@ LogicalOperator *ReOptimizer::DecideSubQueryPlan(LogicalOperator &plan) {
 	// TODO: implement selection procedure
 	// select last one for now - deciding this is basically the whole re-optimization strategy
 	// the selection procedure might also decide that we are done, instead of selecting an index
-	index_t selected_join_i = joins.size() - 1;
+	idx_t selected_join_i = joins.size() - 1;
 	return joins[selected_join_i];
 }
 
@@ -205,7 +205,7 @@ unique_ptr<LogicalOperator> ReOptimizer::GenerateProjectionMaps(unique_ptr<Logic
 	vector<ColumnBinding> column_bindings;
 	if (plan->type == LogicalOperatorType::PROJECTION) {
 		// from expressions
-		for (size_t expr_i = 0; expr_i < plan->expressions.size(); expr_i++) {
+		for (idx_t expr_i = 0; expr_i < plan->expressions.size(); expr_i++) {
 			auto &expr = *plan->expressions[expr_i];
 			if (expr.GetExpressionClass() != ExpressionClass::BOUND_COLUMN_REF)
 				continue;
@@ -234,7 +234,7 @@ unique_ptr<LogicalOperator> ReOptimizer::GenerateProjectionMaps(unique_ptr<Logic
 		}
 	} else if (plan->type == LogicalOperatorType::COMPARISON_JOIN) {
 		auto *join = static_cast<LogicalComparisonJoin *>(plan.get());
-		for (size_t cond_i = 0; cond_i < join->conditions.size(); cond_i++) {
+		for (idx_t cond_i = 0; cond_i < join->conditions.size(); cond_i++) {
 			// from conditions
 			JoinCondition &jc = join->conditions[cond_i];
 			auto l = (BoundColumnRefExpression &)*jc.left.get();
@@ -277,7 +277,7 @@ unique_ptr<LogicalOperator> ReOptimizer::GenerateProjectionMaps(unique_ptr<Logic
 			}
 		}
 		// update right projection map accordingly
-		for (size_t rpi = 0; rpi < join->right_projection_map.size(); rpi++) {
+		for (idx_t rpi = 0; rpi < join->right_projection_map.size(); rpi++) {
 			column_t decr = 0;
 			for (column_t removed_col : removed_columns) {
 				if (removed_col < join->right_projection_map[rpi]) {
@@ -288,7 +288,7 @@ unique_ptr<LogicalOperator> ReOptimizer::GenerateProjectionMaps(unique_ptr<Logic
 		}
 	}
 	// recursively propagate operator tree
-	for (size_t child_i = 0; child_i < plan->children.size(); child_i++) {
+	for (idx_t child_i = 0; child_i < plan->children.size(); child_i++) {
 		plan->children[child_i] = GenerateProjectionMaps(move(plan->children[child_i]));
 	}
 	return plan;
@@ -297,7 +297,7 @@ unique_ptr<LogicalOperator> ReOptimizer::GenerateProjectionMaps(unique_ptr<Logic
 void ReOptimizer::CreateMaps(LogicalOperator &plan) {
 	if (plan.type == LogicalOperatorType::GET) {
 		auto *get = static_cast<LogicalGet *>(&plan);
-		for (size_t i = 0; i < get->column_ids.size(); i++) {
+		for (idx_t i = 0; i < get->column_ids.size(); i++) {
 			bta["#[" + std::to_string(get->table_index) + "." + std::to_string(i) + "]"] = get->table->columns[get->column_ids[i]].name;
 		}
 	}
@@ -311,14 +311,14 @@ void ReOptimizer::CreateMaps(LogicalOperator &plan) {
 string ReOptimizer::CreateSubQuery(LogicalComparisonJoin &join, const string temporary_table_name,
                                    vector<string> &queried_tables, vector<string> &where_conditions) {
 	// join conditions
-	for (size_t cond_i = 0; cond_i < join.conditions.size(); cond_i++) {
+	for (idx_t cond_i = 0; cond_i < join.conditions.size(); cond_i++) {
 		JoinCondition &join_condition = join.conditions[cond_i];
 		auto l_bind = ((BoundColumnRefExpression &)*join_condition.left.get()).binding;
 		auto r_bind = ((BoundColumnRefExpression &)*join_condition.right.get()).binding;
 		where_conditions.push_back("t" + to_string(l_bind.table_index) + "." + bta[l_bind.ToString()] + " = " + "t" +
 		                           to_string(r_bind.table_index) + "." + bta[r_bind.ToString()]);
 	}
-	for (size_t child_i = 0; child_i < join.children.size(); child_i++) {
+	for (idx_t child_i = 0; child_i < join.children.size(); child_i++) {
 		auto &child = join.children[child_i];
 		if (child->type == LogicalOperatorType::COMPARISON_JOIN) {
 			// recursively propagate operator tree
@@ -398,7 +398,7 @@ void ReOptimizer::InjectCardinalities(LogicalOperator &plan, string temp_table_n
 }
 
 unique_ptr<LogicalOperator> ReOptimizer::CreateNextPlan(unique_ptr<LogicalOperator> plan) {
-	index_t lowest_cost = 0;
+	idx_t lowest_cost = 0;
 	unique_ptr<LogicalOperator> best_plan;
 	for (auto subset : TempTablePowerset()) {
 		// TODO: create plan using leaf nodes
@@ -407,7 +407,7 @@ unique_ptr<LogicalOperator> ReOptimizer::CreateNextPlan(unique_ptr<LogicalOperat
 		JoinOrderOptimizer optimizer(cardinalities);
 		tentative_plan = optimizer.Optimize(move(plan));
 		// TODO: create cost function that uses injected cardinalities
-		index_t cost = tentative_plan->ComputeCost();
+		idx_t cost = tentative_plan->ComputeCost();
 		if (cost < lowest_cost) {
 			lowest_cost = cost;
 			best_plan = move(tentative_plan);
@@ -418,11 +418,11 @@ unique_ptr<LogicalOperator> ReOptimizer::CreateNextPlan(unique_ptr<LogicalOperat
 }
 
 vector<vector<string>> ReOptimizer::TempTablePowerset() {
-	size_t powerset_size = pow(2, temp_tables.size());
+	idx_t powerset_size = pow(2, temp_tables.size());
 	vector<vector<string>> powerset(powerset_size);
-	for (size_t i = 0; i < powerset_size; i++) {
+	for (idx_t i = 0; i < powerset_size; i++) {
 		vector<string> subset;
-		for (size_t j = 0; j < temp_tables.size(); j++) {
+		for (idx_t j = 0; j < temp_tables.size(); j++) {
 			if (i & (1 << j)) {
 				subset.push_back(temp_tables[j]);
 			}
@@ -457,11 +457,11 @@ TableCatalogEntry *ReOptimizer::GetTable(string schema, string table_name) {
 }
 
 void ReOptimizer::ReplaceLogicalOperator(LogicalOperator &plan, LogicalComparisonJoin &old_op, TableCatalogEntry *table,
-                                         index_t depth) {
+                                         idx_t depth) {
 	if (plan.children.empty())
 		return;
 	// search children
-	for (size_t child_i = 0; child_i < plan.children.size(); child_i++) {
+	for (idx_t child_i = 0; child_i < plan.children.size(); child_i++) {
 		auto &child = plan.children[child_i];
 		if (child->type != LogicalOperatorType::COMPARISON_JOIN)
 			continue;
@@ -490,7 +490,7 @@ void ReOptimizer::FixColumnBindings(LogicalOperator &plan) {
 	// fix BoundColumRefs in JoinConditions
 	if (plan.type == LogicalOperatorType::COMPARISON_JOIN) {
 		LogicalComparisonJoin *join = static_cast<LogicalComparisonJoin *>(&plan);
-		for (size_t condition_i = 0; condition_i < join->conditions.size(); condition_i++) {
+		for (idx_t condition_i = 0; condition_i < join->conditions.size(); condition_i++) {
 			JoinCondition &jc = join->conditions[condition_i];
 			auto l = (BoundColumnRefExpression &)*jc.left.get();
 			auto r = (BoundColumnRefExpression &)*jc.right.get();
@@ -507,7 +507,7 @@ void ReOptimizer::FixColumnBindings(LogicalOperator &plan) {
 		}
 	}
 	// fix other BoundColumnRefExpressions found in expressions (for e.g. LogicalProjection)
-	for (size_t expr_i = 0; expr_i < plan.expressions.size(); expr_i++) {
+	for (idx_t expr_i = 0; expr_i < plan.expressions.size(); expr_i++) {
 		auto &expr = *plan.expressions[expr_i];
 		if (expr.GetExpressionClass() != ExpressionClass::BOUND_COLUMN_REF)
 			continue;
@@ -570,7 +570,7 @@ unique_ptr<LogicalOperator> ReOptimizer::ClearLeftProjectionMaps(unique_ptr<Logi
 		auto *join = static_cast<LogicalComparisonJoin *>(plan.get());
 		join->left_projection_map.clear();
 	}
-	for (size_t i = 0; i < plan->children.size(); i++) {
+	for (idx_t i = 0; i < plan->children.size(); i++) {
 		plan->children[i] = ClearLeftProjectionMaps(move(plan->children[i]));
 	}
 	return plan;
@@ -578,7 +578,7 @@ unique_ptr<LogicalOperator> ReOptimizer::ClearLeftProjectionMaps(unique_ptr<Logi
 
 string ReOptimizer::JoinStrings(vector<string> strings, string delimiter) {
 	string joined_strings = "";
-	for (size_t i = 0; i < strings.size(); i++) {
+	for (idx_t i = 0; i < strings.size(); i++) {
 		joined_strings += strings[i];
 		if (i < strings.size() - 1)
 			joined_strings += delimiter;

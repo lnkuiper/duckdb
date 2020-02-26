@@ -22,7 +22,7 @@ namespace duckdb {
 
 class JoinOrderOptimizer {
 public:
-	JoinOrderOptimizer(unordered_map<string, index_t> &injected_cardinalities);
+	JoinOrderOptimizer(unordered_map<string, idx_t> &injected_cardinalities);
 
 	//! Represents a node in the join plan
 	struct JoinNode {
@@ -104,16 +104,16 @@ private:
 	GenerateJoins(vector<unique_ptr<LogicalOperator>> &extracted_relations, JoinNode *node);
 
 	//! ToString cost info for debugging
-	string ToString(JoinNode *node, index_t depth = 1) const;
+	string ToString(JoinNode *node, idx_t depth = 1) const;
 
 	//! FIXME: made this method non-static so that cardinalities can be injected
 	unique_ptr<JoinNode> CreateJoinTree(RelationSet *set, NeighborInfo *info, JoinNode *left, JoinNode *right);
 	//! From Relation to a string key for
 	string GetCardinalityKey(RelationSet *set);
 	//! A mapping of index into relations array (relation number) -> base table index
-	unordered_map<index_t, index_t> inv_relation_mapping;
+	unordered_map<idx_t, idx_t> inv_relation_mapping;
 	//!! A mapping of relationset key -> injected cardinality
-	unordered_map<string, index_t> &injected_cardinalities;
+	unordered_map<string, idx_t> &injected_cardinalities;
 };
 
 } // namespace duckdb

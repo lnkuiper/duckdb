@@ -45,7 +45,7 @@ private:
 	TableCatalogEntry *GetTable(string schema, string table_name);
 	//! Replaces the join 'old_op' in 'plan' with the given operator 'new_op'
 	void ReplaceLogicalOperator(LogicalOperator &plan, LogicalComparisonJoin &old_op, TableCatalogEntry *table,
-	                            index_t depth = 3);
+	                            idx_t depth = 3);
 	//! Fixes column bindings after replacing JOIN with GET
 	void FixColumnBindings(LogicalOperator &plan);
 	//! Executes a query in the middle of the re-optimization process
@@ -75,7 +75,7 @@ private:
 	unordered_map<string, ColumnBinding> rebind_mapping;
 
 	//! Stores true/estimated cardinalities of sets of relations
-	unordered_map<string, index_t> cardinalities;
+	unordered_map<string, idx_t> cardinalities;
 	//! Stores pairs of (set of relations, temp table name) of subqueries that were executed
 	unordered_map<string, vector<string>> temp_table_relations;
 	//! vector of temp tables made so far

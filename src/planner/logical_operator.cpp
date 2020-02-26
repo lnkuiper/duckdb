@@ -78,8 +78,8 @@ string LogicalOperator::ToString(idx_t depth) const {
 	return result;
 }
 
-index_t LogicalOperator::ComputeCost() {
-	index_t cost = 0;
+idx_t LogicalOperator::ComputeCost() {
+	idx_t cost = 0;
 	if (type == LogicalOperatorType::COMPARISON_JOIN || type == LogicalOperatorType::GET) {
 		cost += EstimateCardinality();
 	}

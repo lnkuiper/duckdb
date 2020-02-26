@@ -31,11 +31,11 @@ vector<ColumnBinding> LogicalJoin::GetColumnBindings() {
 		testing += cb.ToString();
 	}
 	testing += ", l:";
-	for (index_t i : left_projection_map) {
+	for (idx_t i : left_projection_map) {
 		testing += to_string(i);
 	}
 	testing += ", r:";
-	for (index_t i : right_projection_map) {
+	for (idx_t i : right_projection_map) {
 		testing += to_string(i);
 	}
 

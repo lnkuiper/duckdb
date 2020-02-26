@@ -11,7 +11,7 @@ using namespace std;
 
 using JoinNode = JoinOrderOptimizer::JoinNode;
 
-JoinOrderOptimizer::JoinOrderOptimizer(unordered_map<string, index_t> &injected_cardinalities)
+JoinOrderOptimizer::JoinOrderOptimizer(unordered_map<string, idx_t> &injected_cardinalities)
     : injected_cardinalities(injected_cardinalities) {
 }
 
@@ -109,7 +109,7 @@ bool JoinOrderOptimizer::ExtractJoinRelations(LogicalOperator &input_op, vector<
 		// new NULL values in the right side, so pushing this condition through the join leads to incorrect results
 		// for this reason, we just start a new JoinOptimizer pass in each of the children of the join
 		for (idx_t i = 0; i < op->children.size(); i++) {
-			JoinOrderOptimizer optimizer;
+			JoinOrderOptimizer optimizer(injected_cardinalities);
 			op->children[i] = optimizer.Optimize(move(op->children[i]));
 		}
 		// after this we want to treat this node as one  "end node" (like e.g. a base relation)
@@ -775,7 +775,7 @@ unique_ptr<LogicalOperator> JoinOrderOptimizer::Optimize(unique_ptr<LogicalOpera
 	return RewritePlan(move(plan), final_plan->second.get());
 }
 
-string JoinOrderOptimizer::ToString(JoinNode *node, index_t depth) const {
+string JoinOrderOptimizer::ToString(JoinNode *node, idx_t depth) const {
 	string result = to_string(node->cost);
 	if (node->left != nullptr && node->right != nullptr) {
 		result += "\n" + string(depth * 4, ' ');
@@ -791,13 +791,13 @@ string JoinOrderOptimizer::ToString(JoinNode *node, index_t depth) const {
 }
 
 string JoinOrderOptimizer::GetCardinalityKey(RelationSet *set) {
-	vector<index_t> ordered_table_indices;
+	vector<idx_t> ordered_table_indices;
 	for (size_t i = 0; i < set->count; i++) {
 		ordered_table_indices.push_back(inv_relation_mapping[set->relations[i]]);
 	}
 	sort(ordered_table_indices.begin(), ordered_table_indices.end());
 	string key = "";
-	for (index_t table_index : ordered_table_indices) {
+	for (idx_t table_index : ordered_table_indices) {
 		key += to_string(table_index);
 	}
 	return key;

@@ -68,7 +68,7 @@ public:
 		return max_cardinality;
 	}
 
-	index_t ComputeCost();
+	idx_t ComputeCost();
 
 protected:
 	//! Resolve types for this specific operator

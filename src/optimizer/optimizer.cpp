@@ -70,7 +70,7 @@ public:
 } // namespace duckdb
 
 unique_ptr<LogicalOperator>
-Optimizer::Optimize(unique_ptr<LogicalOperator> plan, unordered_map<string, index_t> injected_cardinalities) {
+Optimizer::Optimize(unique_ptr<LogicalOperator> plan, unordered_map<string, idx_t> injected_cardinalities) {
 	// first we perform expression rewrites using the ExpressionRewriter
 	// this does not change the logical plan structure, but only simplifies the expression trees
 	context.profiler.StartPhase("expression_rewriter");
