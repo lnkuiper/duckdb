@@ -11,11 +11,15 @@ LogicalProjection::LogicalProjection(index_t table_index, vector<unique_ptr<Expr
 
 vector<ColumnBinding> LogicalProjection::GetColumnBindings() {
 	vector<ColumnBinding> cbs = GenerateColumnBindings(table_index, expressions.size());
-	// string testing = "PROJECTION " + ParamsToString() + " Bindings: ";
-	// for (ColumnBinding cb : cbs) {
-	// 	testing += cb.ToString();
-	// }
-	// Printer::Print(testing);
+	string testing = "PROJECTION " + ParamsToString() + " Bindings: ";
+	for (ColumnBinding cb : cbs) {
+		testing += cb.ToString();
+	}
+	testing += " || ";
+	for (auto &expr : expressions) {
+		testing += expr->alias + "-" + expr->ToString();
+	}
+	Printer::Print(testing);
 	return GenerateColumnBindings(table_index, expressions.size());
 }
 

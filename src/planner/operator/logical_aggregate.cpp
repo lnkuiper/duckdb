@@ -1,6 +1,8 @@
 #include "duckdb/planner/operator/logical_aggregate.hpp"
 #include "duckdb/common/string_util.hpp"
 
+#include "duckdb/common/printer.hpp"
+
 using namespace duckdb;
 using namespace std;
 
@@ -28,6 +30,14 @@ vector<ColumnBinding> LogicalAggregate::GetColumnBindings() {
 	for (index_t i = 0; i < expressions.size(); i++) {
 		result.push_back(ColumnBinding(aggregate_index, i));
 	}
+	string test = "AGGREGATE_AND_GROUP_BY " + ParamsToString() + " || ";
+	for (auto cb : result)
+		test += cb.ToString();
+	test += " || ";
+	for (auto &g : expressions) {
+		test += ExpressionClassToString(g->GetExpressionClass()) + "-" + ExpressionTypeToString(g->GetExpressionType()) + " ";
+	}
+	Printer::Print(test);
 	return result;
 }
 
