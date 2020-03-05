@@ -1,8 +1,10 @@
 #include "duckdb/reoptimizer/reoptimizer.hpp"
 
+#include "duckdb/catalog/catalog_entry.hpp"
 #include "duckdb/catalog/catalog_entry/table_catalog_entry.hpp"
 #include "duckdb/common/exception.hpp"
 #include "duckdb/common/unordered_map.hpp"
+#include "duckdb/common/enums/catalog_type.hpp"
 #include "duckdb/common/enums/expression_type.hpp"
 #include "duckdb/common/enums/logical_operator_type.hpp"
 #include "duckdb/optimizer/optimizer.hpp"
@@ -445,14 +447,16 @@ unique_ptr<LogicalOperator> ReOptimizer::AdjustPlan(unique_ptr<LogicalOperator> 
 
 TableCatalogEntry *ReOptimizer::GetTable(string schema, string table_name) {
 	// Catalog::GetTable can only be called if there is an active transaction - else segfault
+	CatalogEntry * entry;
 	TableCatalogEntry *table;
 	if (!context.transaction.HasActiveTransaction()) {
 		context.transaction.BeginTransaction();
-		table = context.catalog.GetTable(context, schema, table_name);
+		entry = context.catalog.GetEntry(context, CatalogType::TABLE, schema, table_name);
 		context.transaction.Commit();
 	} else {
-		table = context.catalog.GetTable(context, schema, table_name);
+		entry = context.catalog.GetEntry(context, CatalogType::TABLE, schema, table_name);
 	}
+	table = static_cast<TableCatalogEntry *>(entry);
 	return table;
 }
 

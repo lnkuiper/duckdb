@@ -4,11 +4,17 @@
 #include "duckdb/common/helper.hpp"
 #include "duckdb/common/string_util.hpp"
 #include "duckdb/common/checksum.hpp"
+#include "duckdb/main/client_context.hpp"
+#include "duckdb/main/database.hpp"
 
 using namespace duckdb;
 using namespace std;
 
 #include <cstdio>
+
+FileSystem &FileSystem::GetFileSystem(ClientContext &context) {
+	return *context.db.file_system;
+}
 
 static void AssertValidFileFlags(uint8_t flags) {
 	// cannot combine Read and Write flags
@@ -30,6 +36,11 @@ static void AssertValidFileFlags(uint8_t flags) {
 // somehow sometimes this is missing
 #ifndef O_CLOEXEC
 #define O_CLOEXEC 0
+#endif
+
+// Solaris
+#ifndef O_DIRECT
+# define O_DIRECT 0
 #endif
 
 struct UnixFileHandle : public FileHandle {
@@ -70,6 +81,9 @@ unique_ptr<FileHandle> FileSystem::OpenFile(const char *path, uint8_t flags, Fil
 		}
 	}
 	if (flags & FileFlags::DIRECT_IO) {
+#if defined(__sun) && defined(__SVR4)
+		throw Exception("DIRECT_IO not supported on Solaris");
+#endif
 #if defined(__DARWIN__) || defined(__APPLE__) || defined(__OpenBSD__)
 		// OSX does not have O_DIRECT, instead we need to use fcntl afterwards to support direct IO
 		open_flags |= O_SYNC;

@@ -10,7 +10,6 @@
 #include "duckdb/planner/logical_plan_generator.hpp"
 #include "duckdb/planner/operator/list.hpp"
 #include "duckdb/planner/subquery/flatten_dependent_join.hpp"
-#include "duckdb/main/client_context.hpp"
 #include "duckdb/function/aggregate/distributive_functions.hpp"
 
 using namespace duckdb;
@@ -330,7 +329,7 @@ void LogicalPlanGenerator::PlanSubqueries(unique_ptr<Expression> *expr_ptr, uniq
 	// first visit the children of the node, if any
 	ExpressionIterator::EnumerateChildren(expr, [&](unique_ptr<Expression> expr) -> unique_ptr<Expression> {
 		PlanSubqueries(&expr, root);
-		return expr;
+		return move(expr);
 	});
 
 	// check if this is a subquery node
