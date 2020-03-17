@@ -54,6 +54,8 @@ struct VectorOperations {
 	static void IsNull(Vector &A, Vector &result);
 	// Returns whether or not a vector has a NULL value
 	static bool HasNull(Vector &A);
+	static bool HasNotNull(Vector &A);
+
 	//! Creates a selection vector that points only to non-null values for the
 	//! given null mask. Returns the amount of not-null values.
 	//! result_assignment will be set to either result_vector (if there are null
@@ -107,22 +109,6 @@ struct VectorOperations {
 	// Scatter methods
 	//===--------------------------------------------------------------------===//
 	struct Scatter {
-		// dest[i] = source.data[i]
-		static void Set(Vector &source, Vector &dest);
-		// dest[i] += source.data[i]
-		static void Add(Vector &source, Vector &dest);
-		// dest[i] = max(dest[i], source.data[i])
-		static void Max(Vector &source, Vector &dest);
-		// dest[i] = min(dest[i], source.data[i])
-		static void Min(Vector &source, Vector &dest);
-		//! dest[i] = dest[i] + 1
-		//! For this operation the destination type does not need to match source.type
-		//! Instead, this can **only** be used when the destination type is TypeId::INT64
-		static void AddOne(Vector &source, Vector &dest);
-		//! dest[i] = dest[i]
-		static void SetFirst(Vector &source, Vector &dest);
-		// dest[i] = dest[i] + source
-		static void Add(int64_t source, void **dest, idx_t length);
 		//! Similar to Set, but also write NullValue<T> if set_null = true, or ignore null values entirely if set_null =
 		//! false
 		static void SetAll(Vector &source, Vector &dest, bool set_null = false, idx_t offset = 0);
@@ -177,8 +163,6 @@ struct VectorOperations {
 	// for any NullValue<T> of source. Used to go back from storage to a proper vector
 	static void ReadFromStorage(Vector &source, Vector &target);
 
-	// Set all elements of the vector to the given constant value
-	static void Set(Vector &result, Value value);
 	//! Fill the null mask of a value, setting every NULL value to NullValue<T>()
 	static void FillNullMask(Vector &v);
 	//===--------------------------------------------------------------------===//

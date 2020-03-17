@@ -8,10 +8,12 @@ using namespace duckdb;
 using namespace std;
 
 WindowSegmentTree::WindowSegmentTree(AggregateFunction &aggregate, TypeId result_type, ChunkCollection *input)
-    : aggregate(aggregate), state(aggregate.state_size(result_type)), statep(TypeId::POINTER), result_type(result_type),
+    : aggregate(aggregate), state(aggregate.state_size()), statep(TypeId::POINTER), result_type(result_type),
       input_ref(input) {
 	statep.SetCount(STANDARD_VECTOR_SIZE);
-	VectorOperations::Set(statep, Value::POINTER((idx_t)state.data()));
+	Value ptr_val = Value::POINTER((idx_t)state.data());
+	statep.Reference(ptr_val);
+	statep.Normalify();
 
 	if (input_ref && input_ref->column_count() > 0) {
 		inputs.Initialize(input_ref->types);
@@ -22,7 +24,7 @@ WindowSegmentTree::WindowSegmentTree(AggregateFunction &aggregate, TypeId result
 }
 
 void WindowSegmentTree::AggregateInit() {
-	aggregate.initialize(state.data(), result_type);
+	aggregate.initialize(state.data());
 }
 
 Value WindowSegmentTree::AggegateFinal() {

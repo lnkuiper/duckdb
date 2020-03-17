@@ -1,6 +1,7 @@
 #include "cursor.h"
 #include <vector>
 #include "module.h"
+#include "datetime.h" // from Python
 
 #define NPY_NO_DEPRECATED_API NPY_1_7_API_VERSION // motherfucker
 
@@ -405,7 +406,11 @@ static uint8_t duckdb_type_to_numpy_type(duckdb::TypeId type, duckdb::SQLTypeId 
 	case duckdb::TypeId::INT16:
 		return NPY_INT16;
 	case duckdb::TypeId::INT32:
-		return NPY_INT32;
+		if (sql_type == duckdb::SQLTypeId::DATE) {
+			return NPY_DATETIME;
+		} else {
+			return NPY_INT32;
+		}
 	case duckdb::TypeId::INT64:
 		if (sql_type == duckdb::SQLTypeId::TIMESTAMP) {
 			return NPY_DATETIME;
@@ -454,6 +459,9 @@ PyObject *duckdb_cursor_fetchnumpy(duckdb_Cursor *self) {
 		if (result->sql_types[col_idx].id == duckdb::SQLTypeId::TIMESTAMP) {
 			auto dtype = reinterpret_cast<PyArray_DatetimeDTypeMetaData *>(descr->c_metadata);
 			dtype->meta.base = NPY_FR_ms;
+		} else if (result->sql_types[col_idx].id == duckdb::SQLTypeId::DATE) {
+			auto dtype = reinterpret_cast<PyArray_DatetimeDTypeMetaData *>(descr->c_metadata);
+			dtype->meta.base = NPY_FR_s;
 		}
 		cols[col_idx].array = PyArray_Empty(1, dims, descr, 0);
 		cols[col_idx].nullmask = PyArray_EMPTY(1, dims, NPY_BOOL, 0);
@@ -490,7 +498,7 @@ PyObject *duckdb_cursor_fetchnumpy(duckdb_Cursor *self) {
 					assert(!chunk->data[col_idx].sel_vector);
 					PyObject *str_obj;
 					if (!mask_data[chunk_idx + offset]) {
-						str_obj = PyUnicode_FromString(((const char **)chunk->data[col_idx].GetData())[chunk_idx]);
+						str_obj = PyUnicode_FromString(((duckdb::string_t*)chunk->data[col_idx].GetData())[chunk_idx].GetData());
 					} else {
 						assert(cols[col_idx].found_nil);
 						str_obj = Py_None;
@@ -511,6 +519,17 @@ PyObject *duckdb_cursor_fetchnumpy(duckdb_Cursor *self) {
 					}
 					break;
 				}    // else fall-through-to-default
+			case duckdb::TypeId::INT32:
+				if (result->sql_types[col_idx].id == duckdb::SQLTypeId::DATE) {
+					int64_t *array_data_ptr = reinterpret_cast<int64_t *>(array_data + (offset * 2 * duckdb_type_size));
+					duckdb::date_t *chunk_data_ptr = reinterpret_cast<int32_t *>(chunk->data[col_idx].GetData());
+					for (size_t chunk_idx = 0; chunk_idx < chunk->size(); chunk_idx++) {
+						// array_data_ptr[chunk_idx] = duckdb::Timestamp::GetEpoch(chunk_data_ptr[chunk_idx]) * 1000;
+						auto date = chunk_data_ptr[chunk_idx];
+						array_data_ptr[chunk_idx] = duckdb::Date::Epoch(date);
+					}
+					break;
+				}    // else fall-through-to-default	
 			default: // direct mapping types
 				// TODO need to assert the types
 				assert(duckdb::TypeIsConstantSize(duckdb_type));
@@ -591,10 +610,8 @@ PyObject *duckdb_cursor_iternext(duckdb_Cursor *self) {
 
 	PyObject *row = PyList_New(ncol);
 
-	//	DUCKDB_TYPE_TIMESTAMP,
 	//	DUCKDB_TYPE_DATE,
 
-	// FIXME actually switch on SQL types
 	for (size_t col_idx = 0; col_idx < ncol; col_idx++) {
 		PyObject *val = NULL;
 		auto dval = self->result->collection.GetValue(col_idx, self->offset);
@@ -612,9 +629,31 @@ PyObject *duckdb_cursor_iternext(duckdb_Cursor *self) {
 			val = Py_BuildValue("h", dval.value_.smallint);
 			break;
 		case duckdb::TypeId::INT32:
+			if (self->result->sql_types[col_idx].id == duckdb::SQLTypeId::DATE) {
+				auto date_val = dval.value_.integer;
+				auto date = date_val;
+				// oof
+				val = PyDate_FromDate(duckdb::Date::ExtractYear(date),
+						duckdb::Date::ExtractMonth(date),
+						duckdb::Date::ExtractDay(date));
+				break;
+			}    // else fall-through-to-default
 			val = Py_BuildValue("i", dval.value_.integer);
 			break;
 		case duckdb::TypeId::INT64:
+			if (self->result->sql_types[col_idx].id == duckdb::SQLTypeId::TIMESTAMP) {
+				auto timestamp = dval.value_.bigint;
+				auto date = duckdb::Timestamp::GetDate(timestamp);
+				// oof
+				val = PyDateTime_FromDateAndTime(duckdb::Date::ExtractYear(date),
+						duckdb::Date::ExtractMonth(date),
+						duckdb::Date::ExtractDay(date),
+						duckdb::Timestamp::GetHours(timestamp),
+						duckdb::Timestamp::GetMinutes(timestamp),
+						duckdb::Timestamp::GetSeconds(timestamp),
+						duckdb::Timestamp::GetMilliseconds(timestamp)*1000 - duckdb::Timestamp::GetSeconds(timestamp)*1000000);
+				break;
+			}    // else fall-through-to-default
 			val = Py_BuildValue("L", dval.value_.bigint);
 			break;
 		case duckdb::TypeId::FLOAT:
@@ -778,6 +817,8 @@ extern int duckdb_cursor_setup_types(void) {
 	if (!mafunc_ref) {
 		return -1;
 	}
+
+	PyDateTime_IMPORT;
 
 	duckdb_CursorType.tp_new = PyType_GenericNew;
 	return PyType_Ready(&duckdb_CursorType);
