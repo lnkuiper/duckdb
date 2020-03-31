@@ -6,6 +6,7 @@
 #include "duckdb/common/vector_operations/unary_executor.hpp"
 #include "duckdb/common/vector_operations/binary_executor.hpp"
 #include "duckdb/common/vector_operations/ternary_executor.hpp"
+#include "utf8proc_wrapper.hpp"
 
 #include "re2/re2.h"
 
@@ -42,12 +43,12 @@ static void regexp_matches_function(DataChunk &args, ExpressionState &state, Vec
 
 	if (info.constant_pattern) {
 		// FIXME: this should be a unary loop
-		UnaryExecutor::Execute<string_t, bool, true>(strings, result, [&](string_t input) {
+		UnaryExecutor::Execute<string_t, bool, true>(strings, result, args.size(), [&](string_t input) {
 			return RE2::PartialMatch(CreateStringPiece(input), *info.constant_pattern);
 		});
 	} else {
 		BinaryExecutor::Execute<string_t, string_t, bool, true>(
-		    strings, patterns, result, [&](string_t input, string_t pattern) {
+		    strings, patterns, result, args.size(), [&](string_t input, string_t pattern) {
 			    RE2 re(CreateStringPiece(pattern), options);
 			    if (!re.ok()) {
 				    throw Exception(re.error());
@@ -75,7 +76,8 @@ static unique_ptr<FunctionData> regexp_matches_get_bind_function(BoundFunctionEx
 			auto range_success = re->PossibleMatchRange(&range_min, &range_max, 1000);
 			// range_min and range_max might produce non-valid UTF8 strings, e.g. in the case of 'a.*'
 			// in this case we don't push a range filter
-			if (range_success && (!Value::IsUTF8String(range_min.c_str()) || !Value::IsUTF8String(range_max.c_str()))) {
+			if (range_success && (Utf8Proc::Analyze(range_min) == UnicodeType::INVALID ||
+			                      Utf8Proc::Analyze(range_max) == UnicodeType::INVALID)) {
 				range_success = false;
 			}
 
@@ -93,12 +95,12 @@ static void regexp_replace_function(DataChunk &args, ExpressionState &state, Vec
 	RE2::Options options;
 	options.set_log_errors(false);
 
-	TernaryExecutor::Execute<string_t, string_t, string_t, string_t, true>(
-	    strings, patterns, replaces, result, [&](string_t input, string_t pattern, string_t replace) {
+	TernaryExecutor::Execute<string_t, string_t, string_t, string_t>(
+	    strings, patterns, replaces, result, args.size(), [&](string_t input, string_t pattern, string_t replace) {
 		    RE2 re(CreateStringPiece(pattern), options);
 		    std::string sstring(input.GetData(), input.GetSize());
 		    RE2::Replace(&sstring, re, CreateStringPiece(replace));
-		    return result.AddString(sstring);
+		    return StringVector::AddString(result, sstring);
 	    });
 }
 
