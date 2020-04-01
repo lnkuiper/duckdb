@@ -7,8 +7,10 @@
 #include "duckdb/common/enums/catalog_type.hpp"
 #include "duckdb/common/enums/expression_type.hpp"
 #include "duckdb/common/enums/logical_operator_type.hpp"
+#include "duckdb/execution/column_binding_resolver.hpp"
 #include "duckdb/optimizer/optimizer.hpp"
 #include "duckdb/optimizer/join_order_optimizer.hpp"
+#include "duckdb/planner/expression/bound_aggregate_expression.hpp"
 #include "duckdb/planner/expression/bound_columnref_expression.hpp"
 #include "duckdb/planner/expression/bound_comparison_expression.hpp"
 #include "duckdb/planner/operator/logical_comparison_join.hpp"
@@ -38,7 +40,7 @@ unique_ptr<LogicalOperator> ReOptimizer::ReOptimize(unique_ptr<LogicalOperator> 
 			context.profiler.EndPhase();
 			break;
 		}
-		// TODO: if q-error is low we could get away without calling optimizer (or some other criterion)
+		// TODO: if q-error (or some other criterion) is low we could get away without calling optimizer 
 		context.profiler.StartPhase("optimizer");
 		plan = CallOptimizer(move(plan));
 		context.profiler.EndPhase();
@@ -69,17 +71,18 @@ unique_ptr<LogicalOperator> ReOptimizer::PerformPartialPlan(unique_ptr<LogicalOp
 
 	plan->Print();
 
+	// ColumnBindingResolver resolver;
+	// resolver.VisitOperator(*plan->children[0]->children[0]->children[0]);
+	// Printer::Print("----------------------------- new shit");
+	// for (auto cb : resolver.GetBindings()) {
+	// 	Printer::Print(cb.ToString());
+	// }
+	// plan->GetColumnBindings();
+	// Printer::Print("-----------------------------");
+
+
 	Printer::Print("----------------------------- before");
 	plan->children[0]->GetColumnBindings();
-	string bcres0 = "PROJECTION ";
-	for (idx_t i = 0; i < plan->children[0]->expressions.size(); i++) {
-		auto &e = *plan->children[0]->expressions[i];
-		if (e.GetExpressionClass() == ExpressionClass::BOUND_COLUMN_REF) {
-			BoundColumnRefExpression bcre = (BoundColumnRefExpression &) e;
-			bcres0 += bcre.ToString();
-		}
-	}
-	Printer::Print(bcres0);
 	plan->children[0]->children[0]->GetColumnBindings();
 	plan->children[0]->children[0]->children[0]->GetColumnBindings();
 	Printer::Print("-----------------------------");
@@ -121,15 +124,6 @@ unique_ptr<LogicalOperator> ReOptimizer::PerformPartialPlan(unique_ptr<LogicalOp
 
 	Printer::Print("----------------------------- after");
 	plan->children[0]->GetColumnBindings();
-	string bcres1 = "PROJECTION ";
-	for (idx_t i = 0; i < plan->children[0]->expressions.size(); i++) {
-		auto &e = *plan->children[0]->expressions[i];
-		if (e.GetExpressionClass() == ExpressionClass::BOUND_COLUMN_REF) {
-			BoundColumnRefExpression bcre = (BoundColumnRefExpression &) e;
-			bcres1 += bcre.ToString();
-		}
-	}
-	Printer::Print(bcres1);
 	plan->children[0]->children[0]->GetColumnBindings();
 	plan->children[0]->children[0]->children[0]->GetColumnBindings();
 	Printer::Print("-----------------------------");
@@ -196,7 +190,9 @@ static vector<ColumnBinding> GetColumnBindings(LogicalComparisonJoin &join) {
 unique_ptr<LogicalOperator> ReOptimizer::GenerateProjectionMaps(unique_ptr<LogicalOperator> plan) {
 	bool done = true;
 	for (auto &child : plan->children) {
-		if (child->type == LogicalOperatorType::COMPARISON_JOIN || child->type == LogicalOperatorType::PROJECTION) {
+		if (child->type == LogicalOperatorType::COMPARISON_JOIN || 
+			child->type == LogicalOperatorType::PROJECTION ||
+			child->type == LogicalOperatorType::AGGREGATE_AND_GROUP_BY) {
 			done = false;
 			break;
 		}
@@ -205,7 +201,7 @@ unique_ptr<LogicalOperator> ReOptimizer::GenerateProjectionMaps(unique_ptr<Logic
 		return plan;
 	// store the column bindings that are needed by the parents of the child join
 	vector<ColumnBinding> column_bindings;
-	if (plan->type == LogicalOperatorType::PROJECTION) {
+	if (plan->type == LogicalOperatorType::PROJECTION && plan->children[0]->type == LogicalOperatorType::COMPARISON_JOIN) {
 		// from expressions
 		for (idx_t expr_i = 0; expr_i < plan->expressions.size(); expr_i++) {
 			auto &expr = *plan->expressions[expr_i];
@@ -215,21 +211,33 @@ unique_ptr<LogicalOperator> ReOptimizer::GenerateProjectionMaps(unique_ptr<Logic
 			column_bindings.push_back(bcre.binding);
 		}
 		// get the child join, modify its left projection map
-		LogicalComparisonJoin *child_join;
-		if (plan->children[0]->type == LogicalOperatorType::COMPARISON_JOIN)
-			child_join = static_cast<LogicalComparisonJoin *>(plan->children[0].get());
-		// FIXME: #1 PRIORITY use LogicalAggregate::GetColumnBindings to fix this shit, or some other method i dont know anymore...
-		// LogicalOperator::expressions is called select_list for LogicalAggregate
-		// All of these have class/type BoundAggregateExpression
-		// We can't do anything with this because we get some deleted pointer error
-		// How the fuck are we gonna get the bindings then???
-		else if (plan->children[0]->type != LogicalOperatorType::COMPARISON_JOIN)
-			child_join = static_cast<LogicalComparisonJoin *>(plan->children[0]->children[0].get());
+		LogicalComparisonJoin *child_join = child_join = static_cast<LogicalComparisonJoin *>(plan->children[0].get());
 		auto left_cbs = child_join->children[0]->GetColumnBindings();
 		// add index of needed bindings
 		for (column_t cb_i = 0; cb_i < left_cbs.size(); cb_i++) {
 			for (auto cb : column_bindings) {
 				if (left_cbs[cb_i] == cb) {
+					child_join->left_projection_map.push_back(cb_i);
+				}
+			}
+		}
+	} else if (plan->type == LogicalOperatorType::AGGREGATE_AND_GROUP_BY) {
+		// FIXME: THIS
+		for (idx_t i = 0; i < plan->expressions.size(); i++) {
+			auto &bae = (BoundAggregateExpression &)*plan->expressions[i];
+			for (auto &child : bae.children) {
+				auto bcre = (BoundColumnRefExpression &)*child.get();
+				column_bindings.push_back(bcre.binding);
+			}
+		}
+		// get the child join, modify its left projection map
+		LogicalComparisonJoin *child_join = child_join = static_cast<LogicalComparisonJoin *>(plan->children[0].get());
+		auto left_cbs = child_join->children[0]->GetColumnBindings();
+		// add index of needed bindings
+		for (column_t cb_i = 0; cb_i < left_cbs.size(); cb_i++) {
+			for (auto cb : column_bindings) {
+				if (left_cbs[cb_i] == cb) {
+					Printer::Print("Added to left proj map: " + to_string(cb_i));
 					child_join->left_projection_map.push_back(cb_i);
 				}
 			}
@@ -257,7 +265,7 @@ unique_ptr<LogicalOperator> ReOptimizer::GenerateProjectionMaps(unique_ptr<Logic
 				column_bindings.push_back(new_cb);
 		}
 		// FIXME: something small is going wrong here
-		Printer::Print(to_string(column_bindings.size()));
+		// Printer::Print(to_string(column_bindings.size()));
 
 		// add index of needed bindings, and keep track of removed columns
 		auto *child_join = static_cast<LogicalComparisonJoin *>(plan->children[1].get());

@@ -2,6 +2,7 @@
 #include "duckdb/common/string_util.hpp"
 
 #include "duckdb/common/printer.hpp"
+#include "duckdb/planner/expression/bound_aggregate_expression.hpp"
 
 using namespace duckdb;
 using namespace std;
@@ -30,11 +31,11 @@ vector<ColumnBinding> LogicalAggregate::GetColumnBindings() {
 		result.push_back(ColumnBinding(aggregate_index, i));
 	}
 	string test = "AGGREGATE_AND_GROUP_BY " + ParamsToString() + " || ";
-	for (auto cb : result)
-		test += cb.ToString();
-	test += " || ";
-	for (auto &g : expressions) {
-		test += ExpressionClassToString(g->GetExpressionClass()) + "-" + ExpressionTypeToString(g->GetExpressionType()) + " ";
+	for (auto &e : expressions) {
+		auto &bae = (BoundAggregateExpression &)*e.get();
+		for (auto &child : bae.children) {
+			test += child->ToString();
+		}
 	}
 	Printer::Print(test);
 	return result;
