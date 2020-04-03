@@ -36,8 +36,14 @@ private:
 	//! Fill binding_name_mapping with (binding -> alias)
 	void CreateMaps(LogicalOperator &plan);
 	//! Creates a CREATE TEMPORARY TABLE query string for the first join to be executed in 'plan'
-	string CreateSubQuery(LogicalComparisonJoin &plan, const string temporary_table_name,
-	                      vector<string> &queried_tables, vector<string> &where_conditions);
+	string CreateSubQuery(LogicalOperator &plan, const string temporary_table_name, vector<string> &queried_tables,
+	                      vector<string> &where_conditions);
+	//! Reconstructs the filter conditions as strings from a LogicalFilter
+	vector<string> GetFilterStrings(LogicalFilter *filter);
+	//! Reconstructs BOUND_COMPARISON to a condition string
+	string GetBoundComparisonString(BoundComparisonExpression *func);
+	//! Reconstructs BOUND_FUNCTION to a condition string
+	string GetBoundFunctionString(BoundFunctionExpression *func);
 	//! Adjusts the original plan by replacing the join with a LogicalGet on the temporary table
 	unique_ptr<LogicalOperator> AdjustPlan(unique_ptr<LogicalOperator> plan, LogicalComparisonJoin &old_op,
 	                                       string temporary_table_name);

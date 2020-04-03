@@ -2,6 +2,8 @@
 
 #include "duckdb/planner/expression/bound_conjunction_expression.hpp"
 
+#include "duckdb/common/printer.hpp"
+
 using namespace duckdb;
 using namespace std;
 
@@ -18,6 +20,15 @@ void LogicalFilter::ResolveTypes() {
 }
 
 vector<ColumnBinding> LogicalFilter::GetColumnBindings() {
+	// string testing = "FILTER " + ParamsToString() + " Bindings: ";
+	// for (ColumnBinding cb : MapBindings(children[0]->GetColumnBindings(), projection_map)) {
+	// 	testing += cb.ToString();
+	// }
+	// testing += " || ";
+	// for (auto &expr : expressions) {
+	// 	testing += expr->alias + "-" + expr->ToString();
+	// }
+	// Printer::Print(testing);
 	return MapBindings(children[0]->GetColumnBindings(), projection_map);
 }
 

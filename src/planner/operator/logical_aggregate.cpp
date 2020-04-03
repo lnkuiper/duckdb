@@ -30,14 +30,14 @@ vector<ColumnBinding> LogicalAggregate::GetColumnBindings() {
 	for (idx_t i = 0; i < expressions.size(); i++) {
 		result.push_back(ColumnBinding(aggregate_index, i));
 	}
-	string test = "AGGREGATE_AND_GROUP_BY " + ParamsToString() + " || ";
-	for (auto &e : expressions) {
-		auto &bae = (BoundAggregateExpression &)*e.get();
-		for (auto &child : bae.children) {
-			test += child->ToString();
-		}
-	}
-	Printer::Print(test);
+	// string test = "AGGREGATE_AND_GROUP_BY " + ParamsToString() + " || ";
+	// for (auto &e : expressions) {
+	// 	auto &bae = (BoundAggregateExpression &)*e.get();
+	// 	for (auto &child : bae.children) {
+	// 		test += child->ToString();
+	// 	}
+	// }
+	// Printer::Print(test);
 	return result;
 }
 
