@@ -68,9 +68,8 @@ unique_ptr<LogicalOperator> ReOptimizer::PerformPartialPlan(unique_ptr<LogicalOp
 		return plan;
 	auto *join_subquery_plan = static_cast<LogicalComparisonJoin *>(subquery_plan);
 
-	plan->Print();
-
 	Printer::Print("----------------------------- before");
+	plan->Print();
 	// plan->children[0]->GetColumnBindings();
 	// plan->children[0]->children[0]->GetColumnBindings();
 	// plan->children[0]->children[0]->children[0]->GetColumnBindings();
@@ -113,9 +112,8 @@ unique_ptr<LogicalOperator> ReOptimizer::PerformPartialPlan(unique_ptr<LogicalOp
 	// plan = CreateNextPlan(move(plan));
 	// context.profiler.EndPhase();
 
-	plan->Print();
-
 	Printer::Print("----------------------------- after");
+	plan->Print();
 	// plan->children[0]->GetColumnBindings();
 	// plan->children[0]->children[0]->GetColumnBindings();
 	// plan->children[0]->children[0]->children[0]->GetColumnBindings();
