@@ -40,6 +40,8 @@ private:
 	                      vector<string> &where_conditions);
 	//! Reconstructs the filter conditions as strings from a LogicalFilter
 	vector<string> GetFilterStrings(LogicalFilter *filter);
+	//! FIXME:
+	string GetExpressionString(Expression *expr);
 	//! Reconstructs BOUND_COMPARISON to a condition string
 	string GetBoundComparisonString(BoundComparisonExpression *func);
 	//! Reconstructs BOUND_FUNCTION to a condition string
@@ -58,8 +60,6 @@ private:
 	void ExecuteSubQuery(const string subquery);
 	//! Stores the true/estimated cardinality of a plan in saved_cardinalities
 	void InjectCardinalities(LogicalOperator &plan, string temp_table_name);
-	//! Decides the join order of the next plan
-	unique_ptr<LogicalOperator> CreateNextPlan(unique_ptr<LogicalOperator> plan);
 	//! Gets valid subsets of temp_tables
 	vector<vector<string>> TempTablePowerset();
 	//! Second half of the re-optimization iteration procedure: call Optimizer::Optimize on the adjusted plan

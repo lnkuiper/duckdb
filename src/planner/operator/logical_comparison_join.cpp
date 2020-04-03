@@ -22,41 +22,41 @@ vector<ColumnBinding> LogicalComparisonJoin::GetColumnBindings() {
 		left_bindings.push_back(ColumnBinding(mark_index, 0));
 		return left_bindings;
 	}
-	// string testing = "COMPARISON JOIN " + ParamsToString();
-	// for (JoinCondition &jc : conditions) {
-	// 	BoundColumnRefExpression &l = (BoundColumnRefExpression &)*jc.left.get();
-	// 	BoundColumnRefExpression &r = (BoundColumnRefExpression &)*jc.right.get();
-	// 	testing += l.ToString();
-	// 	testing += r.ToString();
-	// 	testing += " ";
-	// }
+	string testing = "COMPARISON JOIN " + ParamsToString();
+	for (JoinCondition &jc : conditions) {
+		BoundColumnRefExpression &l = (BoundColumnRefExpression &)*jc.left.get();
+		BoundColumnRefExpression &r = (BoundColumnRefExpression &)*jc.right.get();
+		testing += l.ToString();
+		testing += r.ToString();
+		testing += " ";
+	}
 
-	// testing += "Bindings: ";
-	// for (ColumnBinding cb : children[0]->GetColumnBindings()) {
-	// 	testing += cb.ToString();
-	// }
-	// testing += " - ";
-	// for (ColumnBinding cb : children[1]->GetColumnBindings()) {
-	// 	testing += cb.ToString();
-	// }
-	// testing += ", l:";
-	// for (idx_t i : left_projection_map) {
-	// 	testing += to_string(i);
-	// }
-	// testing += ", r:";
-	// for (idx_t i : right_projection_map) {
-	// 	testing += to_string(i);
-	// }
+	testing += "Bindings: ";
+	for (ColumnBinding cb : children[0]->GetColumnBindings()) {
+		testing += cb.ToString();
+	}
+	testing += " - ";
+	for (ColumnBinding cb : children[1]->GetColumnBindings()) {
+		testing += cb.ToString();
+	}
+	testing += ", l:";
+	for (idx_t i : left_projection_map) {
+		testing += to_string(i);
+	}
+	testing += ", r:";
+	for (idx_t i : right_projection_map) {
+		testing += to_string(i);
+	}
 
 	// for other join types we project both the LHS and the RHS
 	auto right_bindings = MapBindings(children[1]->GetColumnBindings(), right_projection_map);
 	left_bindings.insert(left_bindings.end(), right_bindings.begin(), right_bindings.end());
 
-	// testing += " || ";
-	// for (ColumnBinding cb : left_bindings) {
-	// 	testing += cb.ToString();
-	// }
-	// Printer::Print(testing);
+	testing += " || ";
+	for (ColumnBinding cb : left_bindings) {
+		testing += cb.ToString();
+	}
+	Printer::Print(testing);
 
 	return left_bindings;
 }

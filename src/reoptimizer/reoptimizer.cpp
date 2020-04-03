@@ -11,9 +11,11 @@
 #include "duckdb/optimizer/optimizer.hpp"
 #include "duckdb/optimizer/join_order_optimizer.hpp"
 #include "duckdb/planner/expression/bound_aggregate_expression.hpp"
+#include "duckdb/planner/expression/bound_between_expression.hpp"
 #include "duckdb/planner/expression/bound_columnref_expression.hpp"
 #include "duckdb/planner/expression/bound_comparison_expression.hpp"
 #include "duckdb/planner/expression/bound_conjunction_expression.hpp"
+#include "duckdb/planner/expression/bound_constant_expression.hpp"
 #include "duckdb/planner/expression/bound_function_expression.hpp"
 #include "duckdb/planner/operator/logical_comparison_join.hpp"
 #include "duckdb/planner/operator/logical_chunk_get.hpp"
@@ -43,10 +45,12 @@ unique_ptr<LogicalOperator> ReOptimizer::ReOptimize(unique_ptr<LogicalOperator> 
 			context.profiler.EndPhase();
 			break;
 		}
+
 		// TODO: if q-error (or some other criterion) is low we could get away without calling optimizer
 		context.profiler.StartPhase("optimizer");
 		plan = CallOptimizer(move(plan));
 		context.profiler.EndPhase();
+
 		// if (ExtractJoinOperators(*plan).size() <= 1)
 		// 	break;
 		// end iteration profiling phase
@@ -70,10 +74,10 @@ unique_ptr<LogicalOperator> ReOptimizer::PerformPartialPlan(unique_ptr<LogicalOp
 
 	Printer::Print("----------------------------- before");
 	plan->Print();
-	// plan->children[0]->GetColumnBindings();
-	// plan->children[0]->children[0]->GetColumnBindings();
-	// plan->children[0]->children[0]->children[0]->GetColumnBindings();
-	Printer::Print("-----------------------------");
+	plan->children[0]->GetColumnBindings();
+	plan->children[0]->children[0]->GetColumnBindings();
+	plan->children[0]->children[0]->children[0]->GetColumnBindings();
+	Printer::Print("-----------------------------\n");
 
 	context.profiler.StartPhase("generate_projection_maps");
 	plan = GenerateProjectionMaps(move(plan));
@@ -107,17 +111,12 @@ unique_ptr<LogicalOperator> ReOptimizer::PerformPartialPlan(unique_ptr<LogicalOp
 	FixColumnBindings(*plan);
 	context.profiler.EndPhase();
 
-	// TODO: implement
-	// context.profiler.StartPhase("create_next_plan");
-	// plan = CreateNextPlan(move(plan));
-	// context.profiler.EndPhase();
-
 	Printer::Print("----------------------------- after");
 	plan->Print();
-	// plan->children[0]->GetColumnBindings();
-	// plan->children[0]->children[0]->GetColumnBindings();
-	// plan->children[0]->children[0]->children[0]->GetColumnBindings();
-	Printer::Print("-----------------------------");
+	plan->children[0]->GetColumnBindings();
+	plan->children[0]->children[0]->GetColumnBindings();
+	plan->children[0]->children[0]->children[0]->GetColumnBindings();
+	Printer::Print("-----------------------------\n");
 
 	return plan;
 }
@@ -224,9 +223,10 @@ unique_ptr<LogicalOperator> ReOptimizer::GenerateProjectionMaps(unique_ptr<Logic
 		}
 
 		// update child join projection maps
-		if (plan->children[1]->type == LogicalOperatorType::COMPARISON_JOIN) {
-			auto *child_join = static_cast<LogicalComparisonJoin *>(plan->children[1].get());
-			// add index of needed bindings, and keep track of removed columns
+		for (idx_t i = 0; i < 2; i++) {
+			if (plan->children[i]->type != LogicalOperatorType::COMPARISON_JOIN)
+				continue;
+			auto *child_join = static_cast<LogicalComparisonJoin *>(plan->children[i].get());
 			vector<ColumnBinding> left_cbs = child_join->children[0]->GetColumnBindings();
 			idx_t n_kept = 0;
 			vector<column_t> removed_columns;
@@ -245,11 +245,24 @@ unique_ptr<LogicalOperator> ReOptimizer::GenerateProjectionMaps(unique_ptr<Logic
 					removed_columns.push_back(cb_i);
 				}
 			}
+
 			// FIXME: something wrong here ...
 			// Need to only remove columns that were kept in the first place!
+			if (n_kept == 0) // hack fix for this FIXME
+				continue;
 
-			// update right projection map of this join accordingly
-			if (n_kept > 0) { // hack fix for the FIXME above
+			// update left/right projection maps of this join accordingly
+			if (i == 0) {
+				for (idx_t rpi = 0; rpi < join->left_projection_map.size(); rpi++) {
+					column_t decr = 0;
+					for (column_t removed_col : removed_columns) {
+						if (removed_col < join->left_projection_map[rpi]) {
+							decr++;
+						}
+					}
+					join->left_projection_map[rpi] -= decr;
+				}
+			} else {
 				for (idx_t rpi = 0; rpi < join->right_projection_map.size(); rpi++) {
 					column_t decr = 0;
 					for (column_t removed_col : removed_columns) {
@@ -287,7 +300,6 @@ unique_ptr<LogicalOperator> ReOptimizer::GenerateProjectionMaps(unique_ptr<Logic
 			break;
 		}
 			// default:
-			// TODO: ?
 		}
 		// get the child join, modify its left projection map
 		LogicalComparisonJoin *child_join = child_join = static_cast<LogicalComparisonJoin *>(plan->children[0].get());
@@ -322,8 +334,6 @@ void ReOptimizer::CreateMaps(LogicalOperator &plan) {
 	}
 }
 
-// TODO: perhaps instead of sending a subquery, we add PROJECT + CREATE TABLE onto the plan and hack it in?
-// Probably not within the timeframe of this project ...
 string ReOptimizer::CreateSubQuery(LogicalOperator &plan, const string temporary_table_name,
                                    vector<string> &queried_tables, vector<string> &where_conditions) {
 	switch (plan.type) {
@@ -355,6 +365,9 @@ string ReOptimizer::CreateSubQuery(LogicalOperator &plan, const string temporary
 			}
 		}
 		break;
+	}
+	case LogicalOperatorType::CROSS_PRODUCT: {
+		// TODO: implement
 	}
 	case LogicalOperatorType::FILTER: {
 		LogicalFilter *filter = static_cast<LogicalFilter *>(&plan);
@@ -401,63 +414,73 @@ string ReOptimizer::CreateSubQuery(LogicalOperator &plan, const string temporary
 vector<string> ReOptimizer::GetFilterStrings(LogicalFilter *filter) {
 	vector<string> conditions;
 	for (auto &expr : filter->expressions) {
-		switch (expr->GetExpressionClass()) {
-		case ExpressionClass::BOUND_OPERATOR: {
-			// special case: IN operator, has a join down the line, processed differently
-			if (expr->type == ExpressionType::COMPARE_IN)
-				continue;
-		}
-		case ExpressionClass::BOUND_COMPARISON: {
-			auto *comparison = static_cast<BoundComparisonExpression *>(expr.get());
-			conditions.push_back(GetBoundComparisonString(comparison));
-			break;
-		}
-		case ExpressionClass::BOUND_FUNCTION: {
-			auto *func = static_cast<BoundFunctionExpression *>(expr.get());
-			conditions.push_back(GetBoundFunctionString(func));
-
-			break;
-		}
-		case ExpressionClass::BOUND_CONJUNCTION: {
-			auto *conjunction = static_cast<BoundConjunctionExpression *>(expr.get());
-			vector<string> child_conditions;
-			for (auto &child : conjunction->children) {
-				switch (child->GetExpressionClass()) {
-				case ExpressionClass::BOUND_COMPARISON: {
-					auto *comparison = static_cast<BoundComparisonExpression *>(child.get());
-					child_conditions.push_back(GetBoundComparisonString(comparison));
-					break;
-				}
-				case ExpressionClass::BOUND_FUNCTION: {
-					auto *func = static_cast<BoundFunctionExpression *>(child.get());
-					child_conditions.push_back(GetBoundFunctionString(func));
-					break;
-				}
-				default:
-					Printer::Print("Exception 2");
-					throw new ReOptimizerException(
-					    "Expected child class of BOUND_CONJUNCTION to be BOUND_COMPARISON, BOUND_FUNCTION, got '%s'",
-					    ExpressionClassToString(child->GetExpressionClass()));
-				}
-			}
-			conditions.push_back(
-			    "(" +
-			    JoinStrings(child_conditions, " " + ExpressionTypeToOperator(conjunction->GetExpressionType()) + " ") +
-			    ")");
-			break;
-		}
-		default:
-			Printer::Print("Exception 2");
-			throw new ReOptimizerException(
-			    "Expected filter class to be BOUND_COMPARISON, BOUND_FUNCTION or BOUND_CONJUNCTION, got '%s'",
-			    ExpressionClassToString(expr->GetExpressionClass()));
-		}
+		string expr_string = GetExpressionString(expr.get());
+		if (expr_string != "")
+			conditions.push_back(expr_string);
 	}
 	return conditions;
 }
 
+string ReOptimizer::GetExpressionString(Expression *expr) {
+	switch (expr->GetExpressionClass()) {
+	case ExpressionClass::BOUND_COLUMN_REF:
+		return "";
+	case ExpressionClass::BOUND_OPERATOR: {
+		// special case: IN operator, has a join down the line, processed differently
+		if (expr->type == ExpressionType::COMPARE_IN)
+			return "";
+	}
+	case ExpressionClass::BOUND_COMPARISON: {
+		auto *comparison = static_cast<BoundComparisonExpression *>(expr);
+		return GetBoundComparisonString(comparison);
+	}
+	case ExpressionClass::BOUND_FUNCTION: {
+		auto *func = static_cast<BoundFunctionExpression *>(expr);
+		return GetBoundFunctionString(func);
+	}
+	case ExpressionClass::BOUND_CONJUNCTION: {
+		auto *conjunction = static_cast<BoundConjunctionExpression *>(expr);
+		vector<string> child_conditions;
+		for (auto &child : conjunction->children) {
+			child_conditions.push_back(GetExpressionString(child.get()));
+		}
+		return "(" +
+			   JoinStrings(child_conditions, " " + ExpressionTypeToOperator(conjunction->GetExpressionType()) + " ") +
+			   ")";
+	}
+	case ExpressionClass::BOUND_BETWEEN: {
+		auto *between = static_cast<BoundBetweenExpression *>(expr);
+		auto binding = static_cast<BoundColumnRefExpression *>(between->input.get())->binding;
+		string condition = "t" + to_string(binding.table_index) + "." + bta[binding.ToString()] + " BETWEEN ";
+		auto lower = static_cast<BoundConstantExpression *>(between->lower.get());
+		auto upper = static_cast<BoundConstantExpression *>(between->upper.get());
+		if (lower->value.type == TypeId::VARCHAR)
+			condition += "'" + lower->value.ToString() + "'";
+		else
+			condition += lower->value.ToString();
+		condition += " AND ";
+		if (upper->value.type == TypeId::VARCHAR)
+			condition += "'" + upper->value.ToString() + "'";
+		else
+			condition += upper->value.ToString();
+		return condition;
+	}
+	default:
+		Printer::Print("Exception 3: " + expr->ToString() + " - " + ExpressionClassToString(expr->GetExpressionClass()) + ", " + ExpressionTypeToString(expr->type));
+		throw new ReOptimizerException(
+			"Expected filter class to be BOUND_COMPARISON, BOUND_FUNCTION or BOUND_CONJUNCTION, got '%s'",
+			ExpressionClassToString(expr->GetExpressionClass()));
+	}
+}
+
 string ReOptimizer::GetBoundComparisonString(BoundComparisonExpression *comparison) {
+	// FIXME: not always bound column ref - can also be bound operator
+	// IS_NOT_NULL - not ToString-able
+	// BoundOperatorExpression has children
+
+
 	// filter conditions - table reference is 'always' placed on the left, constant on the right
+	Printer::Print("!!!" + comparison->ToString() + " - " + ExpressionClassToString(comparison->GetExpressionClass()) + ", " + ExpressionTypeToString(comparison->type));
 	auto binding = static_cast<BoundColumnRefExpression *>(comparison->left.get())->binding;
 	string condition = "t" + to_string(binding.table_index) + "." + bta[binding.ToString()] + " " +
 	                   ExpressionTypeToOperator(comparison->type) + " ";
@@ -505,27 +528,8 @@ static vector<string> GetRelationSet(LogicalOperator &plan) {
 
 void ReOptimizer::InjectCardinalities(LogicalOperator &plan, string temp_table_name) {
 	// TODO: derive information about the cardinality of the intermediate results, implement
+	// TODO: create cost function that uses injected cardinalities
 	cardinalities[JoinStrings(GetRelationSet(plan), ",")] = GetTable("main", temp_table_name)->storage->cardinality;
-}
-
-unique_ptr<LogicalOperator> ReOptimizer::CreateNextPlan(unique_ptr<LogicalOperator> plan) {
-	idx_t lowest_cost = 0;
-	unique_ptr<LogicalOperator> best_plan;
-	for (auto subset : TempTablePowerset()) {
-		// TODO: create plan using leaf nodes
-		unique_ptr<LogicalOperator> tentative_plan;
-		// TODO: figure out if this works (bindings might get fucked, but would rather this than call Optimizer)
-		JoinOrderOptimizer optimizer(cardinalities);
-		tentative_plan = optimizer.Optimize(move(plan));
-		// TODO: create cost function that uses injected cardinalities
-		idx_t cost = tentative_plan->ComputeCost();
-		if (cost < lowest_cost) {
-			lowest_cost = cost;
-			best_plan = move(tentative_plan);
-		}
-	}
-	// TODO: perhaps call optimizer here?
-	return best_plan;
 }
 
 vector<vector<string>> ReOptimizer::TempTablePowerset() {
