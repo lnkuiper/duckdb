@@ -17,7 +17,11 @@ string LogicalGet::ParamsToString() const {
 	if (!table) {
 		return "";
 	}
-	return "(" + table->name + ")";
+	string result = "(" + table->name + ") || ";
+	for (idx_t i = 0; i < column_ids.size(); i++) {
+		result += table->columns[column_ids[i]].name + ColumnBinding(table_index, i).ToString();
+	}
+	return result;
 }
 
 vector<ColumnBinding> LogicalGet::GetColumnBindings() {

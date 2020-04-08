@@ -30,6 +30,8 @@ public:
 	//! separated by AND Returns whether or not any splits were made
 	static bool SplitPredicates(vector<unique_ptr<Expression>> &expressions);
 
+	string ParamsToString() const override;
+
 protected:
 	void ResolveTypes() override;
 };

@@ -34,6 +34,10 @@ public:
 		return GenerateColumnBindings(table_index, chunk_types.size());
 	}
 
+	string ParamsToString() const override {
+		return " || #[" + std::to_string(table_index) + ".0]";
+	}
+
 protected:
 	void ResolveTypes() override {
 		// types are resolved in the constructor

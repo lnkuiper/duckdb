@@ -10,6 +10,7 @@
 #include "duckdb/common/types/vector.hpp"
 #include "duckdb/optimizer/optimizer.hpp"
 #include "duckdb/optimizer/join_order_optimizer.hpp"
+#include "duckdb/planner/expression/bound_operator_expression.hpp"
 #include "duckdb/planner/expression/bound_aggregate_expression.hpp"
 #include "duckdb/planner/expression/bound_between_expression.hpp"
 #include "duckdb/planner/expression/bound_columnref_expression.hpp"
@@ -59,6 +60,9 @@ unique_ptr<LogicalOperator> ReOptimizer::ReOptimize(unique_ptr<LogicalOperator> 
 	context.profiler.StartPhase("clear_left_proj_maps");
 	plan = ClearLeftProjectionMaps(move(plan));
 	context.profiler.EndPhase();
+
+	Printer::Print("OUTPUT");
+
 	return plan;
 }
 
@@ -72,11 +76,8 @@ unique_ptr<LogicalOperator> ReOptimizer::PerformPartialPlan(unique_ptr<LogicalOp
 		return plan;
 	auto *join_subquery_plan = static_cast<LogicalComparisonJoin *>(subquery_plan);
 
-	Printer::Print("----------------------------- before");
+	Printer::Print("\n----------------------------- before");
 	plan->Print();
-	plan->children[0]->GetColumnBindings();
-	plan->children[0]->children[0]->GetColumnBindings();
-	plan->children[0]->children[0]->children[0]->GetColumnBindings();
 	Printer::Print("-----------------------------\n");
 
 	context.profiler.StartPhase("generate_projection_maps");
@@ -84,6 +85,7 @@ unique_ptr<LogicalOperator> ReOptimizer::PerformPartialPlan(unique_ptr<LogicalOp
 	context.profiler.EndPhase();
 
 	context.profiler.StartPhase("map_binding_names");
+	bta.clear();
 	CreateMaps(*plan);
 	context.profiler.EndPhase();
 
@@ -109,14 +111,12 @@ unique_ptr<LogicalOperator> ReOptimizer::PerformPartialPlan(unique_ptr<LogicalOp
 
 	context.profiler.StartPhase("fix_bindings");
 	FixColumnBindings(*plan);
+	rebind_mapping.clear();
 	context.profiler.EndPhase();
 
-	Printer::Print("----------------------------- after");
+	Printer::Print("\n----------------------------- after");
 	plan->Print();
-	plan->children[0]->GetColumnBindings();
-	plan->children[0]->children[0]->GetColumnBindings();
-	plan->children[0]->children[0]->children[0]->GetColumnBindings();
-	Printer::Print("-----------------------------\n");
+	Printer::Print("-----------------------------\n\n");
 
 	return plan;
 }
@@ -225,6 +225,8 @@ unique_ptr<LogicalOperator> ReOptimizer::GenerateProjectionMaps(unique_ptr<Logic
 		// update child join projection maps
 		for (idx_t i = 0; i < 2; i++) {
 			if (plan->children[i]->type != LogicalOperatorType::COMPARISON_JOIN)
+				continue;
+			if (plan->children[i]->children[1]->type == LogicalOperatorType::CHUNK_GET)
 				continue;
 			auto *child_join = static_cast<LogicalComparisonJoin *>(plan->children[i].get());
 			vector<ColumnBinding> left_cbs = child_join->children[0]->GetColumnBindings();
@@ -354,14 +356,15 @@ string ReOptimizer::CreateSubQuery(LogicalOperator &plan, const string temporary
 				else
 					in_vals.push_back(vals->GetValue(i).ToString());
 			}
-			where_conditions.push_back("t" + to_string(l_bind.table_index) + "." + bta[l_bind.ToString()] + " IN (" + JoinStrings(in_vals, ",") + ")");
+			where_conditions.push_back("t" + to_string(l_bind.table_index) + "." + bta[l_bind.ToString()] + " IN (" +
+			                           JoinStrings(in_vals, ",") + ")");
 		} else {
 			for (idx_t cond_i = 0; cond_i < join->conditions.size(); cond_i++) {
 				JoinCondition &join_condition = join->conditions[cond_i];
 				auto l_bind = ((BoundColumnRefExpression &)*join_condition.left.get()).binding;
 				auto r_bind = ((BoundColumnRefExpression &)*join_condition.right.get()).binding;
 				where_conditions.push_back("t" + to_string(l_bind.table_index) + "." + bta[l_bind.ToString()] + " = " +
-										"t" + to_string(r_bind.table_index) + "." + bta[r_bind.ToString()]);
+				                           "t" + to_string(r_bind.table_index) + "." + bta[r_bind.ToString()]);
 			}
 		}
 		break;
@@ -403,7 +406,7 @@ string ReOptimizer::CreateSubQuery(LogicalOperator &plan, const string temporary
 	}
 	vector<string> selected_columns;
 	for (auto cb : selected_column_bindings)
-		selected_columns.push_back("t" + to_string(cb.table_index) + "." + bta[cb.ToString()]);
+		selected_columns.push_back("t" + to_string(cb.table_index) + "." + bta[cb.ToString()] + " AS " + bta[cb.ToString()] + to_string(cb.table_index));
 
 	// create query and return
 	return "CREATE TEMPORARY TABLE main." + temporary_table_name + " AS (" + "SELECT " +
@@ -427,8 +430,25 @@ string ReOptimizer::GetExpressionString(Expression *expr) {
 		return "";
 	case ExpressionClass::BOUND_OPERATOR: {
 		// special case: IN operator, has a join down the line, processed differently
-		if (expr->type == ExpressionType::COMPARE_IN)
+		switch (expr->type) {
+		case ExpressionType::COMPARE_IN:
 			return "";
+		case ExpressionType::OPERATOR_IS_NOT_NULL: {
+			auto *op = static_cast<BoundOperatorExpression *>(expr);
+			auto binding = static_cast<BoundColumnRefExpression *>(op->children[0].get())->binding;
+			return "t" + to_string(binding.table_index) + "." + bta[binding.ToString()] + " IS NOT NULL";
+		}
+		case ExpressionType::OPERATOR_IS_NULL: {
+			auto *op = static_cast<BoundOperatorExpression *>(expr);
+			auto binding = static_cast<BoundColumnRefExpression *>(op->children[0].get())->binding;
+			return "t" + to_string(binding.table_index) + "." + bta[binding.ToString()] + " IS NULL";
+		}
+		default:
+			Printer::Print("Exception 4: " + expr->ToString() + " - " + ExpressionTypeToString(expr->type));
+			throw new ReOptimizerException(
+			    "Expected expression type of class BOUND_OPERATOR to be COMPARE_IN or IS_NOT_NULL, got '%s'",
+			    ExpressionTypeToString(expr->type));
+		}
 	}
 	case ExpressionClass::BOUND_COMPARISON: {
 		auto *comparison = static_cast<BoundComparisonExpression *>(expr);
@@ -445,8 +465,8 @@ string ReOptimizer::GetExpressionString(Expression *expr) {
 			child_conditions.push_back(GetExpressionString(child.get()));
 		}
 		return "(" +
-			   JoinStrings(child_conditions, " " + ExpressionTypeToOperator(conjunction->GetExpressionType()) + " ") +
-			   ")";
+		       JoinStrings(child_conditions, " " + ExpressionTypeToOperator(conjunction->GetExpressionType()) + " ") +
+		       ")";
 	}
 	case ExpressionClass::BOUND_BETWEEN: {
 		auto *between = static_cast<BoundBetweenExpression *>(expr);
@@ -466,10 +486,11 @@ string ReOptimizer::GetExpressionString(Expression *expr) {
 		return condition;
 	}
 	default:
-		Printer::Print("Exception 3: " + expr->ToString() + " - " + ExpressionClassToString(expr->GetExpressionClass()) + ", " + ExpressionTypeToString(expr->type));
+		Printer::Print("Exception 2: " + expr->ToString() + " - " +
+		               ExpressionClassToString(expr->GetExpressionClass()) + ", " + ExpressionTypeToString(expr->type));
 		throw new ReOptimizerException(
-			"Expected filter class to be BOUND_COMPARISON, BOUND_FUNCTION or BOUND_CONJUNCTION, got '%s'",
-			ExpressionClassToString(expr->GetExpressionClass()));
+		    "Expected filter class to be BOUND_COMPARISON, BOUND_FUNCTION or BOUND_CONJUNCTION, got '%s'",
+		    ExpressionClassToString(expr->GetExpressionClass()));
 	}
 }
 
@@ -478,9 +499,9 @@ string ReOptimizer::GetBoundComparisonString(BoundComparisonExpression *comparis
 	// IS_NOT_NULL - not ToString-able
 	// BoundOperatorExpression has children
 
-
 	// filter conditions - table reference is 'always' placed on the left, constant on the right
-	Printer::Print("!!!" + comparison->ToString() + " - " + ExpressionClassToString(comparison->GetExpressionClass()) + ", " + ExpressionTypeToString(comparison->type));
+	// Printer::Print("!!!" + comparison->ToString() + " - " + ExpressionClassToString(comparison->GetExpressionClass())
+	// + ", " + ExpressionTypeToString(comparison->type));
 	auto binding = static_cast<BoundColumnRefExpression *>(comparison->left.get())->binding;
 	string condition = "t" + to_string(binding.table_index) + "." + bta[binding.ToString()] + " " +
 	                   ExpressionTypeToOperator(comparison->type) + " ";
@@ -586,14 +607,19 @@ void ReOptimizer::ReplaceLogicalOperator(LogicalOperator &plan, LogicalCompariso
 
 		if (join->ParamsToString() == old_op.ParamsToString()) {
 			vector<ColumnBinding> old_op_cbs = GetColumnBindings(*join);
+			idx_t new_table_index = 0;
+			for (auto cb : old_op_cbs) {
+				if (cb.table_index > new_table_index)
+					new_table_index = cb.table_index;
+			}
 			for (column_t new_index = 0; new_index < old_op_cbs.size(); new_index++)
-				rebind_mapping[old_op_cbs[new_index].ToString()] = ColumnBinding(depth, new_index);
+				rebind_mapping[old_op_cbs[new_index].ToString()] = ColumnBinding(new_table_index, new_index);
 
 			vector<column_t> column_ids;
 			for (column_t column_id = 0; column_id < table->columns.size(); column_id++)
 				column_ids.push_back(column_id);
 
-			unique_ptr<LogicalGet> replacement_operator = make_unique<LogicalGet>(table, depth, column_ids);
+			unique_ptr<LogicalGet> replacement_operator = make_unique<LogicalGet>(table, new_table_index, column_ids);
 			plan.children[child_i] = move(replacement_operator);
 			return;
 		}
@@ -604,8 +630,9 @@ void ReOptimizer::ReplaceLogicalOperator(LogicalOperator &plan, LogicalCompariso
 }
 
 void ReOptimizer::FixColumnBindings(LogicalOperator &plan) {
-	// fix BoundColumRefs in JoinConditions
-	if (plan.type == LogicalOperatorType::COMPARISON_JOIN) {
+	// fix BoundColumRefs in JoinConditions, aggregates, filters
+	switch (plan.type) {
+	case LogicalOperatorType::COMPARISON_JOIN: {
 		LogicalComparisonJoin *join = static_cast<LogicalComparisonJoin *>(&plan);
 		for (idx_t condition_i = 0; condition_i < join->conditions.size(); condition_i++) {
 			JoinCondition &jc = join->conditions[condition_i];
@@ -622,7 +649,8 @@ void ReOptimizer::FixColumnBindings(LogicalOperator &plan) {
 				join->conditions[condition_i].right = move(fixed_bcre);
 			}
 		}
-	} else if (plan.type == LogicalOperatorType::AGGREGATE_AND_GROUP_BY) {
+	}
+	case LogicalOperatorType::AGGREGATE_AND_GROUP_BY: {
 		for (idx_t expr_i = 0; expr_i < plan.expressions.size(); expr_i++) {
 			auto &bae = (BoundAggregateExpression &)*plan.expressions[expr_i];
 			for (idx_t child_i = 0; child_i < bae.children.size(); child_i++) {
@@ -636,21 +664,107 @@ void ReOptimizer::FixColumnBindings(LogicalOperator &plan) {
 			}
 		}
 	}
+		// default y/n?
+	}
+
 	// fix other BoundColumnRefExpressions found in expressions (for e.g. LogicalProjection)
 	for (idx_t expr_i = 0; expr_i < plan.expressions.size(); expr_i++) {
 		auto &expr = *plan.expressions[expr_i];
-		if (expr.GetExpressionClass() != ExpressionClass::BOUND_COLUMN_REF)
-			continue;
-		auto e = (BoundColumnRefExpression &)expr;
-		if (rebind_mapping.find(e.ToString()) != rebind_mapping.end()) {
-			unique_ptr<BoundColumnRefExpression> fixed_bcre =
-			    make_unique<BoundColumnRefExpression>(e.alias, e.return_type, rebind_mapping[e.ToString()], e.depth);
-			plan.expressions[expr_i] = move(fixed_bcre);
+		switch (expr.GetExpressionClass()) {
+		case ExpressionClass::BOUND_COLUMN_REF: {
+			auto bcre = (BoundColumnRefExpression &)expr;
+			if (rebind_mapping.find(bcre.ToString()) != rebind_mapping.end()) {
+				unique_ptr<BoundColumnRefExpression> fixed_bcre = make_unique<BoundColumnRefExpression>(
+				    bcre.alias, bcre.return_type, rebind_mapping[bcre.ToString()], bcre.depth);
+				plan.expressions[expr_i] = move(fixed_bcre);
+			}
+			break;
+		}
+		default:
+			FixColumnBindings(&expr);
 		}
 	}
 	// recursively propagate operator tree
 	for (auto &child : plan.children) {
 		FixColumnBindings(*child);
+	}
+}
+
+void ReOptimizer::FixColumnBindings(Expression *expr) {
+	switch (expr->GetExpressionClass()) {
+	case ExpressionClass::BOUND_OPERATOR: {
+		auto *op = static_cast<BoundOperatorExpression *>(expr);
+		for (idx_t child_i = 0; child_i < op->children.size(); child_i++) {
+			if (op->children[child_i]->type == ExpressionType::BOUND_COLUMN_REF) {
+				Printer::Print(op->ToString() + " - " + op->children[child_i]->ToString());
+				auto *bcre = static_cast<BoundColumnRefExpression *>(op->children[child_i].get());
+				if (rebind_mapping.find(bcre->ToString()) != rebind_mapping.end()) {
+					unique_ptr<BoundColumnRefExpression> fixed_bcre = make_unique<BoundColumnRefExpression>(bcre->alias, bcre->return_type, rebind_mapping[bcre->ToString()], bcre->depth);
+					op->children[child_i] = move(fixed_bcre);
+				}
+			} else {
+				auto &child = *op->children[child_i];
+				FixColumnBindings(&child);
+			}
+		}
+		break;
+	}
+	case ExpressionClass::BOUND_COMPARISON: {
+		auto *comparison = static_cast<BoundComparisonExpression *>(expr);
+		auto *bcre = static_cast<BoundColumnRefExpression *>(comparison->left.get());
+		if (rebind_mapping.find(bcre->ToString()) != rebind_mapping.end()) {
+			unique_ptr<BoundColumnRefExpression> fixed_bcre = make_unique<BoundColumnRefExpression>(
+			    bcre->alias, bcre->return_type, rebind_mapping[bcre->ToString()], bcre->depth);
+			comparison->left = move(fixed_bcre);
+		}
+		break;
+	}
+	case ExpressionClass::BOUND_FUNCTION: {
+		auto *func = static_cast<BoundFunctionExpression *>(expr);
+		auto *bcre = static_cast<BoundColumnRefExpression *>(func->children[0].get());
+		if (rebind_mapping.find(bcre->ToString()) != rebind_mapping.end()) {
+			unique_ptr<BoundColumnRefExpression> fixed_bcre = make_unique<BoundColumnRefExpression>(
+			    bcre->alias, bcre->return_type, rebind_mapping[bcre->ToString()], bcre->depth);
+			func->children[0] = move(fixed_bcre);
+		}
+		break;
+	}
+	case ExpressionClass::BOUND_CONJUNCTION: {
+		auto *conjunction = static_cast<BoundConjunctionExpression *>(expr);
+		for (idx_t child_i = 0; child_i < conjunction->children.size(); child_i++) {
+			auto &expr = *conjunction->children[child_i];
+			FixColumnBindings(&expr);
+		}
+		break;
+	}
+	case ExpressionClass::BOUND_BETWEEN: {
+		auto *between = static_cast<BoundBetweenExpression *>(expr);
+		auto bcre = static_cast<BoundColumnRefExpression *>(between->input.get());
+		if (rebind_mapping.find(bcre->ToString()) != rebind_mapping.end()) {
+			unique_ptr<BoundColumnRefExpression> fixed_bcre = make_unique<BoundColumnRefExpression>(
+			    bcre->alias, bcre->return_type, rebind_mapping[bcre->ToString()], bcre->depth);
+			between->input = move(fixed_bcre);
+		}
+		break;
+	}
+	case ExpressionClass::BOUND_AGGREGATE: {
+		auto *aggregate = static_cast<BoundAggregateExpression *>(expr);
+		for (idx_t child_i = 0; child_i < aggregate->children.size(); child_i++) {
+			auto *bcre = static_cast<BoundColumnRefExpression *>(aggregate->children[child_i].get());
+			if (rebind_mapping.find(bcre->ToString()) != rebind_mapping.end()) {
+				unique_ptr<BoundColumnRefExpression> fixed_bcre = make_unique<BoundColumnRefExpression>(
+				    bcre->alias, bcre->return_type, rebind_mapping[bcre->ToString()], bcre->depth);
+				aggregate->children[child_i] = move(fixed_bcre);
+			}
+		}
+		break;
+	}
+	default:
+		Printer::Print("Exception 3: " + expr->ToString() + " - " +
+		               ExpressionClassToString(expr->GetExpressionClass()) + ", " + ExpressionTypeToString(expr->type));
+		throw new ReOptimizerException(
+		    "Expected filter class to be BOUND_COMPARISON, BOUND_FUNCTION or BOUND_CONJUNCTION, got '%s'",
+		    ExpressionClassToString(expr->GetExpressionClass()));
 	}
 }
 
@@ -677,8 +791,8 @@ void ReOptimizer::ExecuteSubQuery(const string subquery) {
 	// restore the state of autocommit, profiler and optimizer
 	// context.transaction.SetAutoCommit(auto_commit);
 	context.transaction.BeginTransaction();
-	if (profiler)
-		context.profiler.Enable();
+	// if (profiler)
+	context.profiler.Enable();
 	// context.enable_optimizer = optimizer;
 }
 

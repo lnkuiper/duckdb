@@ -2,7 +2,7 @@
 
 #include "duckdb/planner/expression/bound_conjunction_expression.hpp"
 
-#include "duckdb/common/printer.hpp"
+#include "duckdb/common/string_util.hpp"
 
 using namespace duckdb;
 using namespace std;
@@ -20,15 +20,6 @@ void LogicalFilter::ResolveTypes() {
 }
 
 vector<ColumnBinding> LogicalFilter::GetColumnBindings() {
-	// string testing = "FILTER " + ParamsToString() + " Bindings: ";
-	// for (ColumnBinding cb : MapBindings(children[0]->GetColumnBindings(), projection_map)) {
-	// 	testing += cb.ToString();
-	// }
-	// testing += " || ";
-	// for (auto &expr : expressions) {
-	// 	testing += expr->alias + "-" + expr->ToString();
-	// }
-	// Printer::Print(testing);
 	return MapBindings(children[0]->GetColumnBindings(), projection_map);
 }
 
@@ -53,4 +44,21 @@ bool LogicalFilter::SplitPredicates(vector<unique_ptr<Expression>> &expressions)
 		}
 	}
 	return found_conjunction;
+}
+
+string LogicalFilter::ParamsToString() const {
+	string result = "";
+	if (expressions.size() > 0) {
+		result += "[";
+		result += StringUtil::Join(expressions, expressions.size(), ", ",
+		                           [](const unique_ptr<Expression> &expression) { return expression->GetName(); });
+		result += "]";
+	}
+
+	result += " || ";
+	for (auto cb : MapBindings(children[0]->GetColumnBindings(), projection_map)) {
+		result += cb.ToString();
+	}
+
+	return result;
 }

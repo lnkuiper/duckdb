@@ -56,6 +56,8 @@ private:
 	                            idx_t depth = 3);
 	//! Fixes column bindings after replacing JOIN with GET
 	void FixColumnBindings(LogicalOperator &plan);
+	//! Fixes column bindings in expressions
+	void FixColumnBindings(Expression *expr);
 	//! Executes a query in the middle of the re-optimization process
 	void ExecuteSubQuery(const string subquery);
 	//! Stores the true/estimated cardinality of a plan in saved_cardinalities

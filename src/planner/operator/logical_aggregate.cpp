@@ -1,7 +1,6 @@
 #include "duckdb/planner/operator/logical_aggregate.hpp"
 #include "duckdb/common/string_util.hpp"
 
-#include "duckdb/common/printer.hpp"
 #include "duckdb/planner/expression/bound_aggregate_expression.hpp"
 
 using namespace duckdb;
@@ -30,14 +29,6 @@ vector<ColumnBinding> LogicalAggregate::GetColumnBindings() {
 	for (idx_t i = 0; i < expressions.size(); i++) {
 		result.push_back(ColumnBinding(aggregate_index, i));
 	}
-	string test = "AGGREGATE_AND_GROUP_BY " + ParamsToString() + " || ";
-	for (auto &e : expressions) {
-		auto &bae = (BoundAggregateExpression &)*e.get();
-		for (auto &child : bae.children) {
-			test += child->ToString();
-		}
-	}
-	Printer::Print(test);
 	return result;
 }
 
@@ -48,6 +39,21 @@ string LogicalAggregate::ParamsToString() const {
 		result += StringUtil::Join(groups, groups.size(), ", ",
 		                           [](const unique_ptr<Expression> &child) { return child->GetName(); });
 		result += "]";
+	}
+
+	for (auto &e : expressions) {
+		auto &bae = (BoundAggregateExpression &)*e.get();
+		for (auto &child : bae.children) {
+			result += child->ToString();
+		}
+	}
+
+	result += " || ";
+	for (idx_t i = 0; i < groups.size(); i++) {
+		result += ColumnBinding(group_index, i).ToString();
+	}
+	for (idx_t i = 0; i < expressions.size(); i++) {
+		result += ColumnBinding(aggregate_index, i).ToString();
 	}
 
 	return result;

@@ -22,6 +22,8 @@ public:
 public:
 	vector<ColumnBinding> GetColumnBindings() override;
 
+	string ParamsToString() const override;
+
 protected:
 	void ResolveTypes() override;
 };
