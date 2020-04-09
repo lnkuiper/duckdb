@@ -47,7 +47,7 @@ unique_ptr<LogicalOperator> ReOptimizer::ReOptimize(unique_ptr<LogicalOperator> 
 			break;
 		}
 
-		// TODO: if q-error (or some other criterion) is low we could get away without calling optimizer
+		// TODO: if q-error (or some other criterion) is low we should not call optimizer
 		context.profiler.StartPhase("optimizer");
 		plan = CallOptimizer(move(plan));
 		context.profiler.EndPhase();
@@ -74,7 +74,7 @@ unique_ptr<LogicalOperator> ReOptimizer::PerformPartialPlan(unique_ptr<LogicalOp
 
 	if (done)
 		return plan;
-	auto *join_subquery_plan = static_cast<LogicalComparisonJoin *>(subquery_plan);
+	// auto *join_subquery_plan = static_cast<LogicalComparisonJoin *>(subquery_plan);
 
 	Printer::Print("\n----------------------------- before");
 	plan->Print();
@@ -92,7 +92,7 @@ unique_ptr<LogicalOperator> ReOptimizer::PerformPartialPlan(unique_ptr<LogicalOp
 	context.profiler.StartPhase("create_subquery");
 	vector<string> queried_tables;
 	vector<string> where_conditions;
-	string subquery = CreateSubQuery(*join_subquery_plan, temporary_table_name, queried_tables, where_conditions);
+	string subquery = CreateSubQuery(*subquery_plan, temporary_table_name, queried_tables, where_conditions);
 	context.profiler.EndPhase();
 
 	Printer::Print(subquery);
@@ -101,12 +101,12 @@ unique_ptr<LogicalOperator> ReOptimizer::PerformPartialPlan(unique_ptr<LogicalOp
 	ExecuteSubQuery(subquery);
 	context.profiler.EndPhase();
 
-	context.profiler.StartPhase("inject_cardinalities");
-	InjectCardinalities(*join_subquery_plan, temporary_table_name);
-	context.profiler.EndPhase();
+	// context.profiler.StartPhase("inject_cardinalities");
+	// InjectCardinalities(*subquery_plan, temporary_table_name);
+	// context.profiler.EndPhase();
 
 	context.profiler.StartPhase("adjust_plan");
-	plan = AdjustPlan(move(plan), *join_subquery_plan, temporary_table_name);
+	plan = AdjustPlan(move(plan), *subquery_plan, temporary_table_name);
 	context.profiler.EndPhase();
 
 	context.profiler.StartPhase("fix_bindings");
@@ -128,6 +128,12 @@ LogicalOperator *ReOptimizer::DecideSubQueryPlan(LogicalOperator &plan) {
 		return &plan;
 	}
 
+	vector<LogicalOperator *> filters = ExtractFilterOperators(plan);
+	if (!filters.empty()) {
+		idx_t selected_filter_i = filters.size() - 1;
+		return filters[selected_filter_i];
+	}
+
 	// TODO: implement selection procedure
 	// select last one for now - deciding this is basically the whole re-optimization strategy
 	// the selection procedure might also decide that we are done, instead of selecting an index
@@ -136,7 +142,7 @@ LogicalOperator *ReOptimizer::DecideSubQueryPlan(LogicalOperator &plan) {
 }
 
 vector<LogicalOperator *> ReOptimizer::ExtractJoinOperators(LogicalOperator &plan) {
-	// the deepest join operators appear at the end of the vector - DuckDB only uses right-heavy
+	// the deepest join operators appear at the end of the vector
 	vector<LogicalOperator *> joins;
 	if (plan.children.empty())
 		return joins;
@@ -157,9 +163,6 @@ vector<LogicalOperator *> ReOptimizer::ExtractJoinOperators(LogicalOperator &pla
 		if (plan.children[1]->type != LogicalOperatorType::CHUNK_GET)
 			joins.push_back(&plan);
 		break;
-	default:
-		// nothing to do
-		break;
 	}
 	if (recurse) {
 		for (auto &child : plan.children) {
@@ -168,6 +171,24 @@ vector<LogicalOperator *> ReOptimizer::ExtractJoinOperators(LogicalOperator &pla
 		}
 	}
 	return joins;
+}
+
+vector<LogicalOperator *> ReOptimizer::ExtractFilterOperators(LogicalOperator &plan) {
+	vector<LogicalOperator *> filters;
+	if (plan.children.empty())
+		return filters;
+	if (plan.type == LogicalOperatorType::FILTER) {
+		filters.push_back(&plan);
+		return filters;
+	} else if (plan.type == LogicalOperatorType::COMPARISON_JOIN && plan.children[1]->type == LogicalOperatorType::CHUNK_GET) {
+		filters.push_back(&plan);
+		return filters;
+	}
+	for (auto &child : plan.children) {
+		vector<LogicalOperator *> child_filters = ExtractFilterOperators(*child);
+		filters.insert(filters.end(), child_filters.begin(), child_filters.end());
+	}
+	return filters;
 }
 
 //! Gets column bindings from a join, but assumes projection maps are actually filled
@@ -188,12 +209,21 @@ static vector<ColumnBinding> GetColumnBindings(LogicalComparisonJoin &join) {
 	return cbs;
 }
 
-unique_ptr<LogicalOperator> ReOptimizer::GenerateProjectionMaps(unique_ptr<LogicalOperator> plan) {
-	idx_t n_join_childs = 0;
-	for (auto &child : plan->children) {
-		n_join_childs += ExtractJoinOperators(*child).size();
+static idx_t CountJoinOperators(LogicalOperator &plan) {
+	idx_t count = plan.type == LogicalOperatorType::COMPARISON_JOIN;
+	for (auto &child : plan.children) {
+		count += CountJoinOperators(*child);
 	}
-	if (n_join_childs == 0)
+	return count;
+}
+
+unique_ptr<LogicalOperator> ReOptimizer::GenerateProjectionMaps(unique_ptr<LogicalOperator> plan) {
+	// idx_t n_child_joins = 0;
+	// for (auto &child : plan->children) {
+	// 	n_child_joins += ExtractJoinOperators(*child).size();
+	// }
+	// Printer::Print(plan->ParamsToString() + " - " + to_string(n_child_joins));
+	if (CountJoinOperators(*plan) == 0)
 		return plan;
 	// store the column bindings that are needed by the parents of the child join
 	vector<ColumnBinding> column_bindings;
@@ -226,13 +256,13 @@ unique_ptr<LogicalOperator> ReOptimizer::GenerateProjectionMaps(unique_ptr<Logic
 		for (idx_t i = 0; i < 2; i++) {
 			if (plan->children[i]->type != LogicalOperatorType::COMPARISON_JOIN)
 				continue;
-			if (plan->children[i]->children[1]->type == LogicalOperatorType::CHUNK_GET)
-				continue;
+			// if (plan->children[i]->children[1]->type == LogicalOperatorType::CHUNK_GET)
+			// 	continue;
 			auto *child_join = static_cast<LogicalComparisonJoin *>(plan->children[i].get());
 			vector<ColumnBinding> left_cbs = child_join->children[0]->GetColumnBindings();
 			idx_t n_kept = 0;
-			vector<column_t> removed_columns;
-			for (column_t cb_i = 0; cb_i < left_cbs.size(); cb_i++) {
+			vector<idx_t> removed_columns;
+			for (idx_t cb_i = 0; cb_i < left_cbs.size(); cb_i++) {
 				bool keep = false;
 				for (auto cb : column_bindings) {
 					if (left_cbs[cb_i] == cb) {
@@ -242,7 +272,11 @@ unique_ptr<LogicalOperator> ReOptimizer::GenerateProjectionMaps(unique_ptr<Logic
 					}
 				}
 				if (keep) {
-					child_join->left_projection_map.push_back(cb_i);
+					// child_join->left_projection_map.push_back(cb_i);
+					// Printer::Print("1: " + to_string(cb_i));
+					if (find(child_join->left_projection_map.begin(), child_join->left_projection_map.end(), cb_i) == child_join->left_projection_map.end()) {
+						child_join->left_projection_map.push_back(cb_i);
+					}
 				} else {
 					removed_columns.push_back(cb_i);
 				}
@@ -256,8 +290,8 @@ unique_ptr<LogicalOperator> ReOptimizer::GenerateProjectionMaps(unique_ptr<Logic
 			// update left/right projection maps of this join accordingly
 			if (i == 0) {
 				for (idx_t rpi = 0; rpi < join->left_projection_map.size(); rpi++) {
-					column_t decr = 0;
-					for (column_t removed_col : removed_columns) {
+					idx_t decr = 0;
+					for (idx_t removed_col : removed_columns) {
 						if (removed_col < join->left_projection_map[rpi]) {
 							decr++;
 						}
@@ -266,8 +300,8 @@ unique_ptr<LogicalOperator> ReOptimizer::GenerateProjectionMaps(unique_ptr<Logic
 				}
 			} else {
 				for (idx_t rpi = 0; rpi < join->right_projection_map.size(); rpi++) {
-					column_t decr = 0;
-					for (column_t removed_col : removed_columns) {
+					idx_t decr = 0;
+					for (idx_t removed_col : removed_columns) {
 						if (removed_col < join->right_projection_map[rpi]) {
 							decr++;
 						}
@@ -307,17 +341,19 @@ unique_ptr<LogicalOperator> ReOptimizer::GenerateProjectionMaps(unique_ptr<Logic
 		LogicalComparisonJoin *child_join = child_join = static_cast<LogicalComparisonJoin *>(plan->children[0].get());
 		auto left_cbs = child_join->children[0]->GetColumnBindings();
 		// add index of needed bindings
-		for (column_t cb_i = 0; cb_i < left_cbs.size(); cb_i++) {
+		for (idx_t cb_i = 0; cb_i < left_cbs.size(); cb_i++) {
 			for (auto cb : column_bindings) {
 				if (left_cbs[cb_i] == cb) {
 					child_join->left_projection_map.push_back(cb_i);
+					break;
 				}
 			}
 		}
 	}
 	// recursively propagate operator tree
 	for (idx_t child_i = 0; child_i < plan->children.size(); child_i++) {
-		plan->children[child_i] = GenerateProjectionMaps(move(plan->children[child_i]));
+		if (plan->children[child_i]->type != LogicalOperatorType::FILTER)
+			plan->children[child_i] = GenerateProjectionMaps(move(plan->children[child_i]));
 	}
 	return plan;
 }
@@ -369,9 +405,6 @@ string ReOptimizer::CreateSubQuery(LogicalOperator &plan, const string temporary
 		}
 		break;
 	}
-	case LogicalOperatorType::CROSS_PRODUCT: {
-		// TODO: implement
-	}
 	case LogicalOperatorType::FILTER: {
 		LogicalFilter *filter = static_cast<LogicalFilter *>(&plan);
 		auto filter_conditions = GetFilterStrings(filter);
@@ -407,7 +440,6 @@ string ReOptimizer::CreateSubQuery(LogicalOperator &plan, const string temporary
 	vector<string> selected_columns;
 	for (auto cb : selected_column_bindings)
 		selected_columns.push_back("t" + to_string(cb.table_index) + "." + bta[cb.ToString()] + " AS " + bta[cb.ToString()] + to_string(cb.table_index));
-
 	// create query and return
 	return "CREATE TEMPORARY TABLE main." + temporary_table_name + " AS (" + "SELECT " +
 	       JoinStrings(selected_columns, ", ") + " " + "FROM " + JoinStrings(queried_tables, ", ") + " " + "WHERE " +
@@ -495,13 +527,7 @@ string ReOptimizer::GetExpressionString(Expression *expr) {
 }
 
 string ReOptimizer::GetBoundComparisonString(BoundComparisonExpression *comparison) {
-	// FIXME: not always bound column ref - can also be bound operator
-	// IS_NOT_NULL - not ToString-able
-	// BoundOperatorExpression has children
-
 	// filter conditions - table reference is 'always' placed on the left, constant on the right
-	// Printer::Print("!!!" + comparison->ToString() + " - " + ExpressionClassToString(comparison->GetExpressionClass())
-	// + ", " + ExpressionTypeToString(comparison->type));
 	auto binding = static_cast<BoundColumnRefExpression *>(comparison->left.get())->binding;
 	string condition = "t" + to_string(binding.table_index) + "." + bta[binding.ToString()] + " " +
 	                   ExpressionTypeToOperator(comparison->type) + " ";
@@ -568,11 +594,11 @@ vector<vector<string>> ReOptimizer::TempTablePowerset() {
 	return powerset;
 }
 
-unique_ptr<LogicalOperator> ReOptimizer::AdjustPlan(unique_ptr<LogicalOperator> plan, LogicalComparisonJoin &old_op,
+unique_ptr<LogicalOperator> ReOptimizer::AdjustPlan(unique_ptr<LogicalOperator> plan, LogicalOperator &old_op,
                                                     const string temporary_table_name) {
 	TableCatalogEntry *table = GetTable("main", temporary_table_name);
 	// Create a LogicalGet for the newly made temporary table (empty column_ids - filled in "ReplaceLogicalOperator")
-	unique_ptr<LogicalGet> temp_table_get = make_unique<LogicalGet>(table, 0, vector<column_t>());
+	unique_ptr<LogicalGet> temp_table_get = make_unique<LogicalGet>(table, 0, vector<idx_t>());
 	// replace 'subplan' with 'temp_table_get' in 'plan'
 	rebind_mapping = {}; // reset
 	ReplaceLogicalOperator(*plan, old_op, table);
@@ -594,35 +620,40 @@ TableCatalogEntry *ReOptimizer::GetTable(string schema, string table_name) {
 	return table;
 }
 
-void ReOptimizer::ReplaceLogicalOperator(LogicalOperator &plan, LogicalComparisonJoin &old_op, TableCatalogEntry *table,
+void ReOptimizer::ReplaceLogicalOperator(LogicalOperator &plan, LogicalOperator &old_op, TableCatalogEntry *table,
                                          idx_t depth) {
 	if (plan.children.empty())
 		return;
 	// search children
 	for (idx_t child_i = 0; child_i < plan.children.size(); child_i++) {
 		auto &child = plan.children[child_i];
-		if (child->type != LogicalOperatorType::COMPARISON_JOIN)
+		if (!(child->type == old_op.type && child->ParamsToString() == old_op.ParamsToString()))
 			continue;
-		auto *join = static_cast<LogicalComparisonJoin *>(child.get());
-
-		if (join->ParamsToString() == old_op.ParamsToString()) {
-			vector<ColumnBinding> old_op_cbs = GetColumnBindings(*join);
-			idx_t new_table_index = 0;
-			for (auto cb : old_op_cbs) {
-				if (cb.table_index > new_table_index)
-					new_table_index = cb.table_index;
-			}
-			for (column_t new_index = 0; new_index < old_op_cbs.size(); new_index++)
-				rebind_mapping[old_op_cbs[new_index].ToString()] = ColumnBinding(new_table_index, new_index);
-
-			vector<column_t> column_ids;
-			for (column_t column_id = 0; column_id < table->columns.size(); column_id++)
-				column_ids.push_back(column_id);
-
-			unique_ptr<LogicalGet> replacement_operator = make_unique<LogicalGet>(table, new_table_index, column_ids);
-			plan.children[child_i] = move(replacement_operator);
-			return;
+		
+		vector<ColumnBinding> old_op_cbs;
+		if (child->type == LogicalOperatorType::COMPARISON_JOIN) {
+			auto *join = static_cast<LogicalComparisonJoin *>(child.get());	
+			old_op_cbs = GetColumnBindings(*join);
+		} else {
+			old_op_cbs = child->GetColumnBindings();
 		}
+
+		idx_t new_table_index = 0;
+		for (auto cb : old_op_cbs) {
+			if (cb.table_index > new_table_index)
+				new_table_index = cb.table_index;
+		}
+		for (idx_t new_index = 0; new_index < old_op_cbs.size(); new_index++) {
+			rebind_mapping[old_op_cbs[new_index].ToString()] = ColumnBinding(new_table_index, new_index);
+		}
+
+		vector<idx_t> column_ids;
+		for (idx_t column_id = 0; column_id < table->columns.size(); column_id++)
+			column_ids.push_back(column_id);
+
+		unique_ptr<LogicalGet> replacement_operator = make_unique<LogicalGet>(table, new_table_index, column_ids);
+		plan.children[child_i] = move(replacement_operator);
+		return;
 	}
 	// enter recursion until the operator is found
 	for (auto &child : plan.children)
@@ -649,41 +680,43 @@ void ReOptimizer::FixColumnBindings(LogicalOperator &plan) {
 				join->conditions[condition_i].right = move(fixed_bcre);
 			}
 		}
+		break;
 	}
-	case LogicalOperatorType::AGGREGATE_AND_GROUP_BY: {
+	// case LogicalOperatorType::AGGREGATE_AND_GROUP_BY: {
+	// 	for (idx_t expr_i = 0; expr_i < plan.expressions.size(); expr_i++) {
+	// 		auto &bae = (BoundAggregateExpression &)*plan.expressions[expr_i];
+	// 		for (idx_t child_i = 0; child_i < bae.children.size(); child_i++) {
+	// 			auto &child = bae.children[child_i];
+	// 			auto e = (BoundColumnRefExpression &)*child.get();
+	// 			if (rebind_mapping.find	(e.ToString()) != rebind_mapping.end()) {
+	// 				unique_ptr<BoundColumnRefExpression> fixed_bcre = make_unique<BoundColumnRefExpression>(
+	// 				    e.alias, e.return_type, rebind_mapping[e.ToString()], e.depth);
+	// 				bae.children[child_i] = move(fixed_bcre);
+	// 			}
+	// 		}
+	// 	}
+	// 	break;
+	// }
+	default:
+		// fix other BoundColumnRefExpressions found in expressions (for e.g. LogicalProjection)
 		for (idx_t expr_i = 0; expr_i < plan.expressions.size(); expr_i++) {
-			auto &bae = (BoundAggregateExpression &)*plan.expressions[expr_i];
-			for (idx_t child_i = 0; child_i < bae.children.size(); child_i++) {
-				auto &child = bae.children[child_i];
-				auto e = (BoundColumnRefExpression &)*child.get();
-				if (rebind_mapping.find(e.ToString()) != rebind_mapping.end()) {
+			auto &expr = *plan.expressions[expr_i];
+			switch (expr.GetExpressionClass()) {
+			case ExpressionClass::BOUND_COLUMN_REF: {
+				auto bcre = (BoundColumnRefExpression &)expr;
+				if (rebind_mapping.find(bcre.ToString()) != rebind_mapping.end()) {
 					unique_ptr<BoundColumnRefExpression> fixed_bcre = make_unique<BoundColumnRefExpression>(
-					    e.alias, e.return_type, rebind_mapping[e.ToString()], e.depth);
-					bae.children[child_i] = move(fixed_bcre);
+						bcre.alias, bcre.return_type, rebind_mapping[bcre.ToString()], bcre.depth);
+					plan.expressions[expr_i] = move(fixed_bcre);
 				}
+				break;
+			}
+			default:
+				FixColumnBindings(&expr);
 			}
 		}
 	}
-		// default y/n?
-	}
-
-	// fix other BoundColumnRefExpressions found in expressions (for e.g. LogicalProjection)
-	for (idx_t expr_i = 0; expr_i < plan.expressions.size(); expr_i++) {
-		auto &expr = *plan.expressions[expr_i];
-		switch (expr.GetExpressionClass()) {
-		case ExpressionClass::BOUND_COLUMN_REF: {
-			auto bcre = (BoundColumnRefExpression &)expr;
-			if (rebind_mapping.find(bcre.ToString()) != rebind_mapping.end()) {
-				unique_ptr<BoundColumnRefExpression> fixed_bcre = make_unique<BoundColumnRefExpression>(
-				    bcre.alias, bcre.return_type, rebind_mapping[bcre.ToString()], bcre.depth);
-				plan.expressions[expr_i] = move(fixed_bcre);
-			}
-			break;
-		}
-		default:
-			FixColumnBindings(&expr);
-		}
-	}
+	
 	// recursively propagate operator tree
 	for (auto &child : plan.children) {
 		FixColumnBindings(*child);
@@ -696,7 +729,6 @@ void ReOptimizer::FixColumnBindings(Expression *expr) {
 		auto *op = static_cast<BoundOperatorExpression *>(expr);
 		for (idx_t child_i = 0; child_i < op->children.size(); child_i++) {
 			if (op->children[child_i]->type == ExpressionType::BOUND_COLUMN_REF) {
-				Printer::Print(op->ToString() + " - " + op->children[child_i]->ToString());
 				auto *bcre = static_cast<BoundColumnRefExpression *>(op->children[child_i].get());
 				if (rebind_mapping.find(bcre->ToString()) != rebind_mapping.end()) {
 					unique_ptr<BoundColumnRefExpression> fixed_bcre = make_unique<BoundColumnRefExpression>(bcre->alias, bcre->return_type, rebind_mapping[bcre->ToString()], bcre->depth);

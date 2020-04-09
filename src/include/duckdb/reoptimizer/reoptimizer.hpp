@@ -29,8 +29,10 @@ private:
 	unique_ptr<LogicalOperator> PerformPartialPlan(unique_ptr<LogicalOperator> plan, const string temporary_table_name);
 	//! Decides which join in the plan to execute as subquery
 	LogicalOperator *DecideSubQueryPlan(LogicalOperator &plan);
-	//! Returns all join operators in the plan - the last element is the first one to be executed
+	//! Returns all join operators in the plan
 	vector<LogicalOperator *> ExtractJoinOperators(LogicalOperator &plan);
+	//! Returns all filter operators in the plan
+	vector<LogicalOperator *> ExtractFilterOperators(LogicalOperator &plan);
 	//! Generate left projection map for joins in the plan, and change right map accordingly
 	unique_ptr<LogicalOperator> GenerateProjectionMaps(unique_ptr<LogicalOperator> plan);
 	//! Fill binding_name_mapping with (binding -> alias)
@@ -40,19 +42,19 @@ private:
 	                      vector<string> &where_conditions);
 	//! Reconstructs the filter conditions as strings from a LogicalFilter
 	vector<string> GetFilterStrings(LogicalFilter *filter);
-	//! FIXME:
+	//! Reconstructs an Expression to a SQL string
 	string GetExpressionString(Expression *expr);
-	//! Reconstructs BOUND_COMPARISON to a condition string
+	//! Reconstructs BoundComparisonExpression to a SQL string
 	string GetBoundComparisonString(BoundComparisonExpression *func);
-	//! Reconstructs BOUND_FUNCTION to a condition string
+	//! Reconstructs BoundFunctionExpression to a SQL string
 	string GetBoundFunctionString(BoundFunctionExpression *func);
 	//! Adjusts the original plan by replacing the join with a LogicalGet on the temporary table
-	unique_ptr<LogicalOperator> AdjustPlan(unique_ptr<LogicalOperator> plan, LogicalComparisonJoin &old_op,
+	unique_ptr<LogicalOperator> AdjustPlan(unique_ptr<LogicalOperator> plan, LogicalOperator &old_op,
 	                                       string temporary_table_name);
 	//! Call Catalog::GetTable (works around autocommit stuff)
 	TableCatalogEntry *GetTable(string schema, string table_name);
 	//! Replaces the join 'old_op' in 'plan' with the given operator 'new_op'
-	void ReplaceLogicalOperator(LogicalOperator &plan, LogicalComparisonJoin &old_op, TableCatalogEntry *table,
+	void ReplaceLogicalOperator(LogicalOperator &plan, LogicalOperator &old_op, TableCatalogEntry *table,
 	                            idx_t depth = 3);
 	//! Fixes column bindings after replacing JOIN with GET
 	void FixColumnBindings(LogicalOperator &plan);
@@ -79,7 +81,7 @@ private:
 
 	//! Binding to column alias mapping (created by CreateMaps)
 	unordered_map<string, string> bta;
-	//! The new column bindings (after replacing JOIN with GET) FIXME: not sure if we want this with the new changes
+	//! The new column bindings (after replacing an operator with GET)
 	unordered_map<string, ColumnBinding> rebind_mapping;
 
 	//! Stores true/estimated cardinalities of sets of relations
