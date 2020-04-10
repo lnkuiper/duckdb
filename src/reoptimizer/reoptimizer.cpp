@@ -61,7 +61,7 @@ unique_ptr<LogicalOperator> ReOptimizer::ReOptimize(unique_ptr<LogicalOperator> 
 	plan = ClearLeftProjectionMaps(move(plan));
 	context.profiler.EndPhase();
 
-	Printer::Print("OUTPUT");
+	// Printer::Print("OUTPUT");
 
 	return plan;
 }
@@ -76,9 +76,9 @@ unique_ptr<LogicalOperator> ReOptimizer::PerformPartialPlan(unique_ptr<LogicalOp
 		return plan;
 	// auto *join_subquery_plan = static_cast<LogicalComparisonJoin *>(subquery_plan);
 
-	Printer::Print("\n----------------------------- before");
-	plan->Print();
-	Printer::Print("-----------------------------\n");
+	// Printer::Print("\n----------------------------- before");
+	// plan->Print();
+	// Printer::Print("-----------------------------\n");
 
 	context.profiler.StartPhase("generate_projection_maps");
 	plan = GenerateProjectionMaps(move(plan));
@@ -114,9 +114,9 @@ unique_ptr<LogicalOperator> ReOptimizer::PerformPartialPlan(unique_ptr<LogicalOp
 	rebind_mapping.clear();
 	context.profiler.EndPhase();
 
-	Printer::Print("\n----------------------------- after");
-	plan->Print();
-	Printer::Print("-----------------------------\n\n");
+	// Printer::Print("\n----------------------------- after");
+	// plan->Print();
+	// Printer::Print("-----------------------------\n\n");
 
 	return plan;
 }
