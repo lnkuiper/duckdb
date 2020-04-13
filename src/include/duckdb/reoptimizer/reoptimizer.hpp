@@ -9,7 +9,7 @@
 #pragma once
 
 #include "duckdb/main/client_context.hpp"
-#include "duckdb/optimizer/join_order/relation.hpp"
+#include "duckdb/optimizer/join_order/join_relation.hpp"
 #include "duckdb/planner/binder.hpp"
 #include "duckdb/planner/column_binding.hpp"
 #include "duckdb/planner/logical_operator.hpp"
