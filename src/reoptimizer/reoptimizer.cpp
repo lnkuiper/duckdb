@@ -95,7 +95,7 @@ unique_ptr<LogicalOperator> ReOptimizer::PerformPartialPlan(unique_ptr<LogicalOp
 	string subquery = CreateSubQuery(*subquery_plan, temporary_table_name, queried_tables, where_conditions);
 	context.profiler.EndPhase();
 
-	Printer::Print(subquery);
+	// Printer::Print(subquery);
 
 	context.profiler.StartPhase("execute_subquery");
 	ExecuteSubQuery(subquery);
@@ -808,14 +808,15 @@ void ReOptimizer::FixColumnBindings(Expression *expr) {
 // FIXME: getting cardinality from data_storage only works on autocommit, assume no transactions for now
 // this might be because of the fact that cardinality is atomic?
 void ReOptimizer::ExecuteSubQuery(const string subquery) {
+	context.subquery = true;
 	// store state of autocommit, profiler and optimizer
 	// bool auto_commit = context.transaction.IsAutoCommit();
 	context.transaction.Commit();
-	bool profiler = context.profiler.IsEnabled();
+	// bool profiler = context.profiler.IsEnabled(); 123
 	// bool optimizer = context.enable_optimizer;
 	// disable them
 	// context.transaction.SetAutoCommit(false);
-	context.profiler.Disable();
+	// context.profiler.Disable(); 123
 	// context.enable_optimizer = false;
 	// hack in a query - without autocommit, profiling, optimizer or lock
 	// this prevents segfault / assertion fail / unnecessary overhead / deadlock respectively
@@ -824,8 +825,9 @@ void ReOptimizer::ExecuteSubQuery(const string subquery) {
 	// context.transaction.SetAutoCommit(auto_commit);
 	context.transaction.BeginTransaction();
 	// if (profiler)
-	context.profiler.Enable();
+	// context.profiler.Enable(); 123
 	// context.enable_optimizer = optimizer;
+	context.subquery = false;
 }
 
 unique_ptr<LogicalOperator> ReOptimizer::CallOptimizer(unique_ptr<LogicalOperator> plan) {

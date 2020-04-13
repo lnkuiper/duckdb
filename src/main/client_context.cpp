@@ -103,7 +103,8 @@ unique_ptr<DataChunk> ClientContext::Fetch() {
 }
 
 string ClientContext::FinalizeQuery(bool success) {
-	profiler.EndQuery();
+	if (!subquery)
+		profiler.EndQuery();
 
 	execution_context.Reset();
 
@@ -186,8 +187,7 @@ unique_ptr<PreparedStatementData> ClientContext::CreatePreparedStatement(const s
 	}
 #endif
 
-	if (enable_reoptimizer && plan->type == LogicalOperatorType::PREPARE &&
-	    plan->children[0]->type != LogicalOperatorType::CREATE_TABLE) {
+	if (enable_reoptimizer && plan->type == LogicalOperatorType::PREPARE && !subquery) {
 		profiler.StartPhase("reoptimizer");
 		ReOptimizer reoptimizer = ReOptimizer(*this, planner.binder);
 		plan = reoptimizer.ReOptimize(move(plan), query);
@@ -365,7 +365,8 @@ unique_ptr<QueryResult> ClientContext::RunStatement(const string &query, unique_
 		statement = move(copied_statement);
 	}
 	// start the profiler
-	profiler.StartQuery(query, *statement);
+	if (!subquery) // FIXME: re-opt, firing a subquery, but we wish to have all profiling
+		profiler.StartQuery(query, *statement);
 	try {
 		result = RunStatementInternal(query, move(statement), allow_stream_result);
 	} catch (StandardException &ex) {
