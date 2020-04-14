@@ -20,7 +20,10 @@ void QueryProfiler::StartQuery(string query, SQLStatement &statement) {
 	if (!enabled) {
 		return;
 	}
-	if (statement.type != StatementType::SELECT && statement.type != StatementType::EXECUTE) {
+	// if (statement.type != StatementType::SELECT && statement.type != StatementType::EXECUTE) {
+	// 	return;
+	// }
+	if (statement.type != StatementType::SELECT && statement.type != StatementType::PREPARE) {
 		return;
 	}
 	this->running = true;
@@ -52,7 +55,7 @@ void QueryProfiler::EndQuery() {
 		}
 
 		if (save_location.empty()) {
-			cout << query_info << "\n";
+			// cout << query_info << "\n"; FIXME: disabled for now
 		} else {
 			WriteToFile(save_location.c_str(), query_info);
 		}
@@ -104,6 +107,7 @@ void QueryProfiler::EndPhase() {
 }
 
 void QueryProfiler::StartOperator(PhysicalOperator *phys_op) {
+	return;
 	if (!enabled || !running) {
 		return;
 	}
@@ -135,6 +139,7 @@ void QueryProfiler::StartOperator(PhysicalOperator *phys_op) {
 }
 
 void QueryProfiler::EndOperator(DataChunk &chunk) {
+	return;
 	if (!enabled || !running) {
 		return;
 	}

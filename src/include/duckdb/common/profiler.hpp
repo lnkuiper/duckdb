@@ -21,13 +21,11 @@ class Profiler {
 public:
 	//! Starts the timer
 	void Start() {
-		Printer::Print("Main query started");
 		finished = false;
 		start = Tick();
 	}
 	//! Finishes timing
 	void End() {
-		Printer::Print("Main query ended");
 		end = Tick();
 		finished = true;
 	}

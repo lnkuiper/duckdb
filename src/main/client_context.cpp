@@ -186,7 +186,7 @@ unique_ptr<PreparedStatementData> ClientContext::CreatePreparedStatement(const s
 #ifdef DEBUG
 	}
 #endif
-
+	
 	if (enable_reoptimizer && plan->type == LogicalOperatorType::PREPARE && !subquery) {
 		profiler.StartPhase("reoptimizer");
 		ReOptimizer reoptimizer = ReOptimizer(*this, planner.binder);

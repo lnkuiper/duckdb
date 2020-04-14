@@ -37,13 +37,10 @@ unique_ptr<LogicalOperator> ReOptimizer::ReOptimize(unique_ptr<LogicalOperator> 
 	const string tablename_prefix = "_reopt_temp_" + to_string(hash<string>{}(query));
 	// re-optimization loop
 	for (int iter = 0; true; iter++) {
-		// profiling for each iteration
-		context.profiler.StartPhase(to_string(iter));
 		// create and execute subquery, adjust plan accordingly
 		const string temp_table_name = tablename_prefix + "_" + to_string(iter);
 		plan = PerformPartialPlan(move(plan), temp_table_name);
 		if (done) {
-			context.profiler.EndPhase();
 			break;
 		}
 
@@ -51,15 +48,8 @@ unique_ptr<LogicalOperator> ReOptimizer::ReOptimize(unique_ptr<LogicalOperator> 
 		context.profiler.StartPhase("optimizer");
 		plan = CallOptimizer(move(plan));
 		context.profiler.EndPhase();
-
-		// if (ExtractJoinOperators(*plan).size() <= 1)
-		// 	break;
-		// end iteration profiling phase
-		context.profiler.EndPhase();
 	}
-	context.profiler.StartPhase("clear_left_proj_maps");
 	plan = ClearLeftProjectionMaps(move(plan));
-	context.profiler.EndPhase();
 
 	// Printer::Print("OUTPUT");
 
@@ -68,28 +58,20 @@ unique_ptr<LogicalOperator> ReOptimizer::ReOptimize(unique_ptr<LogicalOperator> 
 
 unique_ptr<LogicalOperator> ReOptimizer::PerformPartialPlan(unique_ptr<LogicalOperator> plan,
                                                             const string temporary_table_name) {
-	context.profiler.StartPhase("decide_subquery");
 	auto *subquery_plan = DecideSubQueryPlan(*plan);
-	context.profiler.EndPhase();
-
 	if (done)
 		return plan;
-	// auto *join_subquery_plan = static_cast<LogicalComparisonJoin *>(subquery_plan);
 
 	// Printer::Print("\n----------------------------- before");
 	// plan->Print();
 	// Printer::Print("-----------------------------\n");
 
-	context.profiler.StartPhase("generate_projection_maps");
+	context.profiler.StartPhase("pre_tooling");
 	plan = GenerateProjectionMaps(move(plan));
-	context.profiler.EndPhase();
 
-	context.profiler.StartPhase("map_binding_names");
 	bta.clear();
 	CreateMaps(*plan);
-	context.profiler.EndPhase();
 
-	context.profiler.StartPhase("create_subquery");
 	vector<string> queried_tables;
 	vector<string> where_conditions;
 	string subquery = CreateSubQuery(*subquery_plan, temporary_table_name, queried_tables, where_conditions);
@@ -105,11 +87,9 @@ unique_ptr<LogicalOperator> ReOptimizer::PerformPartialPlan(unique_ptr<LogicalOp
 	// InjectCardinalities(*subquery_plan, temporary_table_name);
 	// context.profiler.EndPhase();
 
-	context.profiler.StartPhase("adjust_plan");
+	context.profiler.StartPhase("post_tooling");
 	plan = AdjustPlan(move(plan), *subquery_plan, temporary_table_name);
-	context.profiler.EndPhase();
 
-	context.profiler.StartPhase("fix_bindings");
 	FixColumnBindings(*plan);
 	rebind_mapping.clear();
 	context.profiler.EndPhase();

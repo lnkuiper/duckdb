@@ -56,7 +56,7 @@ public:
 	//! Enable the running of optimizers
 	bool enable_optimizer = true;
 
-	//! Whether we are processing a subquery (re-opt) or  full query
+	//! Whether we are processing a subquery (re-opt) or full query
 	bool subquery = false;
 
 	//! The random generator used by random(). Its seed value can be set by setseed().
