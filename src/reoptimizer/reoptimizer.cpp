@@ -145,6 +145,7 @@ vector<LogicalOperator *> ReOptimizer::ExtractJoinOperators(LogicalOperator &pla
 		break;
 	default:
 		// fall through
+		break;
 	}
 	if (recurse) {
 		for (auto &child : plan.children) {
@@ -317,8 +318,9 @@ unique_ptr<LogicalOperator> ReOptimizer::GenerateProjectionMaps(unique_ptr<Logic
 			}
 			break;
 		}
-			default:
-				// fall through
+		default:
+			// fall through
+			break;
 		}
 		// get the child join, modify its left projection map
 		LogicalComparisonJoin *child_join = static_cast<LogicalComparisonJoin *>(plan->children[0].get());
