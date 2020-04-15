@@ -103,8 +103,8 @@ unique_ptr<DataChunk> ClientContext::Fetch() {
 }
 
 string ClientContext::FinalizeQuery(bool success) {
-	if (!subquery)
-		profiler.EndQuery();
+	// if (!subquery)
+	// 	profiler.EndQuery();
 
 	execution_context.Reset();
 
@@ -188,11 +188,9 @@ unique_ptr<PreparedStatementData> ClientContext::CreatePreparedStatement(const s
 #endif
 	
 	if (enable_reoptimizer && plan->type == LogicalOperatorType::PREPARE && !subquery) {
-		profiler.StartPhase("reoptimizer");
 		ReOptimizer reoptimizer = ReOptimizer(*this, planner.binder);
 		plan = reoptimizer.ReOptimize(move(plan), query);
 		assert(plan);
-		profiler.EndPhase();
 	}
 
 	profiler.StartPhase("physical_planner");
@@ -216,7 +214,7 @@ unique_ptr<QueryResult> ClientContext::ExecutePreparedStatement(const string &qu
 		throw Exception(StringUtil::Format("Cannot execute statement of type \"%s\" in read-only mode!",
 		                                   StatementTypeToString(statement.statement_type).c_str()));
 	}
-
+	profiler.StartPhase("execution");
 	// bind the bound values before execution
 	statement.Bind(move(bound_values));
 
@@ -245,6 +243,9 @@ unique_ptr<QueryResult> ClientContext::ExecutePreparedStatement(const string &qu
 		}
 		result->collection.Append(*chunk);
 	}
+	profiler.EndPhase();
+	if (!subquery)
+		profiler.EndQuery();
 	return move(result);
 }
 
@@ -365,7 +366,7 @@ unique_ptr<QueryResult> ClientContext::RunStatement(const string &query, unique_
 		statement = move(copied_statement);
 	}
 	// start the profiler
-	if (!subquery) // FIXME: re-opt, firing a subquery, but we wish to have all profiling
+	if (!subquery && statement->type == StatementType::PREPARE) // FIXME: re-opt, firing a subquery, but we wish to have all profiling
 		profiler.StartQuery(query, *statement);
 	try {
 		result = RunStatementInternal(query, move(statement), allow_stream_result);

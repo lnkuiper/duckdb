@@ -61,6 +61,28 @@ unique_ptr<LogicalOperator> ReOptimizer::AlgorithmFiltersOnly(unique_ptr<Logical
 	return PerformPartialPlan(move(plan), filters.back(), temporary_table_name);
 }
 
+unique_ptr<LogicalOperator> ReOptimizer::AlgorithmOneStep(unique_ptr<LogicalOperator> plan,
+														  const string temporary_table_name) {
+	vector<LogicalOperator *> filters = ExtractFilterOperators(*plan);
+	if (!filters.empty()) {
+		return PerformPartialPlan(move(plan), filters.back(), temporary_table_name);
+	}
+
+	vector<LogicalOperator *> joins = ExtractJoinOperators(*plan);
+	if (joins.size() <= 1) {
+		done = true;
+		return plan;
+	}
+
+	plan = PerformPartialPlan(move(plan), joins.back(), temporary_table_name);
+
+	context.profiler.StartPhase("optimizer");
+	plan = CallOptimizer(move(plan));
+	context.profiler.EndPhase();
+
+	return plan;
+}
+
 unique_ptr<LogicalOperator> ReOptimizer::PerformPartialPlan(unique_ptr<LogicalOperator> plan,
 															LogicalOperator *subquery_plan,
                                                             const string temporary_table_name) {
@@ -68,7 +90,7 @@ unique_ptr<LogicalOperator> ReOptimizer::PerformPartialPlan(unique_ptr<LogicalOp
 	// plan->Print();
 	// Printer::Print("-----------------------------\n");
 
-	context.profiler.StartPhase("pre_tooling");
+	context.profiler.StartPhase("reopt_pre_tooling");
 	plan = GenerateProjectionMaps(move(plan));
 
 	bta.clear();
@@ -81,17 +103,11 @@ unique_ptr<LogicalOperator> ReOptimizer::PerformPartialPlan(unique_ptr<LogicalOp
 
 	// Printer::Print(subquery);
 
-	context.profiler.StartPhase("execute_subquery");
 	ExecuteSubQuery(subquery);
-	context.profiler.EndPhase();
 
-	// context.profiler.StartPhase("inject_cardinalities");
+	context.profiler.StartPhase("reopt_post_tooling");
 	// InjectCardinalities(*subquery_plan, temporary_table_name);
-	// context.profiler.EndPhase();
-
-	context.profiler.StartPhase("post_tooling");
 	plan = AdjustPlan(move(plan), *subquery_plan, temporary_table_name);
-
 	FixColumnBindings(*plan);
 	rebind_mapping.clear();
 	context.profiler.EndPhase();
@@ -99,11 +115,6 @@ unique_ptr<LogicalOperator> ReOptimizer::PerformPartialPlan(unique_ptr<LogicalOp
 	// Printer::Print("\n----------------------------- after");
 	// plan->Print();
 	// Printer::Print("-----------------------------\n\n");
-
-	// TODO: if q-error (or some other criterion) is low we should not call optimizer
-	context.profiler.StartPhase("optimizer");
-	plan = CallOptimizer(move(plan));
-	context.profiler.EndPhase();
 
 	return plan;
 }

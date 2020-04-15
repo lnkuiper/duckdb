@@ -20,9 +20,6 @@ void QueryProfiler::StartQuery(string query, SQLStatement &statement) {
 	if (!enabled) {
 		return;
 	}
-	// if (statement.type != StatementType::SELECT && statement.type != StatementType::EXECUTE) {
-	// 	return;
-	// }
 	if (statement.type != StatementType::SELECT && statement.type != StatementType::PREPARE) {
 		return;
 	}
@@ -42,7 +39,6 @@ void QueryProfiler::EndQuery() {
 	if (!enabled || !running) {
 		return;
 	}
-
 	main_query.End();
 	this->running = false;
 	// print the query after termination, if this is enabled
@@ -55,7 +51,7 @@ void QueryProfiler::EndQuery() {
 		}
 
 		if (save_location.empty()) {
-			// cout << query_info << "\n"; FIXME: disabled for now
+			cout << query_info << "\n";
 		} else {
 			WriteToFile(save_location.c_str(), query_info);
 		}
@@ -66,7 +62,6 @@ void QueryProfiler::StartPhase(string new_phase) {
 	if (!enabled || !running) {
 		return;
 	}
-
 	if (!phase_stack.empty()) {
 		// there are active phases
 		phase_profiler.End();
