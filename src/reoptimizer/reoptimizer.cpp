@@ -143,6 +143,8 @@ vector<LogicalOperator *> ReOptimizer::ExtractJoinOperators(LogicalOperator &pla
 		if (plan.children[1]->type != LogicalOperatorType::CHUNK_GET)
 			joins.push_back(&plan);
 		break;
+	default:
+		// fall through
 	}
 	if (recurse) {
 		for (auto &child : plan.children) {
@@ -315,10 +317,11 @@ unique_ptr<LogicalOperator> ReOptimizer::GenerateProjectionMaps(unique_ptr<Logic
 			}
 			break;
 		}
-			// default:
+			default:
+				// fall through
 		}
 		// get the child join, modify its left projection map
-		LogicalComparisonJoin *child_join = child_join = static_cast<LogicalComparisonJoin *>(plan->children[0].get());
+		LogicalComparisonJoin *child_join = static_cast<LogicalComparisonJoin *>(plan->children[0].get());
 		auto left_cbs = child_join->children[0]->GetColumnBindings();
 		// add index of needed bindings
 		for (idx_t cb_i = 0; cb_i < left_cbs.size(); cb_i++) {
