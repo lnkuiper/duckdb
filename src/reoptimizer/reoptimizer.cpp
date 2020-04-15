@@ -39,29 +39,31 @@ unique_ptr<LogicalOperator> ReOptimizer::ReOptimize(unique_ptr<LogicalOperator> 
 	for (int iter = 0; true; iter++) {
 		// create and execute subquery, adjust plan accordingly
 		const string temp_table_name = tablename_prefix + "_" + to_string(iter);
-		plan = PerformPartialPlan(move(plan), temp_table_name);
+		plan = AlgorithmFiltersOnly(move(plan), temp_table_name);
 		if (done) {
 			break;
 		}
+	}
+	return ClearLeftProjectionMaps(move(plan));
+}
 
-		// TODO: if q-error (or some other criterion) is low we should not call optimizer
+unique_ptr<LogicalOperator> ReOptimizer::AlgorithmFiltersOnly(unique_ptr<LogicalOperator> plan,
+															  const string temporary_table_name) {
+	vector<LogicalOperator *> filters = ExtractFilterOperators(*plan);
+	if (filters.empty()) {
 		context.profiler.StartPhase("optimizer");
 		plan = CallOptimizer(move(plan));
 		context.profiler.EndPhase();
+
+		done = true;
+		return plan;
 	}
-	plan = ClearLeftProjectionMaps(move(plan));
-
-	// Printer::Print("OUTPUT");
-
-	return plan;
+	return PerformPartialPlan(move(plan), filters.back(), temporary_table_name);
 }
 
 unique_ptr<LogicalOperator> ReOptimizer::PerformPartialPlan(unique_ptr<LogicalOperator> plan,
+															LogicalOperator *subquery_plan,
                                                             const string temporary_table_name) {
-	auto *subquery_plan = DecideSubQueryPlan(*plan);
-	if (done)
-		return plan;
-
 	// Printer::Print("\n----------------------------- before");
 	// plan->Print();
 	// Printer::Print("-----------------------------\n");
@@ -98,27 +100,12 @@ unique_ptr<LogicalOperator> ReOptimizer::PerformPartialPlan(unique_ptr<LogicalOp
 	// plan->Print();
 	// Printer::Print("-----------------------------\n\n");
 
+	// TODO: if q-error (or some other criterion) is low we should not call optimizer
+	context.profiler.StartPhase("optimizer");
+	plan = CallOptimizer(move(plan));
+	context.profiler.EndPhase();
+
 	return plan;
-}
-
-LogicalOperator *ReOptimizer::DecideSubQueryPlan(LogicalOperator &plan) {
-	vector<LogicalOperator *> joins = ExtractJoinOperators(plan);
-	if (joins.size() <= 1) {
-		done = true;
-		return &plan;
-	}
-
-	vector<LogicalOperator *> filters = ExtractFilterOperators(plan);
-	if (!filters.empty()) {
-		idx_t selected_filter_i = filters.size() - 1;
-		return filters[selected_filter_i];
-	}
-
-	// TODO: implement selection procedure
-	// select last one for now - deciding this is basically the whole re-optimization strategy
-	// the selection procedure might also decide that we are done, instead of selecting an index
-	idx_t selected_join_i = joins.size() - 1;
-	return joins[selected_join_i];
 }
 
 vector<LogicalOperator *> ReOptimizer::ExtractJoinOperators(LogicalOperator &plan) {

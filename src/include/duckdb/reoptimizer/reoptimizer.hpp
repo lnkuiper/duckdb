@@ -25,10 +25,10 @@ public:
 	unique_ptr<LogicalOperator> ReOptimize(unique_ptr<LogicalOperator> plan, const string query);
 
 private:
+	//! Simple re-optimization strategy that performs all filter operations, optimizes, then executes the rest of the plan
+	unique_ptr<LogicalOperator> AlgorithmFiltersOnly(unique_ptr<LogicalOperator> plan, const string temporary_table_name);
 	//! First half of the re-optimization iteration procedure: perform subquery and adjust plan
-	unique_ptr<LogicalOperator> PerformPartialPlan(unique_ptr<LogicalOperator> plan, const string temporary_table_name);
-	//! Decides which join in the plan to execute as subquery
-	LogicalOperator *DecideSubQueryPlan(LogicalOperator &plan);
+	unique_ptr<LogicalOperator> PerformPartialPlan(unique_ptr<LogicalOperator> plan, LogicalOperator *subquery_plan, const string temporary_table_name);
 	//! Returns all join operators in the plan
 	vector<LogicalOperator *> ExtractJoinOperators(LogicalOperator &plan);
 	//! Returns all filter operators in the plan
