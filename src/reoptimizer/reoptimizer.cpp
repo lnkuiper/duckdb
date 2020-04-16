@@ -103,7 +103,9 @@ unique_ptr<LogicalOperator> ReOptimizer::PerformPartialPlan(unique_ptr<LogicalOp
 
 	// Printer::Print(subquery);
 
+	context.profiler.StartPhase("subquery");
 	ExecuteSubQuery(subquery);
+	context.profiler.EndPhase();
 
 	context.profiler.StartPhase("reopt_post_tooling");
 	// InjectCardinalities(*subquery_plan, temporary_table_name);
@@ -527,9 +529,11 @@ string ReOptimizer::GetBoundFunctionString(BoundFunctionExpression *func) {
 	// filter conditions - table reference is 'always' placed on the left, constant on the right
 	auto binding = static_cast<BoundColumnRefExpression *>(func->children[0].get())->binding;
 	string condition = "t" + to_string(binding.table_index) + "." + bta[binding.ToString()];
-	if (func->function.name[0] == '!')
-		condition += " NOT";
-	if (func->function.name.find("~~") != string::npos)
+	if (func->function.name == "prefix")
+		condition += " = ";
+	else if (func->function.name == "!~~")
+		condition += " NOT LIKE ";
+	else if (func->function.name == "contains" || func->function.name == "~~")
 		condition += " LIKE ";
 	if (func->children[0]->return_type == TypeId::VARCHAR) {
 		// strings need to be escaped with quotes

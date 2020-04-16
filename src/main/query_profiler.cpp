@@ -51,7 +51,7 @@ void QueryProfiler::EndQuery() {
 		}
 
 		if (save_location.empty()) {
-			cout << query_info << "\n";
+			// cout << query_info << "\n"; // FIXME: disable for now
 		} else {
 			WriteToFile(save_location.c_str(), query_info);
 		}
@@ -385,7 +385,7 @@ string QueryProfiler::RenderTree(QueryProfiler::TreeNode &node) {
 }
 
 void QueryProfiler::Print() {
-	Printer::Print(ToString());
+	// Printer::Print(ToString()); // FIXME: disable for now
 }
 
 vector<QueryProfiler::PhaseTimingItem> QueryProfiler::GetOrderedPhaseTimings() const {

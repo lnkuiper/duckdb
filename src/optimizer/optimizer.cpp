@@ -40,38 +40,38 @@ Optimizer::Optimizer(Binder &binder, ClientContext &context) : context(context),
 unique_ptr<LogicalOperator> Optimizer::Optimize(unique_ptr<LogicalOperator> plan, unordered_map<string, idx_t> injected_cardinalities) {
 	// first we perform expression rewrites using the ExpressionRewriter
 	// this does not change the logical plan structure, but only simplifies the expression trees
-	context.profiler.StartPhase("expression_rewriter");
+	// context.profiler.StartPhase("expression_rewriter");
 	rewriter.Apply(*plan);
-	context.profiler.EndPhase();
+	// context.profiler.EndPhase();
 
 	// perform filter pushdown
-	context.profiler.StartPhase("filter_pushdown");
+	// context.profiler.StartPhase("filter_pushdown");
 	FilterPushdown filter_pushdown(*this);
 	plan = filter_pushdown.Rewrite(move(plan));
-	context.profiler.EndPhase();
+	// context.profiler.EndPhase();
 
 	// check if filters match with existing indexes, if true transforms filters to index scans
-	context.profiler.StartPhase("index_scan");
+	// context.profiler.StartPhase("index_scan");
 	IndexScan index_scan;
 	plan = index_scan.Optimize(move(plan));
-	context.profiler.EndPhase();
+	// context.profiler.EndPhase();
 
-	context.profiler.StartPhase("regex_range");
+	// context.profiler.StartPhase("regex_range");
 	RegexRangeFilter regex_opt;
 	plan = regex_opt.Rewrite(move(plan));
-	context.profiler.EndPhase();
+	// context.profiler.EndPhase();
 
-	context.profiler.StartPhase("in_clause");
+	// context.profiler.StartPhase("in_clause");
 	InClauseRewriter rewriter(*this);
 	plan = rewriter.Rewrite(move(plan));
-	context.profiler.EndPhase();
+	// context.profiler.EndPhase();
 
 	// then we perform the join ordering optimization
 	// this also rewrites cross products + filters into joins and performs filter pushdowns
-	context.profiler.StartPhase("join_order");
+	// context.profiler.StartPhase("join_order");
 	JoinOrderOptimizer optimizer(injected_cardinalities);
 	plan = optimizer.Optimize(move(plan));
-	context.profiler.EndPhase();
+	// context.profiler.EndPhase();
 
 	// then we extract common subexpressions inside the different operators
 	// context.profiler.StartPhase("common_subexpressions");
@@ -79,27 +79,27 @@ unique_ptr<LogicalOperator> Optimizer::Optimize(unique_ptr<LogicalOperator> plan
 	// cse_optimizer.VisitOperator(*plan);
 	// context.profiler.EndPhase();
 
-	context.profiler.StartPhase("unused_columns");
+	// context.profiler.StartPhase("unused_columns");
 	RemoveUnusedColumns unused(true);
 	unused.VisitOperator(*plan);
-	context.profiler.EndPhase();
+	// context.profiler.EndPhase();
 
-	context.profiler.StartPhase("column_lifetime");
+	// context.profiler.StartPhase("column_lifetime");
 	ColumnLifetimeAnalyzer column_lifetime(true);
 	column_lifetime.VisitOperator(*plan);
-	context.profiler.EndPhase();
+	// context.profiler.EndPhase();
 
 	// transform ORDER BY + LIMIT to TopN
-	context.profiler.StartPhase("top_n");
+	// context.profiler.StartPhase("top_n");
 	TopN topn;
 	plan = topn.Optimize(move(plan));
-	context.profiler.EndPhase();
+	// context.profiler.EndPhase();
 
 	// apply simple expression heuristics to get an initial reordering
-	context.profiler.StartPhase("reorder_filter_expressions");
+	// context.profiler.StartPhase("reorder_filter_expressions");
 	ExpressionHeuristics expression_heuristics(*this);
 	plan = expression_heuristics.Rewrite(move(plan));
-	context.profiler.EndPhase();
+	// context.profiler.EndPhase();
 
 	return plan;
 }

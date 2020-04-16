@@ -31,24 +31,24 @@ private:
 
 unique_ptr<PhysicalOperator> PhysicalPlanGenerator::CreatePlan(unique_ptr<LogicalOperator> op) {
 	// first resolve column references
-	context.profiler.StartPhase("column_binding");
+	// context.profiler.StartPhase("column_binding");
 	ColumnBindingResolver resolver;
 	resolver.VisitOperator(*op);
-	context.profiler.EndPhase();
+	// context.profiler.EndPhase();
 
 	// now resolve types of all the operators
-	context.profiler.StartPhase("resolve_types");
+	// context.profiler.StartPhase("resolve_types");
 	op->ResolveOperatorTypes();
-	context.profiler.EndPhase();
+	// context.profiler.EndPhase();
 
 	// extract dependencies from the logical plan
 	DependencyExtractor extractor(dependencies);
 	extractor.VisitOperator(*op);
 
 	// then create the main physical plan
-	context.profiler.StartPhase("create_plan");
+	// context.profiler.StartPhase("create_plan");
 	auto plan = CreatePlan(*op);
-	context.profiler.EndPhase();
+	// context.profiler.EndPhase();
 	return plan;
 }
 
