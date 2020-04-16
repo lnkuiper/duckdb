@@ -535,7 +535,10 @@ string ReOptimizer::GetBoundFunctionString(BoundFunctionExpression *func) {
 		condition += " NOT LIKE ";
 	else if (func->function.name == "contains" || func->function.name == "~~")
 		condition += " LIKE ";
-	if (func->children[0]->return_type == TypeId::VARCHAR) {
+	if (func->function.name == "contains") {
+		// % have gone missing with this expression
+		condition += "'%" + func->children[1]->ToString() + "%'";
+	} else if (func->children[0]->return_type == TypeId::VARCHAR) {
 		// strings need to be escaped with quotes
 		condition += "'" + func->children[1]->ToString() + "'";
 	} else {
