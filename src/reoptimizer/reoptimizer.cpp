@@ -529,15 +529,16 @@ string ReOptimizer::GetBoundFunctionString(BoundFunctionExpression *func) {
 	// filter conditions - table reference is 'always' placed on the left, constant on the right
 	auto binding = static_cast<BoundColumnRefExpression *>(func->children[0].get())->binding;
 	string condition = "t" + to_string(binding.table_index) + "." + bta[binding.ToString()];
-	if (func->function.name == "prefix")
-		condition += " = ";
-	else if (func->function.name == "!~~")
+	if (func->function.name == "!~~")
 		condition += " NOT LIKE ";
-	else if (func->function.name == "contains" || func->function.name == "~~")
+	else if (func->function.name == "contains" || func->function.name == "~~" || func->function.name == "prefix")
 		condition += " LIKE ";
 	if (func->function.name == "contains") {
 		// % have gone missing with this expression
 		condition += "'%" + func->children[1]->ToString() + "%'";
+	} else if (func->function.name == "prefix") {
+		// trailing % has gone missing
+		condition += "'" + func->children[1]->ToString() + "%'";
 	} else if (func->children[0]->return_type == TypeId::VARCHAR) {
 		// strings need to be escaped with quotes
 		condition += "'" + func->children[1]->ToString() + "'";
