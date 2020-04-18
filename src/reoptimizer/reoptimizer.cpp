@@ -39,7 +39,7 @@ unique_ptr<LogicalOperator> ReOptimizer::ReOptimize(unique_ptr<LogicalOperator> 
 	for (int iter = 0; true; iter++) {
 		// create and execute subquery, adjust plan accordingly
 		const string temp_table_name = tablename_prefix + "_" + to_string(iter);
-		plan = AlgorithmFiltersOnly(move(plan), temp_table_name);
+		plan = AlgorithmOneStep(move(plan), temp_table_name);
 		if (done) {
 			break;
 		}
