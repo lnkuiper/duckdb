@@ -44,7 +44,7 @@ unique_ptr<LogicalOperator> ReOptimizer::ReOptimize(unique_ptr<LogicalOperator> 
 			break;
 		}
 	}
-	return ClearLeftProjectionMaps(move(plan));
+	return plan;
 }
 
 unique_ptr<LogicalOperator> ReOptimizer::AlgorithmFiltersOnly(unique_ptr<LogicalOperator> plan,
@@ -64,12 +64,20 @@ unique_ptr<LogicalOperator> ReOptimizer::AlgorithmFiltersOnly(unique_ptr<Logical
 unique_ptr<LogicalOperator> ReOptimizer::AlgorithmOneStep(unique_ptr<LogicalOperator> plan,
 														  const string temporary_table_name) {
 	vector<LogicalOperator *> filters = ExtractFilterOperators(*plan);
-	if (!filters.empty()) {
+	if (filters.size() == 1) {
+		plan = PerformPartialPlan(move(plan), filters.back(), temporary_table_name);
+
+		context.profiler.StartPhase("optimizer");
+		plan = CallOptimizer(move(plan));
+		context.profiler.EndPhase();
+
+		return plan;
+	} else if (!filters.empty()) {
 		return PerformPartialPlan(move(plan), filters.back(), temporary_table_name);
 	}
 
 	vector<LogicalOperator *> joins = ExtractJoinOperators(*plan);
-	if (joins.size() <= 1) {
+	if (joins.size() <= 2) {
 		done = true;
 		return plan;
 	}
@@ -112,6 +120,7 @@ unique_ptr<LogicalOperator> ReOptimizer::PerformPartialPlan(unique_ptr<LogicalOp
 	plan = AdjustPlan(move(plan), *subquery_plan, temporary_table_name);
 	FixColumnBindings(*plan);
 	rebind_mapping.clear();
+	plan = ClearLeftProjectionMaps(move(plan));
 	context.profiler.EndPhase();
 
 	// Printer::Print("\n----------------------------- after");
@@ -131,8 +140,10 @@ vector<LogicalOperator *> ReOptimizer::ExtractJoinOperators(LogicalOperator &pla
 	case LogicalOperatorType::FILTER:
 		// special case: IN operator, has a join down the line, but should not be counted
 		for (auto &expr : plan.expressions) {
-			if (expr->type == ExpressionType::COMPARE_IN)
+			if (expr->type == ExpressionType::COMPARE_IN) {
 				recurse = false;
+				break;
+			}
 		}
 		break;
 	// case LogicalOperatorType::JOIN:
@@ -140,8 +151,11 @@ vector<LogicalOperator *> ReOptimizer::ExtractJoinOperators(LogicalOperator &pla
 	// case LogicalOperatorType::DELIM_JOIN:
 	// case LogicalOperatorType::CROSS_PRODUCT:
 	case LogicalOperatorType::COMPARISON_JOIN: // Pretty sure we only get COMPARISON_JOIN in JOB
-		if (plan.children[1]->type != LogicalOperatorType::CHUNK_GET)
-			joins.push_back(&plan);
+		if (plan.children[1]->type == LogicalOperatorType::CHUNK_GET) {
+			recurse = false;
+			break;
+		}
+		joins.push_back(&plan);
 		break;
 	default:
 		// fall through
@@ -161,7 +175,8 @@ vector<LogicalOperator *> ReOptimizer::ExtractFilterOperators(LogicalOperator &p
 	if (plan.children.empty())
 		return filters;
 	if (plan.type == LogicalOperatorType::FILTER) {
-		filters.push_back(&plan);
+		if (!plan.expressions.empty())
+			filters.push_back(&plan);
 		return filters;
 	} else if (plan.type == LogicalOperatorType::COMPARISON_JOIN && plan.children[1]->type == LogicalOperatorType::CHUNK_GET) {
 		filters.push_back(&plan);
@@ -242,7 +257,8 @@ unique_ptr<LogicalOperator> ReOptimizer::GenerateProjectionMaps(unique_ptr<Logic
 			// if (plan->children[i]->children[1]->type == LogicalOperatorType::CHUNK_GET)
 			// 	continue;
 			auto *child_join = static_cast<LogicalComparisonJoin *>(plan->children[i].get());
-			vector<ColumnBinding> left_cbs = child_join->children[0]->GetColumnBindings();
+			vector<ColumnBinding> left_cbs = LogicalOperator::MapBindings(child_join->children[0]->GetColumnBindings(), child_join->left_projection_map);
+			// vector<ColumnBinding> left_cbs = child_join->children[0]->GetColumnBindings();
 			idx_t n_kept = 0;
 			vector<idx_t> removed_columns;
 			for (idx_t cb_i = 0; cb_i < left_cbs.size(); cb_i++) {
