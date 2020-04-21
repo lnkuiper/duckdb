@@ -94,9 +94,9 @@ unique_ptr<LogicalOperator> ReOptimizer::AlgorithmOneStep(unique_ptr<LogicalOper
 unique_ptr<LogicalOperator> ReOptimizer::PerformPartialPlan(unique_ptr<LogicalOperator> plan,
 															LogicalOperator *subquery_plan,
                                                             const string temporary_table_name) {
-	// Printer::Print("\n----------------------------- before");
-	// plan->Print();
-	// Printer::Print("-----------------------------\n");
+	Printer::Print("\n----------------------------- before");
+	plan->Print();
+	Printer::Print("-----------------------------\n");
 
 	context.profiler.StartPhase("reopt_pre_tooling");
 	plan = GenerateProjectionMaps(move(plan));
@@ -109,7 +109,7 @@ unique_ptr<LogicalOperator> ReOptimizer::PerformPartialPlan(unique_ptr<LogicalOp
 	string subquery = CreateSubQuery(*subquery_plan, temporary_table_name, queried_tables, where_conditions);
 	context.profiler.EndPhase();
 
-	// Printer::Print(subquery);
+	Printer::Print(subquery);
 
 	context.profiler.StartPhase("subquery");
 	ExecuteSubQuery(subquery);
@@ -123,9 +123,9 @@ unique_ptr<LogicalOperator> ReOptimizer::PerformPartialPlan(unique_ptr<LogicalOp
 	plan = ClearLeftProjectionMaps(move(plan));
 	context.profiler.EndPhase();
 
-	// Printer::Print("\n----------------------------- after");
-	// plan->Print();
-	// Printer::Print("-----------------------------\n\n");
+	Printer::Print("\n----------------------------- after");
+	plan->Print();
+	Printer::Print("-----------------------------\n\n");
 
 	return plan;
 }
