@@ -61,6 +61,23 @@ unique_ptr<LogicalOperator> ReOptimizer::AlgorithmFiltersOnly(unique_ptr<Logical
 	return PerformPartialPlan(move(plan), filters.back(), temporary_table_name);
 }
 
+unique_ptr<LogicalOperator> ReOptimizer::AlgorithmJoinsOnly(unique_ptr<LogicalOperator> plan,
+															const string temporary_table_name) {
+	vector<LogicalOperator *> joins = ExtractJoinOperators(*plan);
+	if (joins.size() <= 2) {
+		done = true;
+		return plan;
+	}
+
+	plan = PerformPartialPlan(move(plan), joins.back(), temporary_table_name);
+
+	context.profiler.StartPhase("optimizer");
+	plan = CallOptimizer(move(plan));
+	context.profiler.EndPhase();
+
+	return plan;
+}
+
 unique_ptr<LogicalOperator> ReOptimizer::AlgorithmOneStep(unique_ptr<LogicalOperator> plan,
 														  const string temporary_table_name) {
 	vector<LogicalOperator *> filters = ExtractFilterOperators(*plan);

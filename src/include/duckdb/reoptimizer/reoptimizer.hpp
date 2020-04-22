@@ -27,6 +27,8 @@ public:
 private:
 	//! Simple re-optimization strategy that performs all filter operations, optimizes, then executes the rest of the plan
 	unique_ptr<LogicalOperator> AlgorithmFiltersOnly(unique_ptr<LogicalOperator> plan, const string temporary_table_name);
+	//! Simple re-optimization strategy that joins 2 tables at a time
+	unique_ptr<LogicalOperator> AlgorithmJoinsOnly(unique_ptr<LogicalOperator> plan, const string temporary_table_name);
 	//! Simple re-optimizations strategy that performs all filter operations, and 1 join between 2 tables at a time
 	unique_ptr<LogicalOperator> AlgorithmOneStep(unique_ptr<LogicalOperator> plan, const string temporary_table_name);
 	//! First half of the re-optimization iteration procedure: perform subquery and adjust plan
