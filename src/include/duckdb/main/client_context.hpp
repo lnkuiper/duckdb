@@ -148,7 +148,7 @@ private:
 	//! Appenders that were attached to this client context
 	unordered_set<Appender *> appenders;
 	//! Enable the re-optimizer
-	bool enable_reoptimizer = true;
+	bool enable_reoptimizer = false;
 
 };
 } // namespace duckdb
