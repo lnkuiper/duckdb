@@ -218,7 +218,7 @@ unique_ptr<QueryResult> ClientContext::ExecutePreparedStatement(const string &qu
 	// bind the bound values before execution
 	statement.Bind(move(bound_values));
 
-	bool create_stream_result = statement.statement_type == StatementType::SELECT && allow_stream_result;
+	bool create_stream_result = statement.statement_type == StatementType::SELECT_STATEMENT && allow_stream_result;
 
 	// store the physical plan in the context for calls to Fetch()
 	execution_context.physical_plan = move(statement.plan);
@@ -241,6 +241,13 @@ unique_ptr<QueryResult> ClientContext::ExecutePreparedStatement(const string &qu
 		if (chunk->size() == 0) {
 			break;
 		}
+#ifdef DEBUG
+		for (idx_t i = 0; i < chunk->column_count(); i++) {
+			if (statement.sql_types[i].id == SQLTypeId::VARCHAR) {
+				chunk->data[i].UTFVerify(chunk->size());
+			}
+		}
+#endif
 		result->collection.Append(*chunk);
 	}
 	profiler.EndPhase();
@@ -352,7 +359,7 @@ unique_ptr<QueryResult> ClientContext::RunStatement(const string &query, unique_
 		transaction.BeginTransaction();
 	}
 	ActiveTransaction().active_query = db.transaction_manager->GetQueryNumber();
-	if (statement->type == StatementType::SELECT && query_verification_enabled) {
+	if (statement->type == StatementType::SELECT_STATEMENT && query_verification_enabled) {
 		// query verification is enabled:
 		// create a copy of the statement and verify the original statement
 		auto copied_statement = ((SelectStatement &)*statement).Copy();
@@ -366,7 +373,7 @@ unique_ptr<QueryResult> ClientContext::RunStatement(const string &query, unique_
 		statement = move(copied_statement);
 	}
 	// start the profiler
-	if (!subquery && statement->type == StatementType::PREPARE) // FIXME: re-opt, firing a subquery, but we wish to have all profiling
+	if (!subquery && statement->type == StatementType::PREPARE_STATEMENT) // FIXME: re-opt, firing a subquery, but we wish to have all profiling
 		profiler.StartQuery(query, *statement);
 	try {
 		result = RunStatementInternal(query, move(statement), allow_stream_result);
@@ -440,7 +447,7 @@ unique_ptr<QueryResult> ClientContext::Query(string query, bool allow_stream_res
 
 	if (parser.statements.size() == 0) {
 		// no statements, return empty successful result
-		return make_unique<MaterializedQueryResult>(StatementType::INVALID);
+		return make_unique<MaterializedQueryResult>(StatementType::INVALID_STATEMENT);
 	}
 
 	return RunStatements(query, parser.statements, allow_stream_result);
@@ -460,7 +467,7 @@ unique_ptr<QueryResult> ClientContext::QueryWithoutLock(string query, bool allow
 
 	if (parser.statements.size() == 0) {
 		// no statements, return empty successful result
-		return make_unique<MaterializedQueryResult>(StatementType::INVALID);
+		return make_unique<MaterializedQueryResult>(StatementType::INVALID_STATEMENT);
 	}
 
 	return RunStatements(query, parser.statements, allow_stream_result);
@@ -504,7 +511,7 @@ void ClientContext::Invalidate() {
 }
 
 string ClientContext::VerifyQuery(string query, unique_ptr<SQLStatement> statement) {
-	assert(statement->type == StatementType::SELECT);
+	assert(statement->type == StatementType::SELECT_STATEMENT);
 	// aggressive query verification
 
 	// the purpose of this function is to test correctness of otherwise hard to test features:
@@ -567,10 +574,10 @@ string ClientContext::VerifyQuery(string query, unique_ptr<SQLStatement> stateme
 	// see below
 	auto statement_copy_for_explain = select_stmt->Copy();
 
-	auto original_result = make_unique<MaterializedQueryResult>(StatementType::SELECT),
-	     copied_result = make_unique<MaterializedQueryResult>(StatementType::SELECT),
-	     deserialized_result = make_unique<MaterializedQueryResult>(StatementType::SELECT),
-	     unoptimized_result = make_unique<MaterializedQueryResult>(StatementType::SELECT);
+	auto original_result = make_unique<MaterializedQueryResult>(StatementType::SELECT_STATEMENT),
+	     copied_result = make_unique<MaterializedQueryResult>(StatementType::SELECT_STATEMENT),
+	     deserialized_result = make_unique<MaterializedQueryResult>(StatementType::SELECT_STATEMENT),
+	     unoptimized_result = make_unique<MaterializedQueryResult>(StatementType::SELECT_STATEMENT);
 	// execute the original statement
 	try {
 		auto result = RunStatementInternal(query, move(statement), false);
