@@ -209,7 +209,7 @@ static unique_ptr<JoinNode> CreateJoinTree(JoinRelationSet *set, NeighborInfo *i
 		expected_cardinality = std::max(left->cardinality, right->cardinality);
 	}
 	// cost is expected_cardinality plus the cost of the previous plans FIXME: change back to expected_cardinality?
-	idx_t cost = expected_cardinality; // + left->cost + right->cost;
+	idx_t cost = expected_cardinality + left->cost + right->cost;
 	return make_unique<JoinNode>(set, info, left, right, expected_cardinality, cost);
 }
 
