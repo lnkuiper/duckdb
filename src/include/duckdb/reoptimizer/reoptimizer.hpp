@@ -21,8 +21,10 @@ class ReOptimizer {
 public:
 	ReOptimizer(ClientContext &context, Binder &binder);
 
-	//! Reoptimization loop until only 1 join remains
+	//! Re-optimization loop until only 2 joins remain
 	unique_ptr<LogicalOperator> ReOptimize(unique_ptr<LogicalOperator> plan, const string query);
+	//! Simulated re-optimization similar to Stonebraker paper
+	unique_ptr<LogicalOperator> SimulatedReOptimize(unique_ptr<LogicalOperator> plan, const string query);
 
 private:
 	//! Simple re-optimization strategy that performs all filter operations, optimizes, then executes the rest of the plan
@@ -33,6 +35,8 @@ private:
 	unique_ptr<LogicalOperator> AlgorithmOneStep(unique_ptr<LogicalOperator> plan, const string temporary_table_name);
 	//! First half of the re-optimization iteration procedure: perform subquery and adjust plan
 	unique_ptr<LogicalOperator> PerformPartialPlan(unique_ptr<LogicalOperator> plan, LogicalOperator *subquery_plan, const string temporary_table_name);
+	//! Queries for the true cardinality of a plan
+	idx_t GetTrueCardinality(LogicalOperator *subquery_plan);
 	//! Returns all join operators in the plan
 	vector<LogicalOperator *> ExtractJoinOperators(LogicalOperator &plan);
 	//! Returns all filter operators in the plan
@@ -42,8 +46,7 @@ private:
 	//! Fill binding_name_mapping with (binding -> alias)
 	void CreateMaps(LogicalOperator &plan);
 	//! Creates a CREATE TEMPORARY TABLE query string for the first join to be executed in 'plan'
-	string CreateSubQuery(LogicalOperator &plan, const string temporary_table_name, vector<string> &queried_tables,
-	                      vector<string> &where_conditions);
+	string CreateSubQuery(LogicalOperator &plan, vector<string> &queried_tables, vector<string> &where_conditions);
 	//! Reconstructs the filter conditions as strings from a LogicalFilter
 	vector<string> GetFilterStrings(LogicalFilter *filter);
 	//! Reconstructs an Expression to a SQL string
@@ -65,7 +68,7 @@ private:
 	//! Fixes column bindings in expressions
 	void FixColumnBindings(Expression *expr);
 	//! Executes a query in the middle of the re-optimization process
-	void ExecuteSubQuery(const string subquery);
+	unique_ptr<QueryResult> ExecuteSubQuery(const string subquery);
 	//! Stores the true/estimated cardinality of a plan in saved_cardinalities
 	void InjectCardinalities(LogicalOperator &plan, string temp_table_name);
 	//! Gets valid subsets of temp_tables

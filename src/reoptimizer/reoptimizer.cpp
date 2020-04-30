@@ -47,6 +47,42 @@ unique_ptr<LogicalOperator> ReOptimizer::ReOptimize(unique_ptr<LogicalOperator> 
 	return plan;
 }
 
+unique_ptr<LogicalOperator> ReOptimizer::SimulatedReOptimize(unique_ptr<LogicalOperator> plan, const string query) {
+	const string tablename_prefix = "_reopt_temp_" + to_string(hash<string>{}(query));
+
+	context.profiler.StartPhase("reopt_pre_tooling");
+	plan = GenerateProjectionMaps(move(plan));
+	bta.clear();
+	CreateMaps(*plan);
+	context.profiler.EndPhase();
+
+	for (int iter = 0; true; iter++) {
+		const string temp_table_name = tablename_prefix + "_" + to_string(iter);
+		vector<LogicalOperator *> nodes = ExtractJoinOperators(*plan); // maybe append filter operators as well?
+		vector<LogicalOperator *> filters = ExtractFilterOperators(*plan);
+		nodes.insert(nodes.end(), filters.begin(), filters.end());
+
+        // // somehow decide when re-optimization is never worth it from this point
+        // // ideas: low amount of joins left, or even with a high amount of joins left but not high diff in cardinality/cost true vs. estimated
+        // if SomeCriterion():
+        //     break
+
+		while (!nodes.empty()) {
+			LogicalOperator *node = nodes.back();
+			nodes.pop_back();
+			idx_t true_cardinality = GetTrueCardinality(node);
+			//     // if CostThreshold(plan):  // save true cardinalities of everything so far to compute "true" remaining cost, and add some tuning parameter
+			//     if CardinalityQErrorThreshold(true_cardinality, n.EstimateCardinality()):  // needs a parameter "factor"
+			if (true) {
+				plan = PerformPartialPlan(move(plan), node, temp_table_name);
+			}
+		}
+		break;
+	}
+	return plan;
+}
+
+
 unique_ptr<LogicalOperator> ReOptimizer::AlgorithmFiltersOnly(unique_ptr<LogicalOperator> plan,
 															  const string temporary_table_name) {
 	vector<LogicalOperator *> filters = ExtractFilterOperators(*plan);
@@ -108,6 +144,16 @@ unique_ptr<LogicalOperator> ReOptimizer::AlgorithmOneStep(unique_ptr<LogicalOper
 	return plan;
 }
 
+idx_t ReOptimizer::GetTrueCardinality(LogicalOperator *subquery_plan) {
+	vector<string> queried_tables;
+	vector<string> where_conditions;
+	string subquery = "SELECT COUNT(*) FROM (" + CreateSubQuery(*subquery_plan, queried_tables, where_conditions) + ") AS subquery;";
+	auto result = ExecuteSubQuery(subquery);
+	MaterializedQueryResult *mqr = static_cast<MaterializedQueryResult *>(result.get());
+	Value count = mqr->collection.GetValue(0, 0);
+	return stoi(count.ToString());
+}
+
 unique_ptr<LogicalOperator> ReOptimizer::PerformPartialPlan(unique_ptr<LogicalOperator> plan,
 															LogicalOperator *subquery_plan,
                                                             const string temporary_table_name) {
@@ -123,7 +169,8 @@ unique_ptr<LogicalOperator> ReOptimizer::PerformPartialPlan(unique_ptr<LogicalOp
 
 	vector<string> queried_tables;
 	vector<string> where_conditions;
-	string subquery = CreateSubQuery(*subquery_plan, temporary_table_name, queried_tables, where_conditions);
+	string subquery = "CREATE TEMPORARY TABLE main." + temporary_table_name + " AS (" +
+					  CreateSubQuery(*subquery_plan, queried_tables, where_conditions) + ");";
 	context.profiler.EndPhase();
 
 	// Printer::Print(subquery);
@@ -390,8 +437,7 @@ void ReOptimizer::CreateMaps(LogicalOperator &plan) {
 	}
 }
 
-string ReOptimizer::CreateSubQuery(LogicalOperator &plan, const string temporary_table_name,
-                                   vector<string> &queried_tables, vector<string> &where_conditions) {
+string ReOptimizer::CreateSubQuery(LogicalOperator &plan, vector<string> &queried_tables, vector<string> &where_conditions) {
 	switch (plan.type) {
 	case LogicalOperatorType::COMPARISON_JOIN: {
 		LogicalComparisonJoin *join = static_cast<LogicalComparisonJoin *>(&plan);
@@ -445,7 +491,7 @@ string ReOptimizer::CreateSubQuery(LogicalOperator &plan, const string temporary
 	}
 	// recursively propagate operator tree to fill vectors
 	for (auto &child : plan.children) {
-		CreateSubQuery(*child, temporary_table_name, queried_tables, where_conditions);
+		CreateSubQuery(*child, queried_tables, where_conditions);
 	}
 	// grab selected columns
 	vector<ColumnBinding> selected_column_bindings;
@@ -458,10 +504,11 @@ string ReOptimizer::CreateSubQuery(LogicalOperator &plan, const string temporary
 	vector<string> selected_columns;
 	for (auto cb : selected_column_bindings)
 		selected_columns.push_back("t" + to_string(cb.table_index) + "." + bta[cb.ToString()] + " AS " + bta[cb.ToString()] + to_string(cb.table_index));
-	// create query and return
-	return "CREATE TEMPORARY TABLE main." + temporary_table_name + " AS (" + "SELECT " +
-	       JoinStrings(selected_columns, ", ") + " " + "FROM " + JoinStrings(queried_tables, ", ") + " " + "WHERE " +
-	       JoinStrings(where_conditions, " AND ") + ");";
+
+	// create and return query
+	return "SELECT " + JoinStrings(selected_columns, ", ") + " " +
+		   "FROM " + JoinStrings(queried_tables, ", ") + " " +
+		   "WHERE " + JoinStrings(where_conditions, " AND ");
 }
 
 vector<string> ReOptimizer::GetFilterStrings(LogicalFilter *filter) {
@@ -831,7 +878,7 @@ void ReOptimizer::FixColumnBindings(Expression *expr) {
 
 // FIXME: getting cardinality from data_storage only works on autocommit, assume no transactions for now
 // this might be because of the fact that cardinality is atomic?
-void ReOptimizer::ExecuteSubQuery(const string subquery) {
+unique_ptr<QueryResult> ReOptimizer::ExecuteSubQuery(const string subquery) {
 	context.subquery = true;
 	// store state of autocommit, profiler and optimizer
 	// bool auto_commit = context.transaction.IsAutoCommit();
@@ -844,7 +891,7 @@ void ReOptimizer::ExecuteSubQuery(const string subquery) {
 	// context.enable_optimizer = false;
 	// hack in a query - without autocommit, profiling, optimizer or lock
 	// this prevents segfault / assertion fail / unnecessary overhead / deadlock respectively
-	context.QueryWithoutLock(subquery, false);
+	auto result = context.QueryWithoutLock(subquery, false);
 	// restore the state of autocommit, profiler and optimizer
 	// context.transaction.SetAutoCommit(auto_commit);
 	context.transaction.BeginTransaction();
@@ -852,6 +899,7 @@ void ReOptimizer::ExecuteSubQuery(const string subquery) {
 	// context.profiler.Enable(); 123
 	// context.enable_optimizer = optimizer;
 	context.subquery = false;
+	return result;
 }
 
 unique_ptr<LogicalOperator> ReOptimizer::CallOptimizer(unique_ptr<LogicalOperator> plan) {
