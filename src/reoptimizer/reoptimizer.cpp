@@ -47,42 +47,6 @@ unique_ptr<LogicalOperator> ReOptimizer::ReOptimize(unique_ptr<LogicalOperator> 
 	return plan;
 }
 
-unique_ptr<LogicalOperator> ReOptimizer::SimulatedReOptimize(unique_ptr<LogicalOperator> plan, const string query) {
-	const string tablename_prefix = "_reopt_temp_" + to_string(hash<string>{}(query));
-
-	context.profiler.StartPhase("reopt_pre_tooling");
-	plan = GenerateProjectionMaps(move(plan));
-	bta.clear();
-	CreateMaps(*plan);
-	context.profiler.EndPhase();
-
-	for (int iter = 0; true; iter++) {
-		const string temp_table_name = tablename_prefix + "_" + to_string(iter);
-		vector<LogicalOperator *> nodes = ExtractJoinOperators(*plan); // maybe append filter operators as well?
-		vector<LogicalOperator *> filters = ExtractFilterOperators(*plan);
-		nodes.insert(nodes.end(), filters.begin(), filters.end());
-
-        // // somehow decide when re-optimization is never worth it from this point
-        // // ideas: low amount of joins left, or even with a high amount of joins left but not high diff in cardinality/cost true vs. estimated
-        // if SomeCriterion():
-        //     break
-
-		while (!nodes.empty()) {
-			LogicalOperator *node = nodes.back();
-			nodes.pop_back();
-			idx_t true_cardinality = GetTrueCardinality(node);
-			//     // if CostThreshold(plan):  // save true cardinalities of everything so far to compute "true" remaining cost, and add some tuning parameter
-			//     if CardinalityQErrorThreshold(true_cardinality, n.EstimateCardinality()):  // needs a parameter "factor"
-			if (true) {
-				plan = PerformPartialPlan(move(plan), node, temp_table_name);
-			}
-		}
-		break;
-	}
-	return plan;
-}
-
-
 unique_ptr<LogicalOperator> ReOptimizer::AlgorithmFiltersOnly(unique_ptr<LogicalOperator> plan,
 															  const string temporary_table_name) {
 	vector<LogicalOperator *> filters = ExtractFilterOperators(*plan);
@@ -144,11 +108,72 @@ unique_ptr<LogicalOperator> ReOptimizer::AlgorithmOneStep(unique_ptr<LogicalOper
 	return plan;
 }
 
+static bool QErrorOverThreshold(idx_t x, idx_t y, idx_t thresh) {
+	if (std::min(x, y) == 0)
+		return true;
+	return std::max(x, y) / std::min(x, y) > thresh;
+}
+
+void ReOptimizer::SetTrueCardinality(LogicalOperator &plan, LogicalOperator &subquery_plan) {
+	if (plan.children.empty())
+		return;
+	// search children
+	for (idx_t child_i = 0; child_i < plan.children.size(); child_i++) {
+		auto &child = plan.children[child_i];
+		if (!(child->type == subquery_plan.type && child->ParamsToString() == subquery_plan.ParamsToString()))
+			continue;
+		plan.children[child_i]->true_cardinality = GetTrueCardinality(child.get());
+		return;
+	}
+	// enter recursion until the operator is found
+	for (auto &child : plan.children)
+		SetTrueCardinality(*child.get(), subquery_plan);
+}
+
+unique_ptr<LogicalOperator> ReOptimizer::SimulatedReOptimize(unique_ptr<LogicalOperator> plan, const string query) {
+	idx_t minimum_remaining_plan_size = 2;
+	idx_t q_error_threshold = 32;
+
+	const string tablename_prefix = "_reopt_temp_" + to_string(hash<string>{}(query));
+
+	for (int iter = 0; true; iter++) {
+		plan = GenerateProjectionMaps(move(plan));
+		binding_name_mapping.clear();
+		FindAliases(*plan);
+
+		const string temp_table_name = tablename_prefix + "_" + to_string(iter);
+		vector<LogicalOperator *> nodes = ExtractJoinOperators(*plan);
+		vector<LogicalOperator *> filters = ExtractFilterOperators(*plan);
+		nodes.insert(nodes.end(), filters.begin(), filters.end());
+
+		while (nodes.size() > minimum_remaining_plan_size) {
+			LogicalOperator *node = nodes.back();
+			nodes.pop_back();
+			SetTrueCardinality(*plan, *node);
+			
+			// if CostThreshold(plan):  // add some tuning parameter
+			if (QErrorOverThreshold(node->true_cardinality, node->EstimateCardinality(), q_error_threshold)) {
+				plan = ClearLeftProjectionMaps(move(plan));
+				plan = PerformPartialPlan(move(plan), node, temp_table_name);
+				context.profiler.StartPhase("optimizer");
+				plan = CallOptimizer(move(plan));
+				context.profiler.EndPhase();
+				break;
+			}
+		}
+
+		if (nodes.size() <= minimum_remaining_plan_size)
+			break;
+	}
+	return plan;
+}
+
 idx_t ReOptimizer::GetTrueCardinality(LogicalOperator *subquery_plan) {
 	vector<string> queried_tables;
 	vector<string> where_conditions;
 	string subquery = "SELECT COUNT(*) FROM (" + CreateSubQuery(*subquery_plan, queried_tables, where_conditions) + ") AS subquery;";
-	auto result = ExecuteSubQuery(subquery);
+	// Printer::Print(subquery);
+	auto result = ExecuteSubQuery(subquery, false);
 	MaterializedQueryResult *mqr = static_cast<MaterializedQueryResult *>(result.get());
 	Value count = mqr->collection.GetValue(0, 0);
 	return stoi(count.ToString());
@@ -163,21 +188,19 @@ unique_ptr<LogicalOperator> ReOptimizer::PerformPartialPlan(unique_ptr<LogicalOp
 
 	context.profiler.StartPhase("reopt_pre_tooling");
 	plan = GenerateProjectionMaps(move(plan));
+	binding_name_mapping.clear();
+	FindAliases(*plan);
+	context.profiler.EndPhase();
 
-	bta.clear();
-	CreateMaps(*plan);
-
+	context.profiler.StartPhase("subquery");
 	vector<string> queried_tables;
 	vector<string> where_conditions;
 	string subquery = "CREATE TEMPORARY TABLE main." + temporary_table_name + " AS (" +
 					  CreateSubQuery(*subquery_plan, queried_tables, where_conditions) + ");";
+	ExecuteSubQuery(subquery, true);
 	context.profiler.EndPhase();
 
 	// Printer::Print(subquery);
-
-	context.profiler.StartPhase("subquery");
-	ExecuteSubQuery(subquery);
-	context.profiler.EndPhase();
 
 	context.profiler.StartPhase("reopt_post_tooling");
 	// InjectCardinalities(*subquery_plan, temporary_table_name);
@@ -423,17 +446,19 @@ unique_ptr<LogicalOperator> ReOptimizer::GenerateProjectionMaps(unique_ptr<Logic
 	return plan;
 }
 
-void ReOptimizer::CreateMaps(LogicalOperator &plan) {
+void ReOptimizer::FindAliases(LogicalOperator &plan) {
 	if (plan.type == LogicalOperatorType::GET) {
 		auto *get = static_cast<LogicalGet *>(&plan);
+		// plan.Print();
 		for (idx_t i = 0; i < get->column_ids.size(); i++) {
-			bta["#[" + std::to_string(get->table_index) + "." + std::to_string(i) + "]"] =
+			// Printer::Print("#[" + std::to_string(get->table_index) + "." + std::to_string(i) + "]" + " = " + get->table->columns[get->column_ids[i]].name);
+			binding_name_mapping["#[" + std::to_string(get->table_index) + "." + std::to_string(i) + "]"] =
 			    get->table->columns[get->column_ids[i]].name;
 		}
 	}
 	// recursively propagate operator tree
 	for (auto &child : plan.children) {
-		CreateMaps(*child);
+		FindAliases(*child);
 	}
 }
 
@@ -456,15 +481,15 @@ string ReOptimizer::CreateSubQuery(LogicalOperator &plan, vector<string> &querie
 				else
 					in_vals.push_back(vals->GetValue(i).ToString());
 			}
-			where_conditions.push_back("t" + to_string(l_bind.table_index) + "." + bta[l_bind.ToString()] + " IN (" +
+			where_conditions.push_back("t" + to_string(l_bind.table_index) + "." + binding_name_mapping[l_bind.ToString()] + " IN (" +
 			                           JoinStrings(in_vals, ",") + ")");
 		} else {
 			for (idx_t cond_i = 0; cond_i < join->conditions.size(); cond_i++) {
 				JoinCondition &join_condition = join->conditions[cond_i];
 				auto l_bind = ((BoundColumnRefExpression &)*join_condition.left.get()).binding;
 				auto r_bind = ((BoundColumnRefExpression &)*join_condition.right.get()).binding;
-				where_conditions.push_back("t" + to_string(l_bind.table_index) + "." + bta[l_bind.ToString()] + " = " +
-				                           "t" + to_string(r_bind.table_index) + "." + bta[r_bind.ToString()]);
+				where_conditions.push_back("t" + to_string(l_bind.table_index) + "." + binding_name_mapping[l_bind.ToString()] + " = " +
+				                           "t" + to_string(r_bind.table_index) + "." + binding_name_mapping[r_bind.ToString()]);
 			}
 		}
 		break;
@@ -503,7 +528,7 @@ string ReOptimizer::CreateSubQuery(LogicalOperator &plan, vector<string> &querie
 	}
 	vector<string> selected_columns;
 	for (auto cb : selected_column_bindings)
-		selected_columns.push_back("t" + to_string(cb.table_index) + "." + bta[cb.ToString()] + " AS " + bta[cb.ToString()] + to_string(cb.table_index));
+		selected_columns.push_back("t" + to_string(cb.table_index) + "." + binding_name_mapping[cb.ToString()] + " AS " + binding_name_mapping[cb.ToString()] + to_string(cb.table_index));
 
 	// create and return query
 	return "SELECT " + JoinStrings(selected_columns, ", ") + " " +
@@ -533,12 +558,12 @@ string ReOptimizer::GetExpressionString(Expression *expr) {
 		case ExpressionType::OPERATOR_IS_NOT_NULL: {
 			auto *op = static_cast<BoundOperatorExpression *>(expr);
 			auto binding = static_cast<BoundColumnRefExpression *>(op->children[0].get())->binding;
-			return "t" + to_string(binding.table_index) + "." + bta[binding.ToString()] + " IS NOT NULL";
+			return "t" + to_string(binding.table_index) + "." + binding_name_mapping[binding.ToString()] + " IS NOT NULL";
 		}
 		case ExpressionType::OPERATOR_IS_NULL: {
 			auto *op = static_cast<BoundOperatorExpression *>(expr);
 			auto binding = static_cast<BoundColumnRefExpression *>(op->children[0].get())->binding;
-			return "t" + to_string(binding.table_index) + "." + bta[binding.ToString()] + " IS NULL";
+			return "t" + to_string(binding.table_index) + "." + binding_name_mapping[binding.ToString()] + " IS NULL";
 		}
 		default:
 			Printer::Print("Exception 4: " + expr->ToString() + " - " + ExpressionTypeToString(expr->type));
@@ -568,7 +593,7 @@ string ReOptimizer::GetExpressionString(Expression *expr) {
 	case ExpressionClass::BOUND_BETWEEN: {
 		auto *between = static_cast<BoundBetweenExpression *>(expr);
 		auto binding = static_cast<BoundColumnRefExpression *>(between->input.get())->binding;
-		string condition = "t" + to_string(binding.table_index) + "." + bta[binding.ToString()] + " BETWEEN ";
+		string condition = "t" + to_string(binding.table_index) + "." + binding_name_mapping[binding.ToString()] + " BETWEEN ";
 		auto lower = static_cast<BoundConstantExpression *>(between->lower.get());
 		auto upper = static_cast<BoundConstantExpression *>(between->upper.get());
 		if (lower->value.type == TypeId::VARCHAR)
@@ -594,7 +619,7 @@ string ReOptimizer::GetExpressionString(Expression *expr) {
 string ReOptimizer::GetBoundComparisonString(BoundComparisonExpression *comparison) {
 	// filter conditions - table reference is 'always' placed on the left, constant on the right
 	auto binding = static_cast<BoundColumnRefExpression *>(comparison->left.get())->binding;
-	string condition = "t" + to_string(binding.table_index) + "." + bta[binding.ToString()] + " " +
+	string condition = "t" + to_string(binding.table_index) + "." + binding_name_mapping[binding.ToString()] + " " +
 	                   ExpressionTypeToOperator(comparison->type) + " ";
 	if (comparison->right->return_type == TypeId::VARCHAR) {
 		// strings need to be escaped with quotes
@@ -608,7 +633,7 @@ string ReOptimizer::GetBoundComparisonString(BoundComparisonExpression *comparis
 string ReOptimizer::GetBoundFunctionString(BoundFunctionExpression *func) {
 	// filter conditions - table reference is 'always' placed on the left, constant on the right
 	auto binding = static_cast<BoundColumnRefExpression *>(func->children[0].get())->binding;
-	string condition = "t" + to_string(binding.table_index) + "." + bta[binding.ToString()];
+	string condition = "t" + to_string(binding.table_index) + "." + binding_name_mapping[binding.ToString()];
 	if (func->function.name == "!~~")
 		condition += " NOT LIKE ";
 	else if (func->function.name == "contains" || func->function.name == "~~" || func->function.name == "prefix")
@@ -871,33 +896,20 @@ void ReOptimizer::FixColumnBindings(Expression *expr) {
 	}
 }
 
-// FIXME: disabling optimizer indeed causes less overhead (ONLY TESTED FOR SMALL QUERIES), but it's not very clean
-// we already have an optimized subquery plan at this point
-// slapping a create table and project on top of it should be doable... right?
-// also don't know if not having filter pushdown sucks - join order should be fixed tho (by how query is made)
-
 // FIXME: getting cardinality from data_storage only works on autocommit, assume no transactions for now
 // this might be because of the fact that cardinality is atomic?
-unique_ptr<QueryResult> ReOptimizer::ExecuteSubQuery(const string subquery) {
+unique_ptr<QueryResult> ReOptimizer::ExecuteSubQuery(const string subquery, bool enable_profiler) {
 	context.subquery = true;
-	// store state of autocommit, profiler and optimizer
-	// bool auto_commit = context.transaction.IsAutoCommit();
 	context.transaction.Commit();
-	// bool profiler = context.profiler.IsEnabled(); 123
-	// bool optimizer = context.enable_optimizer;
-	// disable them
-	// context.transaction.SetAutoCommit(false);
-	// context.profiler.Disable(); 123
-	// context.enable_optimizer = false;
-	// hack in a query - without autocommit, profiling, optimizer or lock
-	// this prevents segfault / assertion fail / unnecessary overhead / deadlock respectively
+	// store the state of the profiler
+	bool profiler_was_enabled = context.profiler.IsEnabled();
+	if (!enable_profiler)
+		context.profiler.Disable();
 	auto result = context.QueryWithoutLock(subquery, false);
-	// restore the state of autocommit, profiler and optimizer
-	// context.transaction.SetAutoCommit(auto_commit);
+	// restore the state of the profiler
 	context.transaction.BeginTransaction();
-	// if (profiler)
-	// context.profiler.Enable(); 123
-	// context.enable_optimizer = optimizer;
+	if (profiler_was_enabled)
+		context.profiler.Enable(); 
 	context.subquery = false;
 	return result;
 }

@@ -33,7 +33,9 @@ private:
 	unique_ptr<LogicalOperator> AlgorithmJoinsOnly(unique_ptr<LogicalOperator> plan, const string temporary_table_name);
 	//! Simple re-optimizations strategy that performs all filter operations, and 1 join between 2 tables at a time
 	unique_ptr<LogicalOperator> AlgorithmOneStep(unique_ptr<LogicalOperator> plan, const string temporary_table_name);
-	//! First half of the re-optimization iteration procedure: perform subquery and adjust plan
+	//! Set true cardinality of an operator by measuring it
+	void SetTrueCardinality(LogicalOperator &plan, LogicalOperator &subquery_plan);
+	//! One iteration of the re-optimization procedure
 	unique_ptr<LogicalOperator> PerformPartialPlan(unique_ptr<LogicalOperator> plan, LogicalOperator *subquery_plan, const string temporary_table_name);
 	//! Queries for the true cardinality of a plan
 	idx_t GetTrueCardinality(LogicalOperator *subquery_plan);
@@ -44,7 +46,7 @@ private:
 	//! Generate left projection map for joins in the plan, and change right map accordingly
 	unique_ptr<LogicalOperator> GenerateProjectionMaps(unique_ptr<LogicalOperator> plan);
 	//! Fill binding_name_mapping with (binding -> alias)
-	void CreateMaps(LogicalOperator &plan);
+	void FindAliases(LogicalOperator &plan);
 	//! Creates a CREATE TEMPORARY TABLE query string for the first join to be executed in 'plan'
 	string CreateSubQuery(LogicalOperator &plan, vector<string> &queried_tables, vector<string> &where_conditions);
 	//! Reconstructs the filter conditions as strings from a LogicalFilter
@@ -68,7 +70,7 @@ private:
 	//! Fixes column bindings in expressions
 	void FixColumnBindings(Expression *expr);
 	//! Executes a query in the middle of the re-optimization process
-	unique_ptr<QueryResult> ExecuteSubQuery(const string subquery);
+	unique_ptr<QueryResult> ExecuteSubQuery(const string subquery, bool enable_profiling);
 	//! Stores the true/estimated cardinality of a plan in saved_cardinalities
 	void InjectCardinalities(LogicalOperator &plan, string temp_table_name);
 	//! Gets valid subsets of temp_tables
@@ -87,7 +89,7 @@ private:
 	Binder &binder;
 
 	//! Binding to column alias mapping (created by CreateMaps)
-	unordered_map<string, string> bta;
+	unordered_map<string, string> binding_name_mapping;
 	//! The new column bindings (after replacing an operator with GET)
 	unordered_map<string, ColumnBinding> rebind_mapping;
 

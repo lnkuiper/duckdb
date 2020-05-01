@@ -40,6 +40,9 @@ public:
 	//! The types returned by this logical operator. Set by calling LogicalOperator::ResolveTypes.
 	vector<TypeId> types;
 
+	//! Measured true cardinality (re-opt)
+	idx_t true_cardinality;
+
 public:
 	virtual vector<ColumnBinding> GetColumnBindings() {
 		return {};
