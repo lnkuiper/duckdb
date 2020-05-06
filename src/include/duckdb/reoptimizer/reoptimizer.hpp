@@ -48,7 +48,7 @@ private:
 	//! Fill binding_name_mapping with (binding -> alias)
 	void FindAliases(LogicalOperator &plan);
 	//! Creates a CREATE TEMPORARY TABLE query string for the first join to be executed in 'plan'
-	string CreateSubQuery(LogicalOperator &plan, vector<string> &queried_tables, vector<string> &where_conditions);
+	string CreateSubQuery(LogicalOperator &plan, vector<string> &queried_tables, vector<string> &where_conditions, bool proj_map_filled);
 	//! Reconstructs the filter conditions as strings from a LogicalFilter
 	vector<string> GetFilterStrings(LogicalFilter *filter);
 	//! Reconstructs an Expression to a SQL string
@@ -63,7 +63,7 @@ private:
 	//! Call Catalog::GetTable (works around autocommit stuff)
 	TableCatalogEntry *GetTable(string schema, string table_name);
 	//! Replaces the join 'old_op' in 'plan' with the given operator 'new_op'
-	void ReplaceLogicalOperator(LogicalOperator &plan, LogicalOperator &old_op, TableCatalogEntry *table,
+	bool ReplaceLogicalOperator(LogicalOperator &plan, LogicalOperator &old_op, TableCatalogEntry *table,
 	                            idx_t depth = 3);
 	//! Fixes column bindings after replacing JOIN with GET
 	void FixColumnBindings(LogicalOperator &plan);

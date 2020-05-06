@@ -251,8 +251,9 @@ unique_ptr<QueryResult> ClientContext::ExecutePreparedStatement(const string &qu
 		result->collection.Append(*chunk);
 	}
 	profiler.EndPhase();
-	if (!subquery)
+	if (!subquery && statement.statement_type == StatementType::EXECUTE_STATEMENT) {
 		profiler.EndQuery();
+	}
 	return move(result);
 }
 
