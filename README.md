@@ -41,3 +41,11 @@ DuckDB is implemented in C++ 11, should compile with GCC and clang, uses CMake t
 
 ## Other pages
 * [Continuous Benchmarking (CB™)](https://www.duckdb.org/benchmarks/index.html), runs TPC-H, TPC-DS and some microbenchmarks on every commit
+
+# Re-Optimization
+This is a master thesis repository for implementation and simulation of re-optimization, a form of adaptive query processing, in DuckDB.
+Save for a few changes to make the implementation possible, most of the added code can be found under the following directories:
+```
+/src/reoptimizer/
+/src/include/duckdb/
+```
