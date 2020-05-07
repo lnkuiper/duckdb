@@ -29,7 +29,6 @@
 using namespace duckdb;
 using namespace std;
 
-// TODO: write tests that figure out if this shit actually works
 ReOptimizer::ReOptimizer(ClientContext &context, Binder &binder) : context(context), binder(binder) {
 }
 
@@ -37,9 +36,8 @@ unique_ptr<LogicalOperator> ReOptimizer::ReOptimize(unique_ptr<LogicalOperator> 
 	const string tablename_prefix = "_reopt_temp_" + to_string(hash<string>{}(query));
 	// re-optimization loop
 	for (int iter = 0; true; iter++) {
-		// create and execute subquery, adjust plan accordingly
 		const string temp_table_name = tablename_prefix + "_" + to_string(iter);
-		plan = AlgorithmOneStep(move(plan), temp_table_name);
+		plan = AlgorithmFiltersOnly(move(plan), temp_table_name);
 		if (done) {
 			break;
 		}

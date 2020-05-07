@@ -189,7 +189,7 @@ unique_ptr<PreparedStatementData> ClientContext::CreatePreparedStatement(const s
 	
 	if (enable_reoptimizer && plan->type == LogicalOperatorType::PREPARE && !subquery) {
 		ReOptimizer reoptimizer = ReOptimizer(*this, planner.binder);
-		plan = reoptimizer.SimulatedReOptimize(move(plan), query);
+		plan = reoptimizer.ReOptimize(move(plan), query);
 		assert(plan);
 	}
 
