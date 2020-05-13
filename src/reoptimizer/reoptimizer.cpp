@@ -38,7 +38,7 @@ unique_ptr<LogicalOperator> ReOptimizer::ReOptimize(unique_ptr<LogicalOperator> 
 	// re-optimization loop
 	for (int iter = 0; true; iter++) {
 		const string temp_table_name = tablename_prefix + "_" + to_string(iter);
-		plan = AlgorithmFiltersOnly(move(plan), temp_table_name);
+		plan = AlgorithmJoinsOnly(move(plan), temp_table_name);
 		if (done) {
 			break;
 		}
@@ -178,7 +178,7 @@ idx_t ReOptimizer::GetTrueCardinality(LogicalOperator &subquery_plan) {
 	vector<string> queried_tables;
 	vector<string> where_conditions;
 	string subquery = "SELECT COUNT(*) FROM (" + CreateSubQuery(subquery_plan, queried_tables, where_conditions, false) + ") AS subquery;";
-	// Printer::Print(subquery);
+	Printer::Print(subquery);
 	auto result = ExecuteSubQuery(subquery, false);
 	MaterializedQueryResult *mqr = static_cast<MaterializedQueryResult *>(result.get());
 	Value count = mqr->collection.GetValue(0, 0);
@@ -192,8 +192,11 @@ unique_ptr<LogicalOperator> ReOptimizer::PerformPartialPlan(unique_ptr<LogicalOp
 	// plan->Print();
 	// Printer::Print("-----------------------------\n");
 
-	if (compute_cost)
+	if (compute_cost) {
+		binding_name_mapping.clear();
+		FindAliases(*plan);
 		plan_cost += GetTrueCost(*subquery_plan);
+	}
 
 	context.profiler.StartPhase("reopt_pre_tooling");
 	plan = GenerateProjectionMaps(move(plan));
