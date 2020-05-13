@@ -71,7 +71,7 @@ public:
 		return max_cardinality;
 	}
 
-	idx_t ComputeCost();
+	idx_t EstimateCost();
 
 protected:
 	//! Resolve types for this specific operator

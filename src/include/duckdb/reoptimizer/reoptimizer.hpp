@@ -37,8 +37,10 @@ private:
 	void SetTrueCardinality(LogicalOperator &plan, LogicalOperator &subquery_plan);
 	//! One iteration of the re-optimization procedure
 	unique_ptr<LogicalOperator> PerformPartialPlan(unique_ptr<LogicalOperator> plan, LogicalOperator *subquery_plan, const string temporary_table_name);
+	//! Gets the true cost of a plan by querying for COUNT(*)
+	idx_t GetTrueCost(LogicalOperator &plan);
 	//! Queries for the true cardinality of a plan
-	idx_t GetTrueCardinality(LogicalOperator *subquery_plan);
+	idx_t GetTrueCardinality(LogicalOperator &subquery_plan);
 	//! Returns all join operators in the plan
 	vector<LogicalOperator *> ExtractJoinOperators(LogicalOperator &plan);
 	//! Returns all filter operators in the plan
@@ -102,6 +104,12 @@ private:
 
 	//! Whether we are done re-optimizing the plan
 	bool done = false;
+
+	//! Whether to compute the cost of the plan
+	bool compute_cost = false;
+	//! The cost of the plan
+	idx_t plan_cost = 0;
+
 };
 
 } // namespace duckdb

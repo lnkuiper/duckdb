@@ -78,18 +78,18 @@ string LogicalOperator::ToString(idx_t depth) const {
 	return result;
 }
 
-idx_t LogicalOperator::ComputeCost() {
+idx_t LogicalOperator::EstimateCost() {
 	idx_t cost = 0;
-	if (type == LogicalOperatorType::COMPARISON_JOIN || type == LogicalOperatorType::GET) {
+	if (type == LogicalOperatorType::COMPARISON_JOIN) {
 		cost += EstimateCardinality();
 	}
 	for (auto &child : children) {
-		cost += child->ComputeCost();
+		cost += child->EstimateCost();
 	}
 	return cost;
 }
 
 void LogicalOperator::Print() {
 	Printer::Print(ToString());
-	Printer::Print("COST: " + to_string(ComputeCost()));
+	Printer::Print("COST: " + to_string(EstimateCost()));
 }

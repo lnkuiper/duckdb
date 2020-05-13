@@ -33,6 +33,7 @@ ReOptimizer::ReOptimizer(ClientContext &context, Binder &binder) : context(conte
 }
 
 unique_ptr<LogicalOperator> ReOptimizer::ReOptimize(unique_ptr<LogicalOperator> plan, const string query) {
+	compute_cost = true;
 	const string tablename_prefix = "_reopt_temp_" + to_string(hash<string>{}(query));
 	// re-optimization loop
 	for (int iter = 0; true; iter++) {
@@ -41,6 +42,12 @@ unique_ptr<LogicalOperator> ReOptimizer::ReOptimize(unique_ptr<LogicalOperator> 
 		if (done) {
 			break;
 		}
+	}
+	if (compute_cost && (plan->type == LogicalOperatorType::PROJECTION || plan->children[0]->type == LogicalOperatorType::PROJECTION)) { // && proj
+		binding_name_mapping.clear();
+		FindAliases(*plan);
+		plan_cost += GetTrueCost(*plan);
+		Printer::Print(to_string(plan_cost));
 	}
 	return plan;
 }
@@ -120,7 +127,7 @@ void ReOptimizer::SetTrueCardinality(LogicalOperator &plan, LogicalOperator &sub
 		auto &child = plan.children[child_i];
 		if (!(child->type == subquery_plan.type && child->ParamsToString() == subquery_plan.ParamsToString()))
 			continue;
-		plan.children[child_i]->true_cardinality = GetTrueCardinality(child.get());
+		plan.children[child_i]->true_cardinality = GetTrueCardinality(*child);
 		return;
 	}
 	// enter recursion until the operator is found
@@ -167,10 +174,11 @@ unique_ptr<LogicalOperator> ReOptimizer::SimulatedReOptimize(unique_ptr<LogicalO
 	return plan;
 }
 
-idx_t ReOptimizer::GetTrueCardinality(LogicalOperator *subquery_plan) {
+idx_t ReOptimizer::GetTrueCardinality(LogicalOperator &subquery_plan) {
 	vector<string> queried_tables;
 	vector<string> where_conditions;
-	string subquery = "SELECT COUNT(*) FROM (" + CreateSubQuery(*subquery_plan, queried_tables, where_conditions, false) + ") AS subquery;";
+	string subquery = "SELECT COUNT(*) FROM (" + CreateSubQuery(subquery_plan, queried_tables, where_conditions, false) + ") AS subquery;";
+	// Printer::Print(subquery);
 	auto result = ExecuteSubQuery(subquery, false);
 	MaterializedQueryResult *mqr = static_cast<MaterializedQueryResult *>(result.get());
 	Value count = mqr->collection.GetValue(0, 0);
@@ -183,6 +191,9 @@ unique_ptr<LogicalOperator> ReOptimizer::PerformPartialPlan(unique_ptr<LogicalOp
 	// Printer::Print("\n----------------------------- before");
 	// plan->Print();
 	// Printer::Print("-----------------------------\n");
+
+	if (compute_cost)
+		plan_cost += GetTrueCost(*subquery_plan);
 
 	context.profiler.StartPhase("reopt_pre_tooling");
 	plan = GenerateProjectionMaps(move(plan));
@@ -213,6 +224,15 @@ unique_ptr<LogicalOperator> ReOptimizer::PerformPartialPlan(unique_ptr<LogicalOp
 	// Printer::Print("-----------------------------\n\n");
 
 	return plan;
+}
+
+idx_t ReOptimizer::GetTrueCost(LogicalOperator &plan) {
+	idx_t cost = 0;
+	vector<LogicalOperator *> joins = ExtractJoinOperators(plan);
+	for (LogicalOperator *join : joins) {
+		cost += GetTrueCardinality(*join);
+	}
+	return cost;
 }
 
 vector<LogicalOperator *> ReOptimizer::ExtractJoinOperators(LogicalOperator &plan) {
@@ -743,13 +763,13 @@ bool ReOptimizer::ReplaceLogicalOperator(LogicalOperator &plan, LogicalOperator 
 		return true;
 	}
 	// enter recursion until the operator is found
-	bool done;
+	bool recursion_done;
 	for (auto &child : plan.children) {
-		done = ReplaceLogicalOperator(*child.get(), old_op, table, depth + 1);
-		if (done)
+		recursion_done = ReplaceLogicalOperator(*child.get(), old_op, table, depth + 1);
+		if (recursion_done)
 			break;
 	}
-	return done;
+	return recursion_done;
 }
 
 void ReOptimizer::FixColumnBindings(LogicalOperator &plan) {
@@ -892,8 +912,6 @@ void ReOptimizer::FixColumnBindings(Expression *expr) {
 	}
 }
 
-// FIXME: getting cardinality from data_storage only works on autocommit, assume no transactions for now
-// this might be because of the fact that cardinality is atomic?
 unique_ptr<QueryResult> ReOptimizer::ExecuteSubQuery(const string subquery, bool enable_profiler) {
 	context.subquery = true;
 	context.transaction.Commit();
