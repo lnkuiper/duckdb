@@ -33,12 +33,12 @@ ReOptimizer::ReOptimizer(ClientContext &context, Binder &binder) : context(conte
 }
 
 unique_ptr<LogicalOperator> ReOptimizer::ReOptimize(unique_ptr<LogicalOperator> plan, const string query) {
-	compute_cost = true;
+	// compute_cost = false;
 	const string tablename_prefix = "_reopt_temp_" + to_string(hash<string>{}(query));
 	// re-optimization loop
 	for (int iter = 0; true; iter++) {
 		const string temp_table_name = tablename_prefix + "_" + to_string(iter);
-		plan = AlgorithmBaseline(move(plan));
+		plan = AlgorithmJoinsOnly(move(plan), temp_table_name);
 		if (done) {
 			break;
 		}
@@ -142,7 +142,7 @@ void ReOptimizer::SetTrueCardinality(LogicalOperator &plan, LogicalOperator &sub
 
 unique_ptr<LogicalOperator> ReOptimizer::SimulatedReOptimize(unique_ptr<LogicalOperator> plan, const string query) {
 	idx_t minimum_remaining_plan_size = 2;
-	idx_t q_error_threshold = 32;
+	idx_t q_error_threshold = 8;
 
 	const string tablename_prefix = "_reopt_temp_" + to_string(hash<string>{}(query));
 
