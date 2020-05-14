@@ -38,7 +38,7 @@ unique_ptr<LogicalOperator> ReOptimizer::ReOptimize(unique_ptr<LogicalOperator> 
 	// re-optimization loop
 	for (int iter = 0; true; iter++) {
 		const string temp_table_name = tablename_prefix + "_" + to_string(iter);
-		plan = AlgorithmJoinsOnly(move(plan), temp_table_name);
+		plan = AlgorithmBaseline(move(plan));
 		if (done) {
 			break;
 		}
@@ -49,6 +49,11 @@ unique_ptr<LogicalOperator> ReOptimizer::ReOptimize(unique_ptr<LogicalOperator> 
 		plan_cost += GetTrueCost(*plan);
 		Printer::Print(to_string(plan_cost));
 	}
+	return plan;
+}
+
+unique_ptr<LogicalOperator> ReOptimizer::AlgorithmBaseline(unique_ptr<LogicalOperator> plan) {
+	done = true;
 	return plan;
 }
 

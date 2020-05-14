@@ -27,6 +27,8 @@ public:
 	unique_ptr<LogicalOperator> SimulatedReOptimize(unique_ptr<LogicalOperator> plan, const string query);
 
 private:
+	//! Baseline DuckDB
+	unique_ptr<LogicalOperator> AlgorithmBaseline(unique_ptr<LogicalOperator> plan);
 	//! Simple re-optimization strategy that performs all filter operations, optimizes, then executes the rest of the plan
 	unique_ptr<LogicalOperator> AlgorithmFiltersOnly(unique_ptr<LogicalOperator> plan, const string temporary_table_name);
 	//! Simple re-optimization strategy that joins 2 tables at a time
