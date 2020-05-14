@@ -183,7 +183,6 @@ idx_t ReOptimizer::GetTrueCardinality(LogicalOperator &subquery_plan) {
 	vector<string> queried_tables;
 	vector<string> where_conditions;
 	string subquery = "SELECT COUNT(*) FROM (" + CreateSubQuery(subquery_plan, queried_tables, where_conditions, false) + ") AS subquery;";
-	Printer::Print(subquery);
 	auto result = ExecuteSubQuery(subquery, false);
 	MaterializedQueryResult *mqr = static_cast<MaterializedQueryResult *>(result.get());
 	Value count = mqr->collection.GetValue(0, 0);
