@@ -38,7 +38,7 @@ unique_ptr<LogicalOperator> ReOptimizer::ReOptimize(unique_ptr<LogicalOperator> 
 	// re-optimization loop
 	for (int iter = 0; true; iter++) {
 		const string temp_table_name = tablename_prefix + "_" + to_string(iter);
-		plan = AlgorithmJoinsOnly(move(plan), temp_table_name);
+		plan = AlgorithmOneStep(move(plan), temp_table_name);
 		if (done) {
 			break;
 		}
@@ -192,9 +192,9 @@ idx_t ReOptimizer::GetTrueCardinality(LogicalOperator &subquery_plan) {
 unique_ptr<LogicalOperator> ReOptimizer::PerformPartialPlan(unique_ptr<LogicalOperator> plan,
 															LogicalOperator *subquery_plan,
                                                             const string temporary_table_name) {
-	// Printer::Print("\n----------------------------- before");
-	// plan->Print();
-	// Printer::Print("-----------------------------\n");
+	Printer::Print("\n----------------------------- before");
+	plan->Print();
+	Printer::Print("-----------------------------\n");
 
 	if (compute_cost) {
 		binding_name_mapping.clear();
@@ -216,7 +216,7 @@ unique_ptr<LogicalOperator> ReOptimizer::PerformPartialPlan(unique_ptr<LogicalOp
 	ExecuteSubQuery(subquery, true);
 	context.profiler.EndPhase();
 
-	// Printer::Print(subquery);
+	Printer::Print(subquery);
 
 	context.profiler.StartPhase("reopt_post_tooling");
 	// InjectCardinalities(*subquery_plan, temporary_table_name);
@@ -226,9 +226,9 @@ unique_ptr<LogicalOperator> ReOptimizer::PerformPartialPlan(unique_ptr<LogicalOp
 	plan = ClearLeftProjectionMaps(move(plan));
 	context.profiler.EndPhase();
 
-	// Printer::Print("\n----------------------------- after");
-	// plan->Print();
-	// Printer::Print("-----------------------------\n\n");
+	Printer::Print("\n----------------------------- after");
+	plan->Print();
+	Printer::Print("-----------------------------\n\n");
 
 	return plan;
 }
