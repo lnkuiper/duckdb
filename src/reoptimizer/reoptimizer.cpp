@@ -130,13 +130,14 @@ unique_ptr<LogicalOperator> ReOptimizer::AlgorithmNStep(idx_t n, unique_ptr<Logi
 															const string temporary_table_name) {
 	// leave at least 3 tables remaining after an iteration, else do the rest in 1 go
 	idx_t gets = CountOperatorType(*plan, LogicalOperatorType::GET);
-	if (gets - (n - 1) >= 3) {
+	if (gets - (n - 1) < 3) {
 		done = true;
 		return plan;
 	}
 
 	vector<LogicalOperator *> joins = ExtractJoinOperators(*plan);
 	idx_t chosen_index = joins.size();
+	idx_t chosen_gets = gets;
 	for (idx_t i = 1; i < joins.size(); i++) {
 		LogicalOperator *join = joins[i];
 		idx_t join_gets = CountOperatorType(*join, LogicalOperatorType::GET);
@@ -146,11 +147,13 @@ unique_ptr<LogicalOperator> ReOptimizer::AlgorithmNStep(idx_t n, unique_ptr<Logi
 			break;
 		}
 		// keep track of join with lowest # of tables in case we dont find a join with n tables
-		if (join_gets < gets && join_gets >= n)
+		if (join_gets < chosen_gets && join_gets >= n) {
 			chosen_index = i;
+			chosen_gets = join_gets;
+		}
 	}
-	// we were not able to find a suitable join, execute the rest in 1 go
-	if (chosen_index == joins.size()) {
+	// the joins we chose will leave less than 3 tables remaining, just execute the rest
+	if (gets - (chosen_gets - 1) < 3) {
 		done = true;
 		return plan;
 	}
