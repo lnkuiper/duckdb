@@ -38,7 +38,7 @@ unique_ptr<LogicalOperator> ReOptimizer::ReOptimize(unique_ptr<LogicalOperator> 
 	// re-optimization loop
 	for (int iter = 0; true; iter++) {
 		const string temp_table_name = tablename_prefix + "_" + to_string(iter);
-		plan = AlgorithmOneStep(move(plan), temp_table_name);
+		plan = AlgorithmNStep(2, move(plan), temp_table_name);
 		if (done) {
 			break;
 		}
@@ -118,16 +118,25 @@ unique_ptr<LogicalOperator> ReOptimizer::AlgorithmOneStep(unique_ptr<LogicalOper
 	return plan;
 }
 
-unique_ptr<LogicalOperator> ReOptimizer::AlgorithmXStep(unique_ptr<LogicalOperator> plan,
+unique_ptr<LogicalOperator> ReOptimizer::AlgorithmNStep(idx_t n, unique_ptr<LogicalOperator> plan,
 															const string temporary_table_name) {
-	
-	vector<LogicalOperator *> joins = ExtractJoinOperators(*plan);
-	if (joins.size() <= 2) {
+	if (CountOperatorType(*plan, LogicalOperatorType::GET) <= n) {
 		done = true;
 		return plan;
 	}
 
-	plan = PerformPartialPlan(move(plan), joins.back(), temporary_table_name);
+	vector<LogicalOperator *> joins = ExtractJoinOperators(*plan);
+	if (joins.size() <= n) {
+		done = true;
+		return plan;
+	}
+
+	for (LogicalOperator *join : joins) {
+		if (CountOperatorType(*join, LogicalOperatorType::GET) == n) {
+			plan = PerformPartialPlan(move(plan), join, temporary_table_name);
+			break;
+		}
+	}
 
 	context.profiler.StartPhase("optimizer");
 	plan = CallOptimizer(move(plan));
@@ -345,16 +354,16 @@ static vector<ColumnBinding> GetColumnBindings(LogicalComparisonJoin &join) {
 	return cbs;
 }
 
-static idx_t CountJoinOperators(LogicalOperator &plan) {
-	idx_t count = plan.type == LogicalOperatorType::COMPARISON_JOIN;
+static idx_t CountOperatorType(LogicalOperator &plan, LogicalOperatorType type) {
+	idx_t count = plan.type == type;
 	for (auto &child : plan.children) {
-		count += CountJoinOperators(*child);
+		count += CountOperatorType(*child, type);
 	}
 	return count;
 }
 
 unique_ptr<LogicalOperator> ReOptimizer::GenerateProjectionMaps(unique_ptr<LogicalOperator> plan) {
-	if (CountJoinOperators(*plan) == 0)
+	if (CountOperatorType(*plan, LogicalOperatorType::COMPARISON_JOIN) == 0)
 		return plan;
 	// store the column bindings that are needed by the parents of the child join
 	vector<ColumnBinding> column_bindings;
