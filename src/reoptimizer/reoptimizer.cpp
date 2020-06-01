@@ -33,12 +33,12 @@ ReOptimizer::ReOptimizer(ClientContext &context, Binder &binder) : context(conte
 }
 
 unique_ptr<LogicalOperator> ReOptimizer::ReOptimize(unique_ptr<LogicalOperator> plan, const string query) {
-	// compute_cost = false;
+	// compute_cost = true;
 	const string tablename_prefix = "_reopt_temp_" + to_string(hash<string>{}(query));
 	// re-optimization loop
 	for (int iter = 0; true; iter++) {
 		const string temp_table_name = tablename_prefix + "_" + to_string(iter);
-		plan = AlgorithmNStep(3, move(plan), temp_table_name);
+		plan = AlgorithmSmartStep(3, move(plan), temp_table_name);
 		if (done) {
 			break;
 		}
@@ -152,7 +152,7 @@ unique_ptr<LogicalOperator> ReOptimizer::AlgorithmNStep(idx_t n, unique_ptr<Logi
 			chosen_gets = join_gets;
 		}
 	}
-	// the joins we chose will leave less than 3 tables remaining, just execute the rest
+	// the join we chose will leave less than 3 tables remaining, just execute the rest
 	if (gets - (chosen_gets - 1) < 3) {
 		done = true;
 		return plan;
@@ -160,6 +160,53 @@ unique_ptr<LogicalOperator> ReOptimizer::AlgorithmNStep(idx_t n, unique_ptr<Logi
 
 	// we were able to find a suitable join
 	plan = PerformPartialPlan(move(plan), joins[chosen_index], temporary_table_name);
+
+	context.profiler.StartPhase("optimizer");
+	plan = CallOptimizer(move(plan));
+	context.profiler.EndPhase();
+
+	return plan;
+}
+
+unique_ptr<LogicalOperator> ReOptimizer::AlgorithmSmartStep(idx_t n, unique_ptr<LogicalOperator> plan,
+															const string temporary_table_name) {
+	// if there are less than 'n' risky operators, execute the rest of the plan
+	idx_t count = plan->RiskyOperatorCount();
+	if (count <= n) {
+		done = true;
+		return plan;
+	}
+	// find the child of a _somewhat_ risky join
+	vector<LogicalOperator *> joins = ExtractJoinOperators(*plan);
+	LogicalOperator *chosen_join = joins[0];
+	idx_t chosen_cardinality = 0;
+	idx_t chosen_count = count;
+	for (idx_t i = 1; i < joins.size(); i++) {
+		LogicalOperator *join = joins[i];
+		idx_t join_count = join->RiskyOperatorCount();
+		// find the operator with the lowest risky operator count greater than 'n'
+		if (join_count > n && join_count <= chosen_count) {
+			chosen_count = join_count;
+			// its child with the highest cardinality will be selected for execution 
+			idx_t left_cardinality = join->children[0]->EstimateCardinality();
+			if (left_cardinality > chosen_cardinality) {
+				chosen_cardinality = left_cardinality;
+				chosen_join = join->children[0].get();
+			}
+			idx_t right_cardinality = join->children[1]->EstimateCardinality();
+			if (right_cardinality > chosen_cardinality) {
+				chosen_cardinality = right_cardinality;
+				chosen_join = join->children[1].get();
+			}
+		}
+	}
+	// no suitable join was found, execute the rest
+	if (chosen_join->RiskyOperatorCount() == count) {
+		done = true;
+		return plan;
+	}
+	// we were able to find a suitable join
+	plan = PerformPartialPlan(move(plan), chosen_join, temporary_table_name);
 
 	context.profiler.StartPhase("optimizer");
 	plan = CallOptimizer(move(plan));

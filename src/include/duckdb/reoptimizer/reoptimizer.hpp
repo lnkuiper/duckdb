@@ -37,6 +37,8 @@ private:
 	unique_ptr<LogicalOperator> AlgorithmOneStep(unique_ptr<LogicalOperator> plan, const string temporary_table_name);
 	//! Simple re-optimization strategy that performs joins between X tables at a time
 	unique_ptr<LogicalOperator> AlgorithmNStep(idx_t n, unique_ptr<LogicalOperator> plan, const string temporary_table_name);
+	//! Slightly more sophisticated re-optimization strategy that actually makes decisions
+	unique_ptr<LogicalOperator> AlgorithmSmartStep(idx_t n, unique_ptr<LogicalOperator> plan, const string temporary_table_name);
 	//! Set true cardinality of an operator by measuring it
 	void SetTrueCardinality(LogicalOperator &plan, LogicalOperator &subquery_plan);
 	//! One iteration of the re-optimization procedure

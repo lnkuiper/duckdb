@@ -82,6 +82,8 @@ idx_t LogicalOperator::EstimateCost() {
 	idx_t cost = 0;
 	if (type == LogicalOperatorType::COMPARISON_JOIN) {
 		cost += EstimateCardinality();
+	} else {
+		return cost;
 	}
 	for (auto &child : children) {
 		cost += child->EstimateCost();

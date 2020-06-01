@@ -72,6 +72,21 @@ public:
 	}
 
 	idx_t EstimateCost();
+	idx_t RiskyOperatorCount() {
+		switch (type) {
+		case LogicalOperatorType::FILTER:
+			return 1;
+		case LogicalOperatorType::COMPARISON_JOIN: {
+			idx_t result = 0;
+			for (auto &child : children) {
+				result += child->RiskyOperatorCount();
+			}
+			return result;
+		}
+		default:
+			return 0;
+		}
+	}
 
 protected:
 	//! Resolve types for this specific operator
