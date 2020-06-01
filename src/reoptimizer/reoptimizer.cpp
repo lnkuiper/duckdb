@@ -118,6 +118,14 @@ unique_ptr<LogicalOperator> ReOptimizer::AlgorithmOneStep(unique_ptr<LogicalOper
 	return plan;
 }
 
+static idx_t CountOperatorType(LogicalOperator &plan, LogicalOperatorType type) {
+	idx_t count = plan.type == type;
+	for (auto &child : plan.children) {
+		count += CountOperatorType(*child, type);
+	}
+	return count;
+}
+
 unique_ptr<LogicalOperator> ReOptimizer::AlgorithmNStep(idx_t n, unique_ptr<LogicalOperator> plan,
 															const string temporary_table_name) {
 	// leave at least 3 tables remaining after an iteration, else do the rest in 1 go
@@ -364,14 +372,6 @@ static vector<ColumnBinding> GetColumnBindings(LogicalComparisonJoin &join) {
 			cbs.push_back(cb);
 	}
 	return cbs;
-}
-
-static idx_t CountOperatorType(LogicalOperator &plan, LogicalOperatorType type) {
-	idx_t count = plan.type == type;
-	for (auto &child : plan.children) {
-		count += CountOperatorType(*child, type);
-	}
-	return count;
 }
 
 unique_ptr<LogicalOperator> ReOptimizer::GenerateProjectionMaps(unique_ptr<LogicalOperator> plan) {
