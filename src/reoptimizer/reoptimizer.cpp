@@ -118,6 +118,24 @@ unique_ptr<LogicalOperator> ReOptimizer::AlgorithmOneStep(unique_ptr<LogicalOper
 	return plan;
 }
 
+unique_ptr<LogicalOperator> ReOptimizer::AlgorithmXStep(unique_ptr<LogicalOperator> plan,
+															const string temporary_table_name) {
+	
+	vector<LogicalOperator *> joins = ExtractJoinOperators(*plan);
+	if (joins.size() <= 2) {
+		done = true;
+		return plan;
+	}
+
+	plan = PerformPartialPlan(move(plan), joins.back(), temporary_table_name);
+
+	context.profiler.StartPhase("optimizer");
+	plan = CallOptimizer(move(plan));
+	context.profiler.EndPhase();
+
+	return plan;
+}
+
 static bool QErrorOverThreshold(idx_t x, idx_t y, idx_t thresh) {
 	if (std::min(x, y) == 0)
 		return true;
@@ -144,7 +162,7 @@ unique_ptr<LogicalOperator> ReOptimizer::SimulatedReOptimize(unique_ptr<LogicalO
 	compute_cost = true;
 
 	idx_t minimum_remaining_plan_size = 2;
-	idx_t q_error_threshold = 8;
+	idx_t q_error_threshold = 16;
 
 	const string tablename_prefix = "_reopt_temp_" + to_string(hash<string>{}(query));
 
@@ -200,9 +218,9 @@ idx_t ReOptimizer::GetTrueCardinality(LogicalOperator &subquery_plan) {
 unique_ptr<LogicalOperator> ReOptimizer::PerformPartialPlan(unique_ptr<LogicalOperator> plan,
 															LogicalOperator *subquery_plan,
                                                             const string temporary_table_name) {
-	Printer::Print("\n----------------------------- before");
-	plan->Print();
-	Printer::Print("-----------------------------\n");
+	// Printer::Print("\n----------------------------- before");
+	// plan->Print();
+	// Printer::Print("-----------------------------\n");
 
 	if (compute_cost) {
 		binding_name_mapping.clear();
@@ -224,7 +242,7 @@ unique_ptr<LogicalOperator> ReOptimizer::PerformPartialPlan(unique_ptr<LogicalOp
 	ExecuteSubQuery(subquery, true);
 	context.profiler.EndPhase();
 
-	Printer::Print(subquery);
+	// Printer::Print(subquery);
 
 	context.profiler.StartPhase("reopt_post_tooling");
 	// InjectCardinalities(*subquery_plan, temporary_table_name);
@@ -234,9 +252,9 @@ unique_ptr<LogicalOperator> ReOptimizer::PerformPartialPlan(unique_ptr<LogicalOp
 	plan = ClearLeftProjectionMaps(move(plan));
 	context.profiler.EndPhase();
 
-	Printer::Print("\n----------------------------- after");
-	plan->Print();
-	Printer::Print("-----------------------------\n\n");
+	// Printer::Print("\n----------------------------- after");
+	// plan->Print();
+	// Printer::Print("-----------------------------\n\n");
 
 	return plan;
 }

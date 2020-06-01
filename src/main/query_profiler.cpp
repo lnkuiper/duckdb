@@ -23,7 +23,6 @@ void QueryProfiler::StartQuery(string query, SQLStatement &statement) {
 	if (statement.type != StatementType::PREPARE_STATEMENT) {
 		return;
 	}
-	Printer::Print("!!! START !!!");
 	this->running = true;
 	this->query = query;
 	tree_map.clear();
@@ -40,7 +39,6 @@ void QueryProfiler::EndQuery() {
 	if (!enabled || !running) {
 		return;
 	}
-	Printer::Print("!!! END !!!");
 	main_query.End();
 	this->running = false;
 	// print the query after termination, if this is enabled
@@ -76,7 +74,6 @@ void QueryProfiler::StartPhase(string new_phase) {
 		// when there are previous phases, we prefix the current phase with those phases
 		new_phase = prefix + new_phase;
 	}
-	Printer::Print("START: " + new_phase);
 
 	// start a new phase
 	phase_stack.push_back(new_phase);
@@ -89,7 +86,6 @@ void QueryProfiler::EndPhase() {
 		return;
 	}
 	assert(phase_stack.size() > 0);
-	Printer::Print("ENDPHASE");
 
 	// end the timer
 	phase_profiler.End();
