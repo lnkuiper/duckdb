@@ -43,7 +43,7 @@ unique_ptr<LogicalOperator> ReOptimizer::ReOptimize(unique_ptr<LogicalOperator> 
 			break;
 		}
 	}
-	if (compute_cost && (plan->type == LogicalOperatorType::PROJECTION || plan->children[0]->type == LogicalOperatorType::PROJECTION)) { // && proj
+	if (compute_cost && (plan->type == LogicalOperatorType::PROJECTION || plan->children[0]->type == LogicalOperatorType::PROJECTION)) {
 		binding_name_mapping.clear();
 		FindAliases(*plan);
 		plan_cost += GetTrueCost(*plan);
@@ -141,6 +141,8 @@ void ReOptimizer::SetTrueCardinality(LogicalOperator &plan, LogicalOperator &sub
 }
 
 unique_ptr<LogicalOperator> ReOptimizer::SimulatedReOptimize(unique_ptr<LogicalOperator> plan, const string query) {
+	compute_cost = true;
+
 	idx_t minimum_remaining_plan_size = 2;
 	idx_t q_error_threshold = 8;
 
@@ -175,6 +177,12 @@ unique_ptr<LogicalOperator> ReOptimizer::SimulatedReOptimize(unique_ptr<LogicalO
 
 		if (nodes.size() <= minimum_remaining_plan_size)
 			break;
+	}
+	if (compute_cost && (plan->type == LogicalOperatorType::PROJECTION || plan->children[0]->type == LogicalOperatorType::PROJECTION)) {
+		binding_name_mapping.clear();
+		FindAliases(*plan);
+		plan_cost += GetTrueCost(*plan);
+		Printer::Print(to_string(plan_cost));
 	}
 	return plan;
 }
