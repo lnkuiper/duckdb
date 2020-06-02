@@ -80,22 +80,6 @@ public:
 		return cost;
 	}
 
-	idx_t EstimateCostWithTrueCardinalities() {
-		idx_t cost = 0;
-		if (type == LogicalOperatorType::COMPARISON_JOIN)
-			cost += true_cardinality;
-		for (auto &child : children)
-			cost += child->EstimateCostWithTrueCardinalities();
-		return cost;
-	}
-
-	void ClearMeasuredCardinalities() {
-		true_cardinality = EstimateCardinality();
-		for (auto &child : children) {
-			child->ClearMeasuredCardinalities();
-		}
-	}
-
 	idx_t RiskyOperatorCount() {
 		idx_t result = 0;
 		switch (type) {
