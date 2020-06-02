@@ -176,7 +176,6 @@ unique_ptr<LogicalOperator> ReOptimizer::AlgorithmSmartStep(idx_t n, unique_ptr<
 		done = true;
 		return plan;
 	}
-	Printer::Print("enough risky ops");
 	// find the child of a _somewhat_ risky join
 	vector<LogicalOperator *> joins = ExtractJoinOperators(*plan);
 	idx_t chosen_parent_risky_count = total_risky_count;
@@ -201,6 +200,11 @@ unique_ptr<LogicalOperator> ReOptimizer::AlgorithmSmartStep(idx_t n, unique_ptr<
 		// find riskiest child with highest estimated cardinality
 		for (auto &child : join->children) {
 			idx_t child_risk = child->RiskyOperatorCount();
+
+			// reset value if we find a higher risky count
+			if (child_risk > chosen_child_risky_count)
+				chosen_child_cardinality = 0;
+
 			if (child_risk >= chosen_child_risky_count) {
 				chosen_child_risky_count = child_risk;
 				idx_t child_cardinality = child->EstimateCardinality();
@@ -381,9 +385,9 @@ idx_t ReOptimizer::GetTrueCardinality(LogicalOperator &subquery_plan) {
 unique_ptr<LogicalOperator> ReOptimizer::PerformPartialPlan(unique_ptr<LogicalOperator> plan,
 															LogicalOperator *subquery_plan,
                                                             const string temporary_table_name) {
-	Printer::Print("\n----------------------------- before");
-	plan->Print();
-	Printer::Print("-----------------------------\n");
+	// Printer::Print("\n----------------------------- before");
+	// plan->Print();
+	// Printer::Print("-----------------------------\n");
 
 	if (compute_cost) {
 		binding_name_mapping.clear();
@@ -405,7 +409,7 @@ unique_ptr<LogicalOperator> ReOptimizer::PerformPartialPlan(unique_ptr<LogicalOp
 	ExecuteSubQuery(subquery, true);
 	context.profiler.EndPhase();
 
-	Printer::Print(subquery);
+	// Printer::Print(subquery);
 
 	context.profiler.StartPhase("reopt_post_tooling");
 	// InjectCardinalities(*subquery_plan, temporary_table_name);
@@ -415,9 +419,9 @@ unique_ptr<LogicalOperator> ReOptimizer::PerformPartialPlan(unique_ptr<LogicalOp
 	plan = ClearLeftProjectionMaps(move(plan));
 	context.profiler.EndPhase();
 
-	Printer::Print("\n----------------------------- after");
-	plan->Print();
-	Printer::Print("-----------------------------\n\n");
+	// Printer::Print("\n----------------------------- after");
+	// plan->Print();
+	// Printer::Print("-----------------------------\n\n");
 
 	return plan;
 }
