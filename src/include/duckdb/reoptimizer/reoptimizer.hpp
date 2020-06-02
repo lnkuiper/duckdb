@@ -25,6 +25,8 @@ public:
 	unique_ptr<LogicalOperator> ReOptimize(unique_ptr<LogicalOperator> plan, const string query);
 	//! Simulated re-optimization similar to Stonebraker paper
 	unique_ptr<LogicalOperator> SimulatedReOptimize(unique_ptr<LogicalOperator> plan, const string query);
+	//! Simulated re-optimization, but with a cost Q-error
+	unique_ptr<LogicalOperator> SimulatedReOptimizeCost(unique_ptr<LogicalOperator> plan, const string query, double thresh);
 
 private:
 	//! Baseline DuckDB

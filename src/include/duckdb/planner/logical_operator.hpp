@@ -71,22 +71,46 @@ public:
 		return max_cardinality;
 	}
 
-	idx_t EstimateCost();
+	idx_t EstimateCost() {
+		idx_t cost = 0;
+		if (type == LogicalOperatorType::COMPARISON_JOIN)
+			cost += EstimateCardinality();
+		for (auto &child : children)
+			cost += child->EstimateCost();
+		return cost;
+	}
+
+	idx_t EstimateCostWithTrueCardinalities() {
+		idx_t cost = 0;
+		if (type == LogicalOperatorType::COMPARISON_JOIN)
+			cost += true_cardinality;
+		for (auto &child : children)
+			cost += child->EstimateCostWithTrueCardinalities();
+		return cost;
+	}
+
+	void ClearMeasuredCardinalities() {
+		true_cardinality = EstimateCardinality();
+		for (auto &child : children) {
+			child->ClearMeasuredCardinalities();
+		}
+	}
+
 	idx_t RiskyOperatorCount() {
+		idx_t result = 0;
 		switch (type) {
 		case LogicalOperatorType::FILTER:
 			return 1;
-		case LogicalOperatorType::COMPARISON_JOIN: {
-			idx_t result = 0;
+		case LogicalOperatorType::COMPARISON_JOIN:
+			result += 1;
+		default:
 			for (auto &child : children) {
 				result += child->RiskyOperatorCount();
 			}
 			return result;
 		}
-		default:
-			return 0;
-		}
 	}
+
 
 protected:
 	//! Resolve types for this specific operator
