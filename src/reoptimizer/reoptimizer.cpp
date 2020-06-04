@@ -38,7 +38,7 @@ unique_ptr<LogicalOperator> ReOptimizer::ReOptimize(unique_ptr<LogicalOperator> 
 	// re-optimization loop
 	for (int iter = 0; true; iter++) {
 		const string temp_table_name = tablename_prefix + "_" + to_string(iter);
-		plan = SimulatedReOptimizeCost(move(plan), temp_table_name, 1.1);
+		plan = AlgorithmSmartStep(2, move(plan), temp_table_name);
 		if (done) {
 			break;
 		}
