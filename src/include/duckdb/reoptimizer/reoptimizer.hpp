@@ -43,6 +43,8 @@ private:
 	unique_ptr<LogicalOperator> AlgorithmSmartStep(idx_t n, unique_ptr<LogicalOperator> plan, const string temporary_table_name);
 	//! Set true cardinality of an operator by measuring it
 	void SetTrueCardinality(LogicalOperator &plan, LogicalOperator &subquery_plan);
+	//! Computes remaining cost (excluding the tree under the subquery_plan node)
+	idx_t RemainingCost(LogicalOperator &plan, LogicalOperator &subquery_plan, idx_t true_cardinality);
 	//! One iteration of the re-optimization procedure
 	unique_ptr<LogicalOperator> PerformPartialPlan(unique_ptr<LogicalOperator> plan, LogicalOperator *subquery_plan, const string temporary_table_name);
 	//! Gets the true cost of a plan by querying for COUNT(*)

@@ -176,7 +176,6 @@ unique_ptr<LogicalOperator> ReOptimizer::AlgorithmSmartStep(idx_t n, unique_ptr<
 		done = true;
 		return plan;
 	}
-	Printer::Print("enough risky ops");
 	// find the child of a _somewhat_ risky join
 	vector<LogicalOperator *> joins = ExtractJoinOperators(*plan);
 	idx_t chosen_parent_risky_count = total_risky_count;
@@ -201,6 +200,11 @@ unique_ptr<LogicalOperator> ReOptimizer::AlgorithmSmartStep(idx_t n, unique_ptr<
 		// find riskiest child with highest estimated cardinality
 		for (auto &child : join->children) {
 			idx_t child_risk = child->RiskyOperatorCount();
+
+			// reset value if we find a higher risky count
+			if (child_risk > chosen_child_risky_count)
+				chosen_child_cardinality = 0;
+
 			if (child_risk >= chosen_child_risky_count) {
 				chosen_child_risky_count = child_risk;
 				idx_t child_cardinality = child->EstimateCardinality();
@@ -240,13 +244,8 @@ void ReOptimizer::SetTrueCardinality(LogicalOperator &plan, LogicalOperator &sub
 		auto &child = plan.children[child_i];
 		if (!(child->type == subquery_plan.type && child->ParamsToString() == subquery_plan.ParamsToString()))
 			continue;
-		// set true cardinality of this node, and its children
+		// we found the operator, set cardinality
 		plan.children[child_i]->true_cardinality = GetTrueCardinality(*child);
-		for (auto &child : plan.children) {
-			if (child->type == LogicalOperatorType::GET)
-				continue;
-			SetTrueCardinality(subquery_plan, *child);
-		}
 		return;
 	}
 	// enter recursion until the operator is found
@@ -306,18 +305,28 @@ static bool QErrorOverThreshold(idx_t x, idx_t y, double thresh) {
 	return std::max(x, y) / std::min(x, y) > thresh;
 }
 
+idx_t ReOptimizer::RemainingCost(LogicalOperator &plan, LogicalOperator &subquery_plan, idx_t true_cardinality) {
+	if (plan.children.empty())
+		return 0;
+	if (plan.type == subquery_plan.type && plan.ParamsToString() == subquery_plan.ParamsToString()) {
+		// we found the operator, return true cardinality, skippings its children
+		return true_cardinality;
+	}
+	idx_t result = 0;
+	if (plan.type == LogicalOperatorType::COMPARISON_JOIN)
+		result += plan.EstimateCardinality();
+	for (auto &child : plan.children)
+		result += RemainingCost(*child.get(), subquery_plan, true_cardinality);
+	return result;
+}
+
+// TODO: perhaps make a hybrid with this and SmartStep? - run like this first though!
 unique_ptr<LogicalOperator> ReOptimizer::SimulatedReOptimizeCost(unique_ptr<LogicalOperator> plan, const string query, double thresh) {
 	// compute_cost = true;
 	idx_t minimum_remaining_plan_size = 2;
 
 	const string tablename_prefix = "_reopt_temp_" + to_string(hash<string>{}(query));
-
 	for (int iter = 0; true; iter++) {
-		// save initial estimated plan cost in this iteration
-		plan->ClearMeasuredCardinalities();
-		idx_t initial_plan_cost = plan->EstimateCostWithTrueCardinalities();
-
-		// set init vals
 		binding_name_mapping.clear();
 		FindAliases(*plan);
 
@@ -329,12 +338,18 @@ unique_ptr<LogicalOperator> ReOptimizer::SimulatedReOptimizeCost(unique_ptr<Logi
 			LogicalOperator *node = nodes.back();
 			nodes.pop_back();
 
+			// save estimated cost of remaining plan (if 'node' was materialized)
+			idx_t estimated_plan_cost = RemainingCost(*plan, *node, node->EstimateCardinality());
+
 			// set true cardinalities of the node and its children
 			context.profiler.StartPhase("collect_statistics");
-			SetTrueCardinality(*plan, *node);
+			idx_t true_cardinality = GetTrueCardinality(*node);
 			context.profiler.EndPhase();
+
+			// re-compute estimated cost of remaining plan given the true cardinality of 'node'
+			idx_t updated_plan_cost = RemainingCost(*plan, *node, true_cardinality);
 			
-			if (QErrorOverThreshold(plan->EstimateCostWithTrueCardinalities(), initial_plan_cost, thresh)) {
+			if (QErrorOverThreshold(updated_plan_cost, estimated_plan_cost, thresh)) {
 				const string temp_table_name = tablename_prefix + "_" + to_string(iter);
 				plan = PerformPartialPlan(move(plan), node, temp_table_name);
 
@@ -342,8 +357,6 @@ unique_ptr<LogicalOperator> ReOptimizer::SimulatedReOptimizeCost(unique_ptr<Logi
 				plan = CallOptimizer(move(plan));
 				context.profiler.EndPhase();
 				break;
-			} else {
-				plan->ClearMeasuredCardinalities();
 			}
 		}
 
@@ -372,9 +385,9 @@ idx_t ReOptimizer::GetTrueCardinality(LogicalOperator &subquery_plan) {
 unique_ptr<LogicalOperator> ReOptimizer::PerformPartialPlan(unique_ptr<LogicalOperator> plan,
 															LogicalOperator *subquery_plan,
                                                             const string temporary_table_name) {
-	Printer::Print("\n----------------------------- before");
-	plan->Print();
-	Printer::Print("-----------------------------\n");
+	// Printer::Print("\n----------------------------- before");
+	// plan->Print();
+	// Printer::Print("-----------------------------\n");
 
 	if (compute_cost) {
 		binding_name_mapping.clear();
@@ -396,7 +409,7 @@ unique_ptr<LogicalOperator> ReOptimizer::PerformPartialPlan(unique_ptr<LogicalOp
 	ExecuteSubQuery(subquery, true);
 	context.profiler.EndPhase();
 
-	Printer::Print(subquery);
+	// Printer::Print(subquery);
 
 	context.profiler.StartPhase("reopt_post_tooling");
 	// InjectCardinalities(*subquery_plan, temporary_table_name);
@@ -406,9 +419,9 @@ unique_ptr<LogicalOperator> ReOptimizer::PerformPartialPlan(unique_ptr<LogicalOp
 	plan = ClearLeftProjectionMaps(move(plan));
 	context.profiler.EndPhase();
 
-	Printer::Print("\n----------------------------- after");
-	plan->Print();
-	Printer::Print("-----------------------------\n\n");
+	// Printer::Print("\n----------------------------- after");
+	// plan->Print();
+	// Printer::Print("-----------------------------\n\n");
 
 	return plan;
 }
