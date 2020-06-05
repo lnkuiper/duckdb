@@ -302,7 +302,7 @@ unique_ptr<LogicalOperator> ReOptimizer::SimulatedReOptimize(unique_ptr<LogicalO
 static bool QErrorOverThreshold(idx_t x, idx_t y, double thresh) {
 	if (std::min(x, y) == 0)
 		return true;
-	return std::max(x, y) / std::min(x, y) > thresh;
+	return ((double) std::max(x, y)) / ((double) std::min(x, y)) > thresh;
 }
 
 idx_t ReOptimizer::RemainingCost(LogicalOperator &plan, LogicalOperator &subquery_plan, idx_t true_cardinality) {
