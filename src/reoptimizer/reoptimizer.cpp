@@ -320,9 +320,8 @@ idx_t ReOptimizer::RemainingCost(LogicalOperator &plan, LogicalOperator &subquer
 	return result;
 }
 
-// TODO: perhaps make a hybrid with this and SmartStep? - run like this first though!
 unique_ptr<LogicalOperator> ReOptimizer::SimulatedReOptimizeCost(unique_ptr<LogicalOperator> plan, const string query, double thresh) {
-	// compute_cost = true;
+	compute_cost = true;
 	idx_t minimum_remaining_plan_size = 2;
 
 	const string tablename_prefix = "_reopt_temp_" + to_string(hash<string>{}(query));
