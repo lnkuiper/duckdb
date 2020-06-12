@@ -49,7 +49,6 @@ unique_ptr<LogicalOperator> ReOptimizer::ReOptimize(unique_ptr<LogicalOperator> 
 		plan_cost += GetTrueCost(*plan);
 		Printer::Print(to_string(plan_cost));
 	}
-	Printer::Print("-- DONE");
 	return plan;
 }
 
