@@ -59,6 +59,7 @@ string LogicalFilter::ParamsToString() const {
 	for (auto cb : MapBindings(children[0]->GetColumnBindings(), projection_map)) {
 		result += cb.ToString();
 	}
+	result += to_string(children[0]->EstimateCardinality());
 
 	return result;
 }

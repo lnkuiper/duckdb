@@ -191,7 +191,7 @@ unique_ptr<PreparedStatementData> ClientContext::CreatePreparedStatement(const s
 		Printer::Print("-- START QUERY");
 		Printer::Print(query);
 		ReOptimizer reoptimizer = ReOptimizer(*this, planner.binder);
-		plan = reoptimizer.ReOptimize(move(plan), query);
+		plan = reoptimizer.SimulatedReOptimize(move(plan), query);
 		assert(plan);
 		Printer::Print("-- MATERIALIZE ROOT NOTE");
 		Printer::Print("-- END QUERY\n");

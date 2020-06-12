@@ -46,10 +46,12 @@ string LogicalComparisonJoin::ParamsToString() const {
 	for (ColumnBinding cb : children[0]->GetColumnBindings()) {
 		result += cb.ToString();
 	}
+	result += to_string(children[0]->EstimateCardinality());
 	result += " - ";
 	for (ColumnBinding cb : children[1]->GetColumnBindings()) {
 		result += cb.ToString();
 	}
+	result += to_string(children[1]->EstimateCardinality());
 
 	result += ", l:";
 	for (idx_t i : left_projection_map) {

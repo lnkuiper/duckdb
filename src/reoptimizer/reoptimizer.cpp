@@ -257,7 +257,7 @@ unique_ptr<LogicalOperator> ReOptimizer::SimulatedReOptimize(unique_ptr<LogicalO
 	compute_cost = true;
 
 	idx_t minimum_remaining_plan_size = 2;
-	idx_t q_error_threshold = 16;
+	idx_t q_error_threshold = 32;
 
 	const string tablename_prefix = "_reopt_temp_" + to_string(hash<string>{}(query));
 
@@ -384,9 +384,9 @@ idx_t ReOptimizer::GetTrueCardinality(LogicalOperator &subquery_plan) {
 unique_ptr<LogicalOperator> ReOptimizer::PerformPartialPlan(unique_ptr<LogicalOperator> plan,
 															LogicalOperator *subquery_plan,
                                                             const string temporary_table_name) {
-	// Printer::Print("\n----------------------------- before");
-	// plan->Print();
-	// Printer::Print("-----------------------------\n");
+	Printer::Print("\n----------------------------- before");
+	plan->Print();
+	Printer::Print("-----------------------------\n");
 
 	if (compute_cost) {
 		binding_name_mapping.clear();
@@ -418,9 +418,9 @@ unique_ptr<LogicalOperator> ReOptimizer::PerformPartialPlan(unique_ptr<LogicalOp
 	plan = ClearLeftProjectionMaps(move(plan));
 	context.profiler.EndPhase();
 
-	// Printer::Print("\n----------------------------- after");
-	// plan->Print();
-	// Printer::Print("-----------------------------\n\n");
+	Printer::Print("\n----------------------------- after");
+	plan->Print();
+	Printer::Print("-----------------------------\n\n");
 
 	return plan;
 }
