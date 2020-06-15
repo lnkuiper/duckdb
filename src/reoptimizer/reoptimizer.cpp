@@ -372,6 +372,11 @@ unique_ptr<LogicalOperator> ReOptimizer::SimulatedReOptimizeCost(unique_ptr<Logi
 				context.profiler.StartPhase("optimizer");
 				plan = CallOptimizer(move(plan));
 				context.profiler.EndPhase();
+
+				Printer::Print("\n----------------------------- reoptimized plan");
+				plan->Print();
+				Printer::Print("-----------------------------\n");
+
 				break;
 			}
 		}
@@ -395,7 +400,7 @@ idx_t ReOptimizer::GetTrueCardinality(LogicalOperator &subquery_plan) {
 	auto result = ExecuteSubQuery(subquery, false);
 	MaterializedQueryResult *mqr = static_cast<MaterializedQueryResult *>(result.get());
 	Value count = mqr->collection.GetValue(0, 0);
-	Printer::Print(subquery + " - " + count.ToString());
+	Printer::Print(subquery_plan.ParamsToString() + " - " + count.ToString());
 	return stoi(count.ToString());
 }
 
