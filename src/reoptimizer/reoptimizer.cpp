@@ -378,6 +378,7 @@ idx_t ReOptimizer::GetTrueCardinality(LogicalOperator &subquery_plan) {
 	auto result = ExecuteSubQuery(subquery, false);
 	MaterializedQueryResult *mqr = static_cast<MaterializedQueryResult *>(result.get());
 	Value count = mqr->collection.GetValue(0, 0);
+	Printer::Print(subquery + " - " + count.ToString());
 	return stoi(count.ToString());
 }
 
