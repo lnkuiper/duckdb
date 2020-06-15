@@ -449,6 +449,10 @@ idx_t ReOptimizer::GetTrueCost(LogicalOperator &plan) {
 	for (LogicalOperator *join : joins) {
 		cost += GetTrueCardinality(*join);
 	}
+	vector<LogicalOperator *> filters = ExtractFilterOperators(plan);
+	for (LogicalOperator *filter : filters) {
+		GetTrueCardinality(*filter);
+	}
 	return cost;
 }
 
