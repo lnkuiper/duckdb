@@ -254,7 +254,7 @@ void ReOptimizer::SetTrueCardinality(LogicalOperator &plan, LogicalOperator &sub
 
 unique_ptr<LogicalOperator> ReOptimizer::SimulatedReOptimize(unique_ptr<LogicalOperator> plan, const string query) {
 
-	if (compute_cost && (plan->type == LogicalOperatorType::PROJECTION || plan->children[0]->type == LogicalOperatorType::PROJECTION)) {
+	if (compute_cost) {
 		Printer::Print("-- Initial plan and cardinalities");
 		binding_name_mapping.clear();
 		FindAliases(*plan);
