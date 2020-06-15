@@ -293,6 +293,10 @@ unique_ptr<LogicalOperator> ReOptimizer::SimulatedReOptimize(unique_ptr<LogicalO
 				plan = CallOptimizer(move(plan));
 				context.profiler.EndPhase();
 
+				Printer::Print("\n----------------------------- reoptimized plan");
+				plan->Print();
+				Printer::Print("-----------------------------\n");
+
 				// compute cost for query plan analysis
 				if (compute_cost) {
 					binding_name_mapping.clear();
@@ -372,11 +376,6 @@ unique_ptr<LogicalOperator> ReOptimizer::SimulatedReOptimizeCost(unique_ptr<Logi
 				context.profiler.StartPhase("optimizer");
 				plan = CallOptimizer(move(plan));
 				context.profiler.EndPhase();
-
-				Printer::Print("\n----------------------------- reoptimized plan");
-				plan->Print();
-				Printer::Print("-----------------------------\n");
-
 				break;
 			}
 		}
