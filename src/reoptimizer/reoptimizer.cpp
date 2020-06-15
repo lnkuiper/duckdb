@@ -283,6 +283,14 @@ unique_ptr<LogicalOperator> ReOptimizer::SimulatedReOptimize(unique_ptr<LogicalO
 				context.profiler.StartPhase("optimizer");
 				plan = CallOptimizer(move(plan));
 				context.profiler.EndPhase();
+
+				// compute cost for query plan analysis
+				if (compute_cost) {
+					binding_name_mapping.clear();
+					FindAliases(*plan);
+					plan_cost += GetTrueCost(*plan);
+				}
+
 				break;
 			}
 		}
