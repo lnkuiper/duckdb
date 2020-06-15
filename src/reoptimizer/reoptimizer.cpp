@@ -33,7 +33,6 @@ ReOptimizer::ReOptimizer(ClientContext &context, Binder &binder) : context(conte
 }
 
 unique_ptr<LogicalOperator> ReOptimizer::ReOptimize(unique_ptr<LogicalOperator> plan, const string query) {
-	// compute_cost = true;
 	const string tablename_prefix = "_reopt_temp_" + to_string(hash<string>{}(query));
 	// re-optimization loop
 	for (int iter = 0; true; iter++) {
@@ -254,6 +253,16 @@ void ReOptimizer::SetTrueCardinality(LogicalOperator &plan, LogicalOperator &sub
 }
 
 unique_ptr<LogicalOperator> ReOptimizer::SimulatedReOptimize(unique_ptr<LogicalOperator> plan, const string query) {
+
+	if (compute_cost && (plan->type == LogicalOperatorType::PROJECTION || plan->children[0]->type == LogicalOperatorType::PROJECTION)) {
+		Printer::Print("-- Initial plan and cardinalities");
+		binding_name_mapping.clear();
+		FindAliases(*plan);
+		plan_cost += GetTrueCost(*plan);
+		Printer::Print(to_string(plan_cost));
+		Printer::Print("-- End initial plan\n");
+	}
+
 	compute_cost = true;
 
 	idx_t minimum_remaining_plan_size = 2;
