@@ -253,7 +253,7 @@ void ReOptimizer::SetTrueCardinality(LogicalOperator &plan, LogicalOperator &sub
 }
 
 unique_ptr<LogicalOperator> ReOptimizer::SimulatedReOptimize(unique_ptr<LogicalOperator> plan, const string query) {
-
+	compute_cost = true;
 	if (compute_cost) {
 		Printer::Print("-- Initial plan and cardinalities");
 		binding_name_mapping.clear();
@@ -262,8 +262,6 @@ unique_ptr<LogicalOperator> ReOptimizer::SimulatedReOptimize(unique_ptr<LogicalO
 		Printer::Print(to_string(plan_cost));
 		Printer::Print("-- End initial plan\n");
 	}
-
-	compute_cost = true;
 
 	idx_t minimum_remaining_plan_size = 2;
 	idx_t q_error_threshold = 32;
