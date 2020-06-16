@@ -119,6 +119,8 @@ private:
 	bool compute_cost = false;
 	//! The cost of the plan
 	idx_t plan_cost = 0;
+	//! Total size of materialized results
+	idx_t materialize_size = 0;
 
 };
 

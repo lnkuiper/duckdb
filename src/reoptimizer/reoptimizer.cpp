@@ -33,6 +33,7 @@ ReOptimizer::ReOptimizer(ClientContext &context, Binder &binder) : context(conte
 }
 
 unique_ptr<LogicalOperator> ReOptimizer::ReOptimize(unique_ptr<LogicalOperator> plan, const string query) {
+	// compute_cost = true;
 	const string tablename_prefix = "_reopt_temp_" + to_string(hash<string>{}(query));
 	// re-optimization loop
 	for (int iter = 0; true; iter++) {
@@ -42,12 +43,13 @@ unique_ptr<LogicalOperator> ReOptimizer::ReOptimize(unique_ptr<LogicalOperator> 
 			break;
 		}
 	}
-	if (compute_cost && (plan->type == LogicalOperatorType::PROJECTION || plan->children[0]->type == LogicalOperatorType::PROJECTION)) {
+	if (compute_cost) {
 		binding_name_mapping.clear();
 		FindAliases(*plan);
 		plan_cost += GetTrueCost(*plan);
 		Printer::Print(to_string(plan_cost));
 	}
+	Printer::Print(to_string(materialize_size));
 	return plan;
 }
 
@@ -253,14 +255,14 @@ void ReOptimizer::SetTrueCardinality(LogicalOperator &plan, LogicalOperator &sub
 }
 
 unique_ptr<LogicalOperator> ReOptimizer::SimulatedReOptimize(unique_ptr<LogicalOperator> plan, const string query) {
-	compute_cost = true;
+	// compute_cost = true;
 	if (compute_cost) {
-		Printer::Print("-- Initial plan and cardinalities");
+		// Printer::Print("-- Initial plan and cardinalities");
 		binding_name_mapping.clear();
 		FindAliases(*plan);
 		plan_cost += GetTrueCost(*plan);
-		Printer::Print(to_string(plan_cost));
-		Printer::Print("-- End initial plan\n");
+		// Printer::Print(to_string(plan_cost));
+		// Printer::Print("-- End initial plan\n");
 	}
 
 	idx_t minimum_remaining_plan_size = 2;
@@ -291,16 +293,16 @@ unique_ptr<LogicalOperator> ReOptimizer::SimulatedReOptimize(unique_ptr<LogicalO
 				plan = CallOptimizer(move(plan));
 				context.profiler.EndPhase();
 
-				Printer::Print("\n----------------------------- reoptimized plan");
-				plan->Print();
-				Printer::Print("-----------------------------\n");
+				// Printer::Print("\n----------------------------- reoptimized plan");
+				// plan->Print();
+				// Printer::Print("-----------------------------\n");
 
 				// compute cost for query plan analysis
-				if (compute_cost) {
-					binding_name_mapping.clear();
-					FindAliases(*plan);
-					plan_cost += GetTrueCost(*plan);
-				}
+				// if (compute_cost) {
+				// 	binding_name_mapping.clear();
+				// 	FindAliases(*plan);
+				// 	plan_cost += GetTrueCost(*plan);
+				// }
 
 				break;
 			}
@@ -309,12 +311,13 @@ unique_ptr<LogicalOperator> ReOptimizer::SimulatedReOptimize(unique_ptr<LogicalO
 		if (nodes.size() <= minimum_remaining_plan_size)
 			break;
 	}
-	if (compute_cost && (plan->type == LogicalOperatorType::PROJECTION || plan->children[0]->type == LogicalOperatorType::PROJECTION)) {
+	if (compute_cost) {
 		binding_name_mapping.clear();
 		FindAliases(*plan);
 		plan_cost += GetTrueCost(*plan);
 		Printer::Print(to_string(plan_cost));
 	}
+	Printer::Print(to_string(materialize_size));
 	return plan;
 }
 
@@ -340,7 +343,7 @@ idx_t ReOptimizer::RemainingCost(LogicalOperator &plan, LogicalOperator &subquer
 }
 
 unique_ptr<LogicalOperator> ReOptimizer::SimulatedReOptimizeCost(unique_ptr<LogicalOperator> plan, const string query, double thresh) {
-	compute_cost = true;
+	// compute_cost = true;
 	idx_t minimum_remaining_plan_size = 2;
 
 	const string tablename_prefix = "_reopt_temp_" + to_string(hash<string>{}(query));
@@ -381,12 +384,13 @@ unique_ptr<LogicalOperator> ReOptimizer::SimulatedReOptimizeCost(unique_ptr<Logi
 		if (nodes.size() <= minimum_remaining_plan_size)
 			break;
 	}
-	if (compute_cost && (plan->type == LogicalOperatorType::PROJECTION || plan->children[0]->type == LogicalOperatorType::PROJECTION)) {
+	if (compute_cost) {
 		binding_name_mapping.clear();
 		FindAliases(*plan);
 		plan_cost += GetTrueCost(*plan);
 		Printer::Print(to_string(plan_cost));
 	}
+	Printer::Print(to_string(materialize_size));
 	return plan;
 }
 
@@ -397,16 +401,16 @@ idx_t ReOptimizer::GetTrueCardinality(LogicalOperator &subquery_plan) {
 	auto result = ExecuteSubQuery(subquery, false);
 	MaterializedQueryResult *mqr = static_cast<MaterializedQueryResult *>(result.get());
 	Value count = mqr->collection.GetValue(0, 0);
-	Printer::Print(subquery_plan.ParamsToString() + " - " + count.ToString());
+	// Printer::Print(subquery_plan.ParamsToString() + " - " + count.ToString());
 	return stoi(count.ToString());
 }
 
 unique_ptr<LogicalOperator> ReOptimizer::PerformPartialPlan(unique_ptr<LogicalOperator> plan,
 															LogicalOperator *subquery_plan,
                                                             const string temporary_table_name) {
-	Printer::Print("\n----------------------------- before");
-	plan->Print();
-	Printer::Print("-----------------------------\n");
+	// Printer::Print("\n----------------------------- before");
+	// plan->Print();
+	// Printer::Print("-----------------------------\n");
 
 	if (compute_cost) {
 		binding_name_mapping.clear();
@@ -428,7 +432,9 @@ unique_ptr<LogicalOperator> ReOptimizer::PerformPartialPlan(unique_ptr<LogicalOp
 	ExecuteSubQuery(subquery, true);
 	context.profiler.EndPhase();
 
-	Printer::Print(subquery);
+	materialize_size += GetTable("main", temporary_table_name)->storage->info->cardinality;
+
+	// Printer::Print(subquery);
 
 	context.profiler.StartPhase("reopt_post_tooling");
 	// InjectCardinalities(*subquery_plan, temporary_table_name);
@@ -438,9 +444,9 @@ unique_ptr<LogicalOperator> ReOptimizer::PerformPartialPlan(unique_ptr<LogicalOp
 	plan = ClearLeftProjectionMaps(move(plan));
 	context.profiler.EndPhase();
 
-	Printer::Print("\n----------------------------- after");
-	plan->Print();
-	Printer::Print("-----------------------------\n\n");
+	// Printer::Print("\n----------------------------- after");
+	// plan->Print();
+	// Printer::Print("-----------------------------\n\n");
 
 	return plan;
 }

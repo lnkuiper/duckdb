@@ -187,14 +187,14 @@ unique_ptr<PreparedStatementData> ClientContext::CreatePreparedStatement(const s
 	}
 #endif
 	
-	if (enable_reoptimizer && plan->type == LogicalOperatorType::PREPARE && !subquery) {
-		Printer::Print("-- START QUERY");
-		Printer::Print(query);
+	if (enable_reoptimizer && plan->type == LogicalOperatorType::PREPARE && !subquery && plan->children[0]->type == LogicalOperatorType::PROJECTION) {
+		// Printer::Print("-- START QUERY");
+		// Printer::Print(query);
 		ReOptimizer reoptimizer = ReOptimizer(*this, planner.binder);
 		plan = reoptimizer.SimulatedReOptimize(move(plan), query);
 		assert(plan);
-		Printer::Print("-- MATERIALIZE ROOT NOTE");
-		Printer::Print("-- END QUERY\n");
+		// Printer::Print("-- MATERIALIZE ROOT NOTE");
+		// Printer::Print("-- END QUERY\n");
 	}
 
 	profiler.StartPhase("physical_planner");
