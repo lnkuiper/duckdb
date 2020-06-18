@@ -83,10 +83,6 @@ private:
 	void FixColumnBindings(Expression *expr);
 	//! Executes a query in the middle of the re-optimization process
 	unique_ptr<QueryResult> ExecuteSubQuery(const string subquery, bool enable_profiling);
-	//! Stores the true/estimated cardinality of a plan in saved_cardinalities
-	void InjectCardinalities(LogicalOperator &plan, string temp_table_name);
-	//! Gets valid subsets of temp_tables
-	vector<vector<string>> TempTablePowerset();
 	//! Second half of the re-optimization iteration procedure: call Optimizer::Optimize on the adjusted plan
 	unique_ptr<LogicalOperator> CallOptimizer(unique_ptr<LogicalOperator> plan);
 	//! Empty all left projection maps again (required by PhysicalPlanGenerator - PhysicalHashJoin assert)
@@ -105,10 +101,6 @@ private:
 	//! The new column bindings (after replacing an operator with GET)
 	unordered_map<string, ColumnBinding> rebind_mapping;
 
-	//! Stores true/estimated cardinalities of sets of relations
-	unordered_map<string, idx_t> cardinalities;
-	//! Stores pairs of (set of relations, temp table name) of subqueries that were executed
-	unordered_map<string, vector<string>> temp_table_relations;
 	//! vector of temp tables made so far
 	vector<string> temp_tables;
 

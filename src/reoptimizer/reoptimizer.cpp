@@ -49,7 +49,7 @@ unique_ptr<LogicalOperator> ReOptimizer::ReOptimize(unique_ptr<LogicalOperator> 
 		plan_cost += GetTrueCost(*plan);
 		Printer::Print(to_string(plan_cost));
 	}
-	Printer::Print(to_string(materialize_size));
+	// Printer::Print(to_string(materialize_size));
 	return plan;
 }
 
@@ -257,12 +257,9 @@ void ReOptimizer::SetTrueCardinality(LogicalOperator &plan, LogicalOperator &sub
 unique_ptr<LogicalOperator> ReOptimizer::SimulatedReOptimize(unique_ptr<LogicalOperator> plan, const string query) {
 	// compute_cost = true;
 	if (compute_cost) {
-		// Printer::Print("-- Initial plan and cardinalities");
 		binding_name_mapping.clear();
 		FindAliases(*plan);
 		plan_cost += GetTrueCost(*plan);
-		// Printer::Print(to_string(plan_cost));
-		// Printer::Print("-- End initial plan\n");
 	}
 
 	idx_t minimum_remaining_plan_size = 2;
@@ -292,18 +289,6 @@ unique_ptr<LogicalOperator> ReOptimizer::SimulatedReOptimize(unique_ptr<LogicalO
 				context.profiler.StartPhase("optimizer");
 				plan = CallOptimizer(move(plan));
 				context.profiler.EndPhase();
-
-				// Printer::Print("\n----------------------------- reoptimized plan");
-				// plan->Print();
-				// Printer::Print("-----------------------------\n");
-
-				// compute cost for query plan analysis
-				// if (compute_cost) {
-				// 	binding_name_mapping.clear();
-				// 	FindAliases(*plan);
-				// 	plan_cost += GetTrueCost(*plan);
-				// }
-
 				break;
 			}
 		}
@@ -317,7 +302,7 @@ unique_ptr<LogicalOperator> ReOptimizer::SimulatedReOptimize(unique_ptr<LogicalO
 		plan_cost += GetTrueCost(*plan);
 		Printer::Print(to_string(plan_cost));
 	}
-	Printer::Print(to_string(materialize_size));
+	// Printer::Print(to_string(materialize_size));
 	return plan;
 }
 
@@ -390,7 +375,7 @@ unique_ptr<LogicalOperator> ReOptimizer::SimulatedReOptimizeCost(unique_ptr<Logi
 		plan_cost += GetTrueCost(*plan);
 		Printer::Print(to_string(plan_cost));
 	}
-	Printer::Print(to_string(materialize_size));
+	// Printer::Print(to_string(materialize_size));
 	return plan;
 }
 
@@ -432,12 +417,11 @@ unique_ptr<LogicalOperator> ReOptimizer::PerformPartialPlan(unique_ptr<LogicalOp
 	ExecuteSubQuery(subquery, true);
 	context.profiler.EndPhase();
 
-	materialize_size += GetTable("main", temporary_table_name)->storage->info->cardinality;
+	// materialize_size += GetTable("main", temporary_table_name)->storage->info->cardinality;
 
 	// Printer::Print(subquery);
 
 	context.profiler.StartPhase("reopt_post_tooling");
-	// InjectCardinalities(*subquery_plan, temporary_table_name);
 	plan = AdjustPlan(move(plan), *subquery_plan, temporary_table_name);
 	FixColumnBindings(*plan);
 	rebind_mapping.clear();
@@ -456,10 +440,6 @@ idx_t ReOptimizer::GetTrueCost(LogicalOperator &plan) {
 	vector<LogicalOperator *> joins = ExtractJoinOperators(plan);
 	for (LogicalOperator *join : joins) {
 		cost += GetTrueCardinality(*join);
-	}
-	vector<LogicalOperator *> filters = ExtractFilterOperators(plan);
-	for (LogicalOperator *filter : filters) {
-		GetTrueCardinality(*filter);
 	}
 	return cost;
 }
@@ -591,8 +571,6 @@ unique_ptr<LogicalOperator> ReOptimizer::GenerateProjectionMaps(unique_ptr<Logic
 					}
 				}
 				if (keep) {
-					// child_join->left_projection_map.push_back(cb_i);
-					// Printer::Print("1: " + to_string(cb_i));
 					if (find(child_join->left_projection_map.begin(), child_join->left_projection_map.end(), cb_i) == child_join->left_projection_map.end()) {
 						child_join->left_projection_map.push_back(cb_i);
 					}
@@ -601,9 +579,9 @@ unique_ptr<LogicalOperator> ReOptimizer::GenerateProjectionMaps(unique_ptr<Logic
 				}
 			}
 
-			// FIXME: something wrong here ...
 			// Need to only remove columns that were kept in the first place!
-			if (n_kept == 0) // hack fix for this FIXME
+			// somewhat of a hack fix ...
+			if (n_kept == 0)
 				continue;
 
 			// update left/right projection maps of this join accordingly
@@ -682,9 +660,7 @@ unique_ptr<LogicalOperator> ReOptimizer::GenerateProjectionMaps(unique_ptr<Logic
 void ReOptimizer::FindAliases(LogicalOperator &plan) {
 	if (plan.type == LogicalOperatorType::GET) {
 		auto *get = static_cast<LogicalGet *>(&plan);
-		// plan.Print();
 		for (idx_t i = 0; i < get->column_ids.size(); i++) {
-			// Printer::Print("#[" + std::to_string(get->table_index) + "." + std::to_string(i) + "]" + " = " + get->table->columns[get->column_ids[i]].name);
 			binding_name_mapping["#[" + std::to_string(get->table_index) + "." + std::to_string(i) + "]"] =
 			    get->table->columns[get->column_ids[i]].name;
 		}
@@ -905,27 +881,6 @@ static vector<string> GetRelationSet(LogicalOperator &plan) {
 	return relations;
 }
 
-void ReOptimizer::InjectCardinalities(LogicalOperator &plan, string temp_table_name) {
-	// TODO: derive information about the cardinality of the intermediate results, implement
-	// TODO: create cost function that uses injected cardinalities
-	cardinalities[JoinStrings(GetRelationSet(plan), ",")] = GetTable("main", temp_table_name)->storage->info->cardinality;
-}
-
-vector<vector<string>> ReOptimizer::TempTablePowerset() {
-	idx_t powerset_size = pow(2, temp_tables.size());
-	vector<vector<string>> powerset(powerset_size);
-	for (idx_t i = 0; i < powerset_size; i++) {
-		vector<string> subset;
-		for (idx_t j = 0; j < temp_tables.size(); j++) {
-			if (i & (1 << j)) {
-				subset.push_back(temp_tables[j]);
-			}
-		}
-		powerset.push_back(subset);
-	}
-	return powerset;
-}
-
 unique_ptr<LogicalOperator> ReOptimizer::AdjustPlan(unique_ptr<LogicalOperator> plan, LogicalOperator &old_op,
                                                     const string temporary_table_name) {
 	TableCatalogEntry *table = GetTable("main", temporary_table_name);
@@ -968,7 +923,6 @@ bool ReOptimizer::ReplaceLogicalOperator(LogicalOperator &plan, LogicalOperator 
 		} else {
 			old_op_cbs = child->GetColumnBindings();
 		}
-		// FIXME: is it better to use the minimum here?
 		idx_t new_table_index = 0;
 		for (auto cb : old_op_cbs) {
 			if (cb.table_index > new_table_index)
