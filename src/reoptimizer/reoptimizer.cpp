@@ -33,24 +33,24 @@ ReOptimizer::ReOptimizer(ClientContext &context, Binder &binder) : context(conte
 }
 
 unique_ptr<LogicalOperator> ReOptimizer::ReOptimize(unique_ptr<LogicalOperator> plan, const string query) {
-	// compute_cost = true;
-	// const string tablename_prefix = "_reopt_temp_" + to_string(hash<string>{}(query));
-	// // re-optimization loop
-	// for (int iter = 0; true; iter++) {
-	// 	const string temp_table_name = tablename_prefix + "_" + to_string(iter);
-	// 	plan = AlgorithmSmartStep(2, move(plan), temp_table_name);
-	// 	if (done) {
-	// 		break;
-	// 	}
-	// }
-	// if (compute_cost) {
-	// 	binding_name_mapping.clear();
-	// 	FindAliases(*plan);
-	// 	plan_cost += GetTrueCost(*plan);
-	// 	Printer::Print(to_string(plan_cost));
-	// }
-	// Printer::Print(to_string(materialize_size));
-	Printer::Print(to_string(plan->EstimateCost()));
+	compute_cost = true;
+	const string tablename_prefix = "_reopt_temp_" + to_string(hash<string>{}(query));
+	// re-optimization loop
+	for (int iter = 0; true; iter++) {
+		const string temp_table_name = tablename_prefix + "_" + to_string(iter);
+		plan = AlgorithmSmartStep(2, move(plan), temp_table_name);
+		if (done) {
+			break;
+		}
+	}
+	if (compute_cost) {
+		binding_name_mapping.clear();
+		FindAliases(*plan);
+		plan_cost += GetTrueCost(*plan);
+		Printer::Print(to_string(plan_cost));
+	}
+	//	Printer::Print(to_string(materialize_size));
+	//	Printer::Print(to_string(plan->EstimateCost()));
 	return plan;
 }
 
