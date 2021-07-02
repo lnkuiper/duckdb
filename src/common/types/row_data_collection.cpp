@@ -1,6 +1,6 @@
 #include "duckdb/common/types/row_data_collection.hpp"
 
-#include "duckdb/common/bit_operations.hpp"
+#include "duckdb/common/radix.hpp"
 #include "duckdb/common/types/chunk_collection.hpp"
 
 namespace duckdb {
@@ -75,7 +75,7 @@ void RowDataCollection::SerializeStringVectorSortable(VectorData &vdata, const S
 			// write validity and according value
 			if (validity.RowIsValid(source_idx)) {
 				key_locations[i][0] = valid;
-				EncodeStringDataPrefix(key_locations[i] + 1, source[source_idx], prefix_len);
+				EncodeStringData(key_locations[i] + 1, source[source_idx], prefix_len);
 				// invert bits if desc
 				if (desc) {
 					for (idx_t s = 1; s < prefix_len + 1; s++) {
@@ -93,7 +93,7 @@ void RowDataCollection::SerializeStringVectorSortable(VectorData &vdata, const S
 			auto idx = sel.get_index(i);
 			auto source_idx = vdata.sel->get_index(idx);
 			// write value
-			EncodeStringDataPrefix(key_locations[i], source[source_idx], prefix_len);
+			EncodeStringData(key_locations[i], source[source_idx], prefix_len);
 			// invert bits if desc
 			if (desc) {
 				for (idx_t s = 1; s < prefix_len; s++) {

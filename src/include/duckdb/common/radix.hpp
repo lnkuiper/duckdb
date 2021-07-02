@@ -1,7 +1,7 @@
 //===----------------------------------------------------------------------===//
 //                         DuckDB
 //
-// duckdb/common/bit_operations.hpp
+// duckdb/common/radix.hpp
 //
 //
 //===----------------------------------------------------------------------===//
@@ -29,6 +29,7 @@ namespace duckdb {
 
 bool IsLittleEndian();
 uint8_t FlipSign(uint8_t key_byte);
+
 uint32_t EncodeFloat(float x);
 uint64_t EncodeDouble(double x);
 
@@ -64,6 +65,43 @@ void EncodeData(data_ptr_t dataptr, float value, bool is_little_endian);
 template <>
 void EncodeData(data_ptr_t dataptr, interval_t value, bool is_little_endian);
 
-void EncodeStringDataPrefix(data_ptr_t dataptr, string_t value, idx_t prefix_len);
+void EncodeStringData(data_ptr_t dataptr, string_t value, idx_t prefix_len);
+
+float DecodeFloat(uint32_t x);
+double DecodeDouble(uint64_t x);
+
+template <class T>
+T DecodeData(data_ptr_t dataptr, bool is_little_endian) {
+	throw NotImplementedException("Cannot create data from this type");
+}
+
+template <>
+bool DecodeData(data_ptr_t dataptr, bool is_little_endian);
+template <>
+int8_t DecodeData(data_ptr_t dataptr, bool is_little_endian);
+template <>
+int16_t DecodeData(data_ptr_t dataptr, bool is_little_endian);
+template <>
+int32_t DecodeData(data_ptr_t dataptr, bool is_little_endian);
+template <>
+int64_t DecodeData(data_ptr_t dataptr, bool is_little_endian);
+template <>
+uint8_t DecodeData(data_ptr_t dataptr, bool is_little_endian);
+template <>
+uint16_t DecodeData(data_ptr_t dataptr, bool is_little_endian);
+template <>
+uint32_t DecodeData(data_ptr_t dataptr, bool is_little_endian);
+template <>
+uint64_t DecodeData(data_ptr_t dataptr, bool is_little_endian);
+template <>
+hugeint_t DecodeData(data_ptr_t dataptr, bool is_little_endian);
+template <>
+double DecodeData(data_ptr_t dataptr, bool is_little_endian);
+template <>
+float DecodeData(data_ptr_t dataptr, bool is_little_endian);
+template <>
+interval_t DecodeData(data_ptr_t dataptr, bool is_little_endian);
+
+string_t DecodeStringData(data_ptr_t dataptr, idx_t prefix_len);
 
 } // namespace duckdb
