@@ -81,6 +81,7 @@ if '--extended' in sys.argv:
     main_header_files += add_include_dir(os.path.join(include_dir, 'duckdb/parser/expression'))
     main_header_files += add_include_dir(os.path.join(include_dir, 'duckdb/parser/parsed_data'))
     main_header_files += add_include_dir(os.path.join(include_dir, 'duckdb/parser/tableref'))
+    main_header_files += add_include_dir(os.path.join(include_dir, 'duckdb/planner/operator'))
 # include paths for where to search for include files during amalgamation
 include_paths = [include_dir, fmt_include_dir, re2_dir, miniz_dir, utf8proc_include_dir, hll_dir, tdigest_dir, utf8proc_dir, pg_query_include_dir, pg_query_dir, moodycamel_include_dir,pcg_include_dir]
 # paths of where to look for files to compile and include to the final amalgamation
