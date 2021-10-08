@@ -59,6 +59,7 @@ if '--extended' in sys.argv:
     main_header_files += [os.path.join(include_dir, x) for x in [
         'duckdb/planner/expression/bound_constant_expression.hpp',
         'duckdb/planner/expression/bound_function_expression.hpp',
+        'duckdb/catalog/catalog_entry/aggregate_function_catalog_entry.hpp',
         'duckdb/catalog/catalog_entry/scalar_function_catalog_entry.hpp',
         'duckdb/parser/parsed_data/create_table_info.hpp',
         'duckdb/planner/parsed_data/bound_create_table_info.hpp',
@@ -77,7 +78,9 @@ if '--extended' in sys.argv:
         "duckdb/execution/operator/persistent/buffered_csv_reader.hpp",
         "duckdb/common/types/vector_cache.hpp",
         "duckdb/planner/filter/null_filter.hpp",
-        "duckdb/common/arrow_wrapper.hpp"]]
+        "duckdb/common/arrow_wrapper.hpp",
+        "duckdb/optimizer/optimizer.hpp",
+        "duckdb/execution/physical_plan_generator.hpp"]]
     main_header_files += add_include_dir(os.path.join(include_dir, 'duckdb/parser/expression'))
     main_header_files += add_include_dir(os.path.join(include_dir, 'duckdb/parser/parsed_data'))
     main_header_files += add_include_dir(os.path.join(include_dir, 'duckdb/parser/tableref'))
