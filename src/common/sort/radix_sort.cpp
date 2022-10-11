@@ -107,47 +107,80 @@ static void ComputeTies(data_ptr_t dataptr, const idx_t &count, const idx_t &col
 	}
 }
 
-//! Textbook LSD radix sort
-void RadixSortLSD(BufferManager &buffer_manager, const data_ptr_t &dataptr, const idx_t &count, const idx_t &col_offset,
-                  const idx_t &row_width, const idx_t &sorting_size) {
+template <idx_t sorting_size>
+inline static void AddCounts(data_ptr_t offset_ptr, idx_t counts[]) {
+	for (idx_t i = 0; i < sorting_size; i++) {
+		counts[i * SortConstants::VALUES_PER_RADIX + (*offset_ptr + i)]++;
+	}
+}
+
+template <idx_t sorting_size>
+void RadixSortLSDInternal(BufferManager &buffer_manager, const data_ptr_t &dataptr, const idx_t &count,
+                          const idx_t &col_offset, const idx_t &row_width) {
 	auto temp_block = buffer_manager.Allocate(MaxValue(count * row_width, (idx_t)Storage::BLOCK_SIZE));
 	bool swap = false;
 
-	idx_t counts[SortConstants::VALUES_PER_RADIX];
+	uint32_t counts[SortConstants::VALUES_PER_RADIX * sorting_size];
+	memset(counts, 0, sizeof(counts));
+
+	// Compute counts for all radixes at once
+	data_ptr_t offset_ptr = dataptr + col_offset;
+	for (idx_t i = 0; i < count; i++) {
+		for (idx_t r = 0; r < sorting_size; r++) {
+			counts[r * SortConstants::VALUES_PER_RADIX + *(offset_ptr + r)]++;
+		}
+		offset_ptr += row_width;
+	}
+
+	// Compute offsets from counts for all radixes at once
+	for (idx_t i = 1; i < SortConstants::VALUES_PER_RADIX; i++) {
+		for (idx_t r = 0; r < sorting_size; r++) {
+			counts[r * SortConstants::VALUES_PER_RADIX + i] += counts[r * SortConstants::VALUES_PER_RADIX + i - 1];
+		}
+	}
+
+	// Now loop through the radixes one by one
 	for (idx_t r = 1; r <= sorting_size; r++) {
-		// Init counts to 0
-		memset(counts, 0, sizeof(counts));
+		// Current radix bucket
+		uint32_t *bucket_offsets = counts + (sorting_size - r) * SortConstants::VALUES_PER_RADIX;
+		const idx_t offset = col_offset + sorting_size - r;
 		// Const some values for convenience
 		const data_ptr_t source_ptr = swap ? temp_block.Ptr() : dataptr;
 		const data_ptr_t target_ptr = swap ? dataptr : temp_block.Ptr();
-		const idx_t offset = col_offset + sorting_size - r;
-		// Collect counts
-		data_ptr_t offset_ptr = source_ptr + offset;
-		for (idx_t i = 0; i < count; i++) {
-			counts[*offset_ptr]++;
-			offset_ptr += row_width;
-		}
-		// Compute offsets from counts
-		idx_t max_count = counts[0];
-		for (idx_t val = 1; val < SortConstants::VALUES_PER_RADIX; val++) {
-			max_count = MaxValue<idx_t>(max_count, counts[val]);
-			counts[val] = counts[val] + counts[val - 1];
-		}
-		if (max_count == count) {
-			continue;
-		}
+
 		// Re-order the data in temporary array
 		data_ptr_t row_ptr = source_ptr + (count - 1) * row_width;
 		for (idx_t i = 0; i < count; i++) {
-			idx_t &radix_offset = --counts[*(row_ptr + offset)];
+			auto &radix_offset = --bucket_offsets[*(row_ptr + offset)];
 			FastMemcpy(target_ptr + radix_offset * row_width, row_ptr, row_width);
 			row_ptr -= row_width;
 		}
 		swap = !swap;
 	}
+
 	// Move data back to original buffer (if it was swapped)
 	if (swap) {
 		memcpy(dataptr, temp_block.Ptr(), count * row_width);
+	}
+}
+
+void RadixSortLSD(BufferManager &buffer_manager, const data_ptr_t &dataptr, const idx_t &count, const idx_t &col_offset,
+                  const idx_t &row_width, const idx_t &sorting_size) {
+	switch (sorting_size) {
+	case 1:
+		RadixSortLSDInternal<1>(buffer_manager, dataptr, count, col_offset, row_width);
+		break;
+	case 2:
+		RadixSortLSDInternal<2>(buffer_manager, dataptr, count, col_offset, row_width);
+		break;
+	case 3:
+		RadixSortLSDInternal<3>(buffer_manager, dataptr, count, col_offset, row_width);
+		break;
+	case 4:
+		RadixSortLSDInternal<4>(buffer_manager, dataptr, count, col_offset, row_width);
+		break;
+	default:
+		throw InternalException("Unexpected sorting_size in RadixSortLSD");
 	}
 }
 
