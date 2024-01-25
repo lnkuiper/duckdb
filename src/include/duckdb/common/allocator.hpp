@@ -11,7 +11,6 @@
 #include "duckdb/common/assert.hpp"
 #include "duckdb/common/optional_ptr.hpp"
 #include "duckdb/common/shared_ptr.hpp"
-#include "duckdb/common/typedefs.hpp"
 
 namespace duckdb {
 class Allocator;
