@@ -9,18 +9,20 @@
 #pragma once
 
 #include "duckdb/common/assert.hpp"
-#include "duckdb/common/typedefs.hpp"
+#include "duckdb/common/container_allocator.hpp"
 #include "duckdb/common/likely.hpp"
-#include "duckdb/common/exception.hpp"
 #include "duckdb/common/memory_safety.hpp"
+#include "duckdb/common/memory_safety_exceptions.hpp"
+#include "duckdb/common/typedefs.hpp"
+
 #include <vector>
 
 namespace duckdb {
 
-template <class _Tp, bool SAFE = true>
-class vector : public std::vector<_Tp, std::allocator<_Tp>> {
+template <class _Tp, class _Allocator = container_allocator<_Tp>, bool SAFE = true>
+class vector : public std::vector<_Tp, _Allocator> {
 public:
-	using original = std::vector<_Tp, std::allocator<_Tp>>;
+	using original = std::vector<_Tp, _Allocator>;
 	using original::original;
 	using size_type = typename original::size_type;
 	using const_reference = typename original::const_reference;
@@ -32,7 +34,7 @@ private:
 		return;
 #else
 		if (DUCKDB_UNLIKELY(index >= size)) {
-			throw InternalException("Attempted to access index %ld within vector of size %ld", index, size);
+			throw VectorOutOfBoundsException(index, size);
 		}
 #endif
 	}
@@ -53,7 +55,7 @@ public:
 	vector(original &&other) : original(std::move(other)) {
 	}
 	template <bool _SAFE>
-	vector(vector<_Tp, _SAFE> &&other) : original(std::move(other)) {
+	vector(vector<_Tp, _Allocator, _SAFE> &&other) : original(std::move(other)) {
 	}
 
 	template <bool _SAFE = false>
@@ -89,20 +91,20 @@ public:
 
 	typename original::reference back() {
 		if (MemorySafety<SAFE>::enabled && original::empty()) {
-			throw InternalException("'back' called on an empty vector!");
+			throw VectorBackOnEmptyException();
 		}
 		return get<SAFE>(original::size() - 1);
 	}
 
 	typename original::const_reference back() const {
 		if (MemorySafety<SAFE>::enabled && original::empty()) {
-			throw InternalException("'back' called on an empty vector!");
+			throw VectorBackOnEmptyException();
 		}
 		return get<SAFE>(original::size() - 1);
 	}
 };
 
 template <typename T>
-using unsafe_vector = vector<T, false>;
+using unsafe_vector = vector<T, container_allocator<T>, false>;
 
 } // namespace duckdb

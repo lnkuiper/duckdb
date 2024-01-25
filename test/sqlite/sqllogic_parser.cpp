@@ -1,4 +1,5 @@
 #include "sqllogic_parser.hpp"
+
 #include "catch.hpp"
 
 #include <fstream>

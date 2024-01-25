@@ -42,6 +42,7 @@ add_library_unity(
   http_state.cpp
   pipe_file_system.cpp
   local_file_system.cpp
+  memory_safety_exceptions.cpp
   multi_file_reader.cpp
   preserved_error.cpp
   printer.cpp

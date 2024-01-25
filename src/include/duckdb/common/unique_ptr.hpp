@@ -1,8 +1,16 @@
+//===----------------------------------------------------------------------===//
+//                         DuckDB
+//
+// duckdb/common/unique_ptr.hpp
+//
+//
+//===----------------------------------------------------------------------===//
+
 #pragma once
 
-#include "duckdb/common/exception.hpp"
 #include "duckdb/common/likely.hpp"
 #include "duckdb/common/memory_safety.hpp"
+#include "duckdb/common/memory_safety_exceptions.hpp"
 
 #include <memory>
 #include <type_traits>
@@ -21,7 +29,7 @@ private:
 		return;
 #else
 		if (DUCKDB_UNLIKELY(null)) {
-			throw duckdb::InternalException("Attempted to dereference unique_ptr that is NULL!");
+			throw UniquePtrNullException();
 		}
 #endif
 	}
@@ -65,7 +73,7 @@ private:
 		return;
 #else
 		if (DUCKDB_UNLIKELY(null)) {
-			throw duckdb::InternalException("Attempted to dereference unique_ptr that is NULL!");
+			throw UniquePtrNullException();
 		}
 #endif
 	}

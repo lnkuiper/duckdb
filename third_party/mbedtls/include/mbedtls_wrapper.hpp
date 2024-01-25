@@ -9,7 +9,7 @@
 #pragma once
 
 #include "duckdb/common/optional_ptr.hpp"
-#include "duckdb/common/typedefs.hpp"
+#include "duckdb/common/common.hpp"
 
 #include <string>
 

@@ -9,9 +9,10 @@
 #pragma once
 
 #include "duckdb/common/common.hpp"
+#include "duckdb/common/enums/filter_propagate_result.hpp"
+#include "duckdb/common/exception.hpp"
 #include "duckdb/common/types.hpp"
 #include "duckdb/common/unordered_map.hpp"
-#include "duckdb/common/enums/filter_propagate_result.hpp"
 
 namespace duckdb {
 class BaseStatistics;

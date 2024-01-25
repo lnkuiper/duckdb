@@ -1,8 +1,8 @@
 #include "duckdb/parser/query_error_context.hpp"
-#include "duckdb/parser/sql_statement.hpp"
+
 #include "duckdb/common/string_util.hpp"
 #include "duckdb/common/to_string.hpp"
-
+#include "duckdb/parser/sql_statement.hpp"
 #include "utf8proc_wrapper.hpp"
 
 namespace duckdb {
@@ -119,7 +119,7 @@ string QueryErrorContext::FormatErrorRecursive(const string &msg, vector<Excepti
 		// no statement provided or query location out of range
 		return error_message;
 	}
-	return Format(statement->query, error_message, query_location);
+	return Format(statement->query, std::move(error_message), query_location);
 }
 
 } // namespace duckdb

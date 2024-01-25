@@ -1,15 +1,25 @@
-#pragma once
-#include <type_traits>
-#include <cstdint>
-#include <atomic>
+//===----------------------------------------------------------------------===//
+//                         DuckDB
+//
+// duckdb/common/serializer/serialization_traits.hpp
+//
+//
+//===----------------------------------------------------------------------===//
 
-#include "duckdb/common/vector.hpp"
-#include "duckdb/common/unordered_map.hpp"
-#include "duckdb/common/unordered_set.hpp"
+#pragma once
+
+#include "duckdb/common/map.hpp"
+#include "duckdb/common/optional_ptr.hpp"
 #include "duckdb/common/set.hpp"
 #include "duckdb/common/shared_ptr.hpp"
 #include "duckdb/common/unique_ptr.hpp"
-#include "duckdb/common/optional_ptr.hpp"
+#include "duckdb/common/unordered_map.hpp"
+#include "duckdb/common/unordered_set.hpp"
+#include "duckdb/common/vector.hpp"
+
+#include <atomic>
+#include <cstdint>
+#include <type_traits>
 
 namespace duckdb {
 

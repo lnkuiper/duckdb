@@ -8,9 +8,10 @@
 
 #pragma once
 
-#include "duckdb/common/common.hpp"
-#include "duckdb/common/vector_size.hpp"
 #include "duckdb/common/atomic.hpp"
+#include "duckdb/common/common.hpp"
+#include "duckdb/common/exception.hpp"
+#include "duckdb/common/vector_size.hpp"
 
 namespace duckdb {
 class RowGroup;
