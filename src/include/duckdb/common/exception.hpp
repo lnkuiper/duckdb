@@ -339,7 +339,7 @@ public:
 		return make_shared<HTTPException>(status_code, response_body, headers, reason, RawMessage());
 	}
 
-	const std::multimap<std::string, std::string> GetHeaders() const {
+	const multimap<string, string> GetHeaders() const {
 		return headers;
 	}
 	int GetStatusCode() const {
@@ -359,7 +359,7 @@ private:
 	int status_code;
 	string reason;
 	string response_body;
-	std::multimap<string, string> headers;
+	multimap<string, string> headers;
 };
 
 class SerializationException : public Exception {

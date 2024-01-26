@@ -109,25 +109,25 @@ private:
 	//! --------------------------------------------------- //
 
 	template <typename U>
-	std::string FormatValueInternal(const U &val) const {
+	string FormatValueInternal(const U &val) const {
 		throw InternalException("Type not accepted as CSV Option.");
 	}
 
-	std::string FormatValueInternal(const std::string &val) const {
+	string FormatValueInternal(const string &val) const {
 		return val;
 	}
 
-	std::string FormatValueInternal(const idx_t &val) const {
+	string FormatValueInternal(const idx_t &val) const {
 		return to_string(val);
 	}
 
-	std::string FormatValueInternal(const char &val) const {
+	string FormatValueInternal(const char &val) const {
 		string char_val;
 		char_val += val;
 		return char_val;
 	}
 
-	std::string FormatValueInternal(const NewLineIdentifier &val) const {
+	string FormatValueInternal(const NewLineIdentifier &val) const {
 		switch (val) {
 		case NewLineIdentifier::SINGLE:
 			return "\\n";
@@ -140,11 +140,11 @@ private:
 		}
 	}
 
-	std::string FormatValueInternal(const StrpTimeFormat &val) const {
+	string FormatValueInternal(const StrpTimeFormat &val) const {
 		return val.format_specifier;
 	}
 
-	std::string FormatValueInternal(const bool &val) const {
+	string FormatValueInternal(const bool &val) const {
 		if (val) {
 			return "true";
 		}

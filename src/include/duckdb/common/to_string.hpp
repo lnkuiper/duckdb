@@ -8,6 +8,13 @@
 
 #pragma once
 
+#include "duckdb/common/string.hpp"
+
 namespace duckdb {
-using std::to_string;
+
+template <class T>
+string to_string(const T &val) {
+	return string(std::to_string(val));
 }
+
+} // namespace duckdb
