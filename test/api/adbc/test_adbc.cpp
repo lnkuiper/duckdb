@@ -51,7 +51,7 @@ public:
 		return ArrowTestHelper::RunArrowComparison(*cconn, query, arrow_stream);
 	}
 
-	std::unique_ptr<MaterializedQueryResult> Query(const string &query) {
+	duckdb::unique_ptr<MaterializedQueryResult> Query(const string &query) {
 		auto cconn = reinterpret_cast<duckdb::Connection *>(adbc_connection.private_data);
 		return cconn->Query(query);
 	}
