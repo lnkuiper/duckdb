@@ -12,11 +12,11 @@ struct TestObject : public ObjectCacheEntry {
 	TestObject(int value) : value(value) {
 	}
 
-	string GetObjectType() override {
+	duckdb::string GetObjectType() override {
 		return ObjectType();
 	}
 
-	static string ObjectType() {
+	static duckdb::string ObjectType() {
 		return "TestObject";
 	}
 };
@@ -25,11 +25,11 @@ struct AnotherTestObject : public ObjectCacheEntry {
 	int value;
 	AnotherTestObject(int value) : value(value) {
 	}
-	string GetObjectType() override {
+	duckdb::string GetObjectType() override {
 		return ObjectType();
 	}
 
-	static string ObjectType() {
+	static duckdb::string ObjectType() {
 		return "AnotherTestObject";
 	}
 };

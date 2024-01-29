@@ -89,7 +89,7 @@
 #include <stdint.h>
 #include <map>
 #include <set>
-#include <string>
+#include "duckdb/common/string.hpp"
 
 #include "util/util.h"
 #include "util/logging.h"
@@ -194,7 +194,7 @@ class RegexpStatus {
 
   void set_code(RegexpStatusCode code) { code_ = code; }
   void set_error_arg(const StringPiece& error_arg) { error_arg_ = error_arg; }
-  void set_tmp(std::string* tmp) { delete tmp_; tmp_ = tmp; }
+  void set_tmp(duckdb::string* tmp) { delete tmp_; tmp_ = tmp; }
   RegexpStatusCode code() const { return code_; }
   const StringPiece& error_arg() const { return error_arg_; }
   bool ok() const { return code() == kRegexpSuccess; }
@@ -204,16 +204,16 @@ class RegexpStatus {
 
   // Returns text equivalent of code, e.g.:
   //   "Bad character class"
-  static std::string CodeText(RegexpStatusCode code);
+  static duckdb::string CodeText(RegexpStatusCode code);
 
   // Returns text describing error, e.g.:
   //   "Bad character class: [z-a]"
-  std::string Text() const;
+  duckdb::string Text() const;
 
  private:
   RegexpStatusCode code_;  // Kind of error
   StringPiece error_arg_;  // Piece of regexp containing syntax error.
-  std::string* tmp_;       // Temporary storage, possibly where error_arg_ is.
+  duckdb::string* tmp_;       // Temporary storage, possibly where error_arg_ is.
 
   RegexpStatus(const RegexpStatus&) = delete;
   RegexpStatus& operator=(const RegexpStatus&) = delete;
@@ -278,7 +278,7 @@ struct repeat_t {  // Repeat
 
 struct capture_t {  // Capture
     int cap_;
-    std::string* name_;
+    duckdb::string* name_;
 };
 
 struct literal_string_t{  // LiteralString
@@ -359,7 +359,7 @@ class Regexp {
   Rune rune() { DCHECK_EQ(op_, kRegexpLiteral); return rune_; }
   CharClass* cc() { DCHECK_EQ(op_, kRegexpCharClass); return char_class_.cc_; }
   int cap() { DCHECK_EQ(op_, kRegexpCapture); return capture_.cap_; }
-  const std::string* name() { DCHECK_EQ(op_, kRegexpCapture); return capture_.name_; }
+  const duckdb::string* name() { DCHECK_EQ(op_, kRegexpCapture); return capture_.name_; }
   Rune* runes() { DCHECK_EQ(op_, kRegexpLiteralString); return literal_string_.runes_; }
   int nrunes() { DCHECK_EQ(op_, kRegexpLiteralString); return literal_string_.nrunes_; }
   int match_id() { DCHECK_EQ(op_, kRegexpHaveMatch); return match_id_; }
@@ -391,7 +391,7 @@ class Regexp {
   // string representation of the simplified form.  Returns true on success.
   // Returns false and sets *status (if status != NULL) on parse error.
   static bool SimplifyRegexp(const StringPiece& src, ParseFlags flags,
-                             std::string* dst, RegexpStatus* status);
+                             duckdb::string* dst, RegexpStatus* status);
 
   // Returns the number of capturing groups in the regexp.
   int NumCaptures();
@@ -400,16 +400,16 @@ class Regexp {
   // Returns a map from names to capturing group indices,
   // or NULL if the regexp contains no named capture groups.
   // The caller is responsible for deleting the map.
-  std::map<std::string, int>* NamedCaptures();
+  std::map<duckdb::string, int>* NamedCaptures();
 
   // Returns a map from capturing group indices to capturing group
   // names or NULL if the regexp contains no named capture groups. The
   // caller is responsible for deleting the map.
-  std::map<int, std::string>* CaptureNames();
+  std::map<int, duckdb::string>* CaptureNames();
 
   // Returns a string representation of the current regexp,
   // using as few parentheses as possible.
-  std::string ToString();
+  duckdb::string ToString();
 
   // Convenience functions.  They consume the passed reference,
   // so in many cases you should use, e.g., Plus(re->Incref(), flags).
@@ -431,7 +431,7 @@ class Regexp {
 
   // Debugging function.  Returns string format for regexp
   // that makes structure clear.  Does NOT use regexp syntax.
-  std::string Dump();
+  duckdb::string Dump();
 
   // Helper traversal class, defined fully in walker-inl.h.
   template<typename T> class Walker;
@@ -460,7 +460,7 @@ class Regexp {
   // follows it.
   // Callers should expect *prefix, *foldcase and *suffix to be "zeroed"
   // regardless of the return value.
-  bool RequiredPrefix(std::string* prefix, bool* foldcase,
+  bool RequiredPrefix(duckdb::string* prefix, bool* foldcase,
                       Regexp** suffix);
 
  private:

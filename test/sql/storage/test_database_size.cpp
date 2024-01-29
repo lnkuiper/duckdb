@@ -24,7 +24,7 @@ TEST_CASE("Test that database size does not grow after many checkpoints", "[stor
 		REQUIRE_NO_FAIL(con.Query("BEGIN TRANSACTION;"));
 		REQUIRE_NO_FAIL(con.Query("CREATE TABLE test(a INTEGER);"));
 		for (idx_t i = 0; i < VALUE_COUNT; i++) {
-			REQUIRE_NO_FAIL(con.Query("INSERT INTO test VALUES (" + to_string(i) + ");"));
+			REQUIRE_NO_FAIL(con.Query("INSERT INTO test VALUES (" + duckdb::to_string(i) + ");"));
 			expected_sum += i;
 		}
 		REQUIRE_NO_FAIL(con.Query("COMMIT;"));

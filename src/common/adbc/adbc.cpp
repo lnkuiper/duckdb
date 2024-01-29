@@ -1,13 +1,11 @@
 #include "duckdb/common/adbc/adbc.hpp"
-#include "duckdb/common/adbc/adbc-init.hpp"
-
-#include "duckdb/common/string.hpp"
-#include "duckdb/common/string_util.hpp"
 
 #include "duckdb.h"
+#include "duckdb/common/adbc/adbc-init.hpp"
 #include "duckdb/common/arrow/arrow_wrapper.hpp"
 #include "duckdb/common/arrow/nanoarrow/nanoarrow.hpp"
-
+#include "duckdb/common/string.hpp"
+#include "duckdb/common/string_util.hpp"
 #include "duckdb/main/capi/capi_internal.hpp"
 
 #ifndef DUCKDB_AMALGAMATION
@@ -101,7 +99,7 @@ struct DuckDBAdbcDatabaseWrapper {
 	//! The DuckDB Database
 	::duckdb_database database = nullptr;
 	//! Path of Disk-Based Database or :memory: database
-	std::string path;
+	duckdb::string path;
 };
 
 static void EmptyErrorRelease(AdbcError *error) {
@@ -141,7 +139,7 @@ AdbcStatusCode DatabaseNew(struct AdbcDatabase *database, struct AdbcError *erro
 	}
 	database->private_data = nullptr;
 	// you can't malloc a struct with a non-trivial C++ constructor
-	// and std::string has a non-trivial constructor. so we need
+	// and string has a non-trivial constructor. so we need
 	// to use new and delete rather than malloc and free.
 	auto wrapper = new (std::nothrow) DuckDBAdbcDatabaseWrapper;
 	if (!wrapper) {
@@ -168,7 +166,7 @@ AdbcStatusCode StatementSetSubstraitPlan(struct AdbcStatement *statement, const 
 		return ADBC_STATUS_INVALID_ARGUMENT;
 	}
 	auto wrapper = reinterpret_cast<DuckDBAdbcStatementWrapper *>(statement->private_data);
-	auto plan_str = std::string(reinterpret_cast<const char *>(plan), length);
+	auto plan_str = duckdb::string(reinterpret_cast<const char *>(plan), length);
 	auto query = "CALL from_substrait('" + plan_str + "'::BLOB)";
 	auto res = duckdb_prepare(wrapper->connection, query.c_str(), &wrapper->statement);
 	auto error_msg = duckdb_prepare_error(wrapper->statement);
@@ -252,11 +250,11 @@ AdbcStatusCode ConnectionGetTableSchema(struct AdbcConnection *connection, const
 	}
 	ArrowArrayStream arrow_stream;
 
-	std::string query = "SELECT * FROM ";
+	duckdb::string query = "SELECT * FROM ";
 	if (strlen(db_schema) > 0) {
-		query += std::string(db_schema) + ".";
+		query += duckdb::string(db_schema) + ".";
 	}
-	query += std::string(table_name) + " LIMIT 0;";
+	query += duckdb::string(table_name) + " LIMIT 0;";
 
 	auto success = QueryInternal(connection, &arrow_stream, query.c_str(), error);
 	if (success != ADBC_STATUS_OK) {
@@ -280,7 +278,7 @@ AdbcStatusCode ConnectionNew(struct AdbcConnection *connection, struct AdbcError
 AdbcStatusCode ExecuteQuery(duckdb::Connection *conn, const char *query, struct AdbcError *error) {
 	auto res = conn->Query(query);
 	if (res->HasError()) {
-		auto error_message = "Failed to execute query \"" + std::string(query) + "\": " + res->GetError();
+		auto error_message = "Failed to execute query \"" + duckdb::string(query) + "\": " + res->GetError();
 		SetError(error, error_message);
 		return ADBC_STATUS_INTERNAL;
 	}
@@ -315,14 +313,14 @@ AdbcStatusCode ConnectionSetOption(struct AdbcConnection *connection, const char
 				}
 			}
 		} else {
-			auto error_message = "Invalid connection option value " + std::string(key) + "=" + std::string(value);
+			auto error_message = "Invalid connection option value " + duckdb::string(key) + "=" + duckdb::string(value);
 			SetError(error, error_message);
 			return ADBC_STATUS_INVALID_ARGUMENT;
 		}
 		return ADBC_STATUS_OK;
 	}
 	auto error_message =
-	    "Unknown connection option " + std::string(key) + "=" + (value ? std::string(value) : "(NULL)");
+	    "Unknown connection option " + duckdb::string(key) + "=" + (value ? duckdb::string(value) : "(NULL)");
 	SetError(error, error_message);
 	return ADBC_STATUS_NOT_IMPLEMENTED;
 }
@@ -969,7 +967,7 @@ AdbcStatusCode ConnectionGetObjects(struct AdbcConnection *connection, int depth
 		SetError(error, "Table types parameter not yet supported");
 		return ADBC_STATUS_NOT_IMPLEMENTED;
 	}
-	std::string query;
+	duckdb::string query;
 	switch (depth) {
 	case ADBC_OBJECT_DEPTH_CATALOGS:
 		SetError(error, "ADBC_OBJECT_DEPTH_CATALOGS not yet supported");

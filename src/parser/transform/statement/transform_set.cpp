@@ -43,7 +43,7 @@ unique_ptr<SetStatement> Transformer::TransformSetVariable(duckdb_libpgquery::PG
 		throw NotImplementedException("SET LOCAL is not implemented.");
 	}
 
-	auto name = std::string(stmt.name);
+	auto name = string(stmt.name);
 	D_ASSERT(!name.empty()); // parser protect us!
 	if (stmt.args->length != 1) {
 		throw ParserException("SET needs a single scalar value parameter");
@@ -75,7 +75,7 @@ unique_ptr<SetStatement> Transformer::TransformResetVariable(duckdb_libpgquery::
 		throw NotImplementedException("RESET LOCAL is not implemented.");
 	}
 
-	auto name = std::string(stmt.name);
+	auto name = string(stmt.name);
 	D_ASSERT(!name.empty()); // parser protect us!
 
 	return make_uniq<ResetVariableStatement>(name, ToSetScope(stmt.scope));

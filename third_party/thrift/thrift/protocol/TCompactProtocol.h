@@ -106,7 +106,7 @@ public:
    * Writing functions
    */
 
-  virtual uint32_t writeMessageBegin(const std::string& name,
+  virtual uint32_t writeMessageBegin(const duckdb::string& name,
                                      const TMessageType messageType,
                                      const int32_t seqid);
 
@@ -136,9 +136,9 @@ public:
 
   uint32_t writeDouble(const double dub);
 
-  uint32_t writeString(const std::string& str);
+  uint32_t writeString(const duckdb::string& str);
 
-  uint32_t writeBinary(const std::string& str);
+  uint32_t writeBinary(const duckdb::string& str);
 
   /**
   * These methods are called by structs, but don't actually have any wired
@@ -163,13 +163,13 @@ protected:
   inline int8_t getCompactType(const TType ttype);
 
 public:
-  uint32_t readMessageBegin(std::string& name, TMessageType& messageType, int32_t& seqid);
+  uint32_t readMessageBegin(duckdb::string& name, TMessageType& messageType, int32_t& seqid);
 
-  uint32_t readStructBegin(std::string& name);
+  uint32_t readStructBegin(duckdb::string& name);
 
   uint32_t readStructEnd();
 
-  uint32_t readFieldBegin(std::string& name, TType& fieldType, int16_t& fieldId);
+  uint32_t readFieldBegin(duckdb::string& name, TType& fieldType, int16_t& fieldId);
 
   uint32_t readMapBegin(TType& keyType, TType& valType, uint32_t& size);
 
@@ -191,9 +191,9 @@ public:
 
   uint32_t readDouble(double& dub);
 
-  uint32_t readString(std::string& str);
+  uint32_t readString(duckdb::string& str);
 
-  uint32_t readBinary(std::string& str);
+  uint32_t readBinary(duckdb::string& str);
 
   /*
    *These methods are here for the struct to call, but don't have any wire

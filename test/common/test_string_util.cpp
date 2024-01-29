@@ -1,11 +1,9 @@
-#include "duckdb/common/string_util.hpp"
-#include "duckdb/common/types/value.hpp"
-#include "duckdb/common/to_string.hpp"
-
 #include "catch.hpp"
-
+#include "duckdb/common/string_util.hpp"
+#include "duckdb/common/to_string.hpp"
+#include "duckdb/common/types/value.hpp"
 #include "duckdb/common/vector.hpp"
-#include <string>
+
 #include <cstring>
 
 using namespace duckdb;
@@ -106,109 +104,109 @@ TEST_CASE("Test strcmp() to ensure platform sanity", "[comparison]") {
 
 TEST_CASE("Test join vector items", "[string_util]") {
 	SECTION("Three string items") {
-		duckdb::vector<std::string> str_items = {"abc", "def", "ghi"};
-		std::string result = StringUtil::Join(str_items, ",");
+		duckdb::vector<duckdb::string> str_items = {"abc", "def", "ghi"};
+		duckdb::string result = StringUtil::Join(str_items, ",");
 		REQUIRE(result == "abc,def,ghi");
 	}
 
 	SECTION("One string item") {
-		duckdb::vector<std::string> str_items = {"abc"};
-		std::string result = StringUtil::Join(str_items, ",");
+		duckdb::vector<duckdb::string> str_items = {"abc"};
+		duckdb::string result = StringUtil::Join(str_items, ",");
 		REQUIRE(result == "abc");
 	}
 
 	SECTION("No string items") {
-		duckdb::vector<std::string> str_items;
-		std::string result = StringUtil::Join(str_items, ",");
+		duckdb::vector<duckdb::string> str_items;
+		duckdb::string result = StringUtil::Join(str_items, ",");
 		REQUIRE(result == "");
 	}
 
 	SECTION("Three int items") {
 		duckdb::vector<int> int_items = {1, 2, 3};
-		std::string result =
-		    StringUtil::Join(int_items, int_items.size(), ", ", [](const int &item) { return to_string(item); });
+		duckdb::string result = StringUtil::Join(int_items, int_items.size(), ", ",
+		                                         [](const int &item) { return duckdb::to_string(item); });
 		REQUIRE(result == "1, 2, 3");
 	}
 
 	SECTION("One int item") {
 		duckdb::vector<int> int_items = {1};
-		std::string result =
-		    StringUtil::Join(int_items, int_items.size(), ", ", [](const int &item) { return to_string(item); });
+		duckdb::string result = StringUtil::Join(int_items, int_items.size(), ", ",
+		                                         [](const int &item) { return duckdb::to_string(item); });
 		REQUIRE(result == "1");
 	}
 
 	SECTION("No int items") {
 		duckdb::vector<int> int_items;
-		std::string result =
-		    StringUtil::Join(int_items, int_items.size(), ", ", [](const int &item) { return to_string(item); });
+		duckdb::string result = StringUtil::Join(int_items, int_items.size(), ", ",
+		                                         [](const int &item) { return duckdb::to_string(item); });
 		REQUIRE(result == "");
 	}
 }
 
 TEST_CASE("Test split quoted strings", "[string_util]") {
 	SECTION("Empty string") {
-		REQUIRE(StringUtil::SplitWithQuote("") == duckdb::vector<string> {});
+		REQUIRE(StringUtil::SplitWithQuote("") == duckdb::vector<duckdb::string> {});
 	}
 
 	SECTION("Empty string with space") {
-		REQUIRE(StringUtil::SplitWithQuote(" ") == duckdb::vector<string> {});
+		REQUIRE(StringUtil::SplitWithQuote(" ") == duckdb::vector<duckdb::string> {});
 	}
 
 	SECTION("One item") {
-		REQUIRE(StringUtil::SplitWithQuote("x") == duckdb::vector<string> {"x"});
+		REQUIRE(StringUtil::SplitWithQuote("x") == duckdb::vector<duckdb::string> {"x"});
 	}
 
 	SECTION("One item with space") {
-		REQUIRE(StringUtil::SplitWithQuote(" x ") == duckdb::vector<string> {"x"});
+		REQUIRE(StringUtil::SplitWithQuote(" x ") == duckdb::vector<duckdb::string> {"x"});
 	}
 
 	SECTION("One item with quote") {
-		REQUIRE(StringUtil::SplitWithQuote("\"x\"") == duckdb::vector<string> {"x"});
+		REQUIRE(StringUtil::SplitWithQuote("\"x\"") == duckdb::vector<duckdb::string> {"x"});
 	}
 
 	SECTION("One empty item with quote") {
-		REQUIRE(StringUtil::SplitWithQuote("\"\"") == duckdb::vector<string> {""});
+		REQUIRE(StringUtil::SplitWithQuote("\"\"") == duckdb::vector<duckdb::string> {""});
 	}
 
 	SECTION("One empty item, followed by non-empty one - Or vise versa") {
-		REQUIRE(StringUtil::SplitWithQuote("\"\",hello") == duckdb::vector<string> {"", "hello"});
-		REQUIRE(StringUtil::SplitWithQuote(",\"hello\"") == duckdb::vector<string> {"", "hello"});
-		REQUIRE(StringUtil::SplitWithQuote(",hello") == duckdb::vector<string> {"", "hello"});
-		REQUIRE(StringUtil::SplitWithQuote("\"\",\"hello\"") == duckdb::vector<string> {"", "hello"});
+		REQUIRE(StringUtil::SplitWithQuote("\"\",hello") == duckdb::vector<duckdb::string> {"", "hello"});
+		REQUIRE(StringUtil::SplitWithQuote(",\"hello\"") == duckdb::vector<duckdb::string> {"", "hello"});
+		REQUIRE(StringUtil::SplitWithQuote(",hello") == duckdb::vector<duckdb::string> {"", "hello"});
+		REQUIRE(StringUtil::SplitWithQuote("\"\",\"hello\"") == duckdb::vector<duckdb::string> {"", "hello"});
 
-		REQUIRE(StringUtil::SplitWithQuote("\"hello\",") == duckdb::vector<string> {"hello", ""});
-		REQUIRE(StringUtil::SplitWithQuote("hello,\"\"") == duckdb::vector<string> {"hello", ""});
-		REQUIRE(StringUtil::SplitWithQuote("hello,") == duckdb::vector<string> {"hello", ""});
-		REQUIRE(StringUtil::SplitWithQuote("\"hello\",\"\"") == duckdb::vector<string> {"hello", ""});
+		REQUIRE(StringUtil::SplitWithQuote("\"hello\",") == duckdb::vector<duckdb::string> {"hello", ""});
+		REQUIRE(StringUtil::SplitWithQuote("hello,\"\"") == duckdb::vector<duckdb::string> {"hello", ""});
+		REQUIRE(StringUtil::SplitWithQuote("hello,") == duckdb::vector<duckdb::string> {"hello", ""});
+		REQUIRE(StringUtil::SplitWithQuote("\"hello\",\"\"") == duckdb::vector<duckdb::string> {"hello", ""});
 	}
 
 	SECTION("One quoted item with spaces") {
-		REQUIRE(StringUtil::SplitWithQuote(" \" x y \" ") == duckdb::vector<string> {" x y "});
+		REQUIRE(StringUtil::SplitWithQuote(" \" x y \" ") == duckdb::vector<duckdb::string> {" x y "});
 	}
 
 	SECTION("One quoted item with a delimiter") {
-		REQUIRE(StringUtil::SplitWithQuote("\"x,y\"") == duckdb::vector<string> {"x,y"});
+		REQUIRE(StringUtil::SplitWithQuote("\"x,y\"") == duckdb::vector<duckdb::string> {"x,y"});
 	}
 
 	SECTION("Three items") {
-		REQUIRE(StringUtil::SplitWithQuote("x,y,z") == duckdb::vector<string> {"x", "y", "z"});
+		REQUIRE(StringUtil::SplitWithQuote("x,y,z") == duckdb::vector<duckdb::string> {"x", "y", "z"});
 	}
 
 	SECTION("Three items, with and without quote") {
-		REQUIRE(StringUtil::SplitWithQuote("x,\"y\",z") == duckdb::vector<string> {"x", "y", "z"});
+		REQUIRE(StringUtil::SplitWithQuote("x,\"y\",z") == duckdb::vector<duckdb::string> {"x", "y", "z"});
 	}
 
 	SECTION("Even more items, with and without quote") {
 		REQUIRE(StringUtil::SplitWithQuote("a,b,c,d,e,f,g") ==
-		        duckdb::vector<string> {"a", "b", "c", "d", "e", "f", "g"});
+		        duckdb::vector<duckdb::string> {"a", "b", "c", "d", "e", "f", "g"});
 	}
 
 	SECTION("Three empty items") {
-		REQUIRE(StringUtil::SplitWithQuote(",,") == duckdb::vector<string> {"", "", ""});
+		REQUIRE(StringUtil::SplitWithQuote(",,") == duckdb::vector<duckdb::string> {"", "", ""});
 	}
 
 	SECTION("Three empty quoted items") {
-		REQUIRE(StringUtil::SplitWithQuote("\"\",\"\",\"\"") == duckdb::vector<string> {"", "", ""});
+		REQUIRE(StringUtil::SplitWithQuote("\"\",\"\",\"\"") == duckdb::vector<duckdb::string> {"", "", ""});
 	}
 
 	SECTION("Unclosed quote") {

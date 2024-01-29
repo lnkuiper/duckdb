@@ -2,7 +2,7 @@
 
 namespace duckdb {
 
-SetStatement::SetStatement(std::string name_p, SetScope scope_p, SetType type_p)
+SetStatement::SetStatement(string name_p, SetScope scope_p, SetType type_p)
     : SQLStatement(StatementType::SET_STATEMENT), name(std::move(name_p)), scope(scope_p), set_type(type_p) {
 }
 
@@ -12,7 +12,7 @@ unique_ptr<SQLStatement> SetStatement::Copy() const {
 
 // Set Variable
 
-SetVariableStatement::SetVariableStatement(std::string name_p, unique_ptr<ParsedExpression> value_p, SetScope scope_p)
+SetVariableStatement::SetVariableStatement(string name_p, unique_ptr<ParsedExpression> value_p, SetScope scope_p)
     : SetStatement(std::move(name_p), scope_p, SetType::SET), value(std::move(value_p)) {
 }
 
@@ -26,7 +26,7 @@ unique_ptr<SQLStatement> SetVariableStatement::Copy() const {
 
 // Reset Variable
 
-ResetVariableStatement::ResetVariableStatement(std::string name_p, SetScope scope_p)
+ResetVariableStatement::ResetVariableStatement(string name_p, SetScope scope_p)
     : SetStatement(std::move(name_p), scope_p, SetType::RESET) {
 }
 

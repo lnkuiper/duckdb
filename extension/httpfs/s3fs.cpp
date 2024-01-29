@@ -513,7 +513,7 @@ void S3FileSystem::FinalizeMultipartUpload(S3FileHandle &file_handle) {
 	auto &s3fs = (S3FileSystem &)file_handle.file_system;
 	file_handle.upload_finalized = true;
 
-	std::stringstream ss;
+	stringstream ss;
 	ss << "<CompleteMultipartUpload xmlns=\"http://s3.amazonaws.com/doc/2006-03-01/\">";
 
 	auto parts = file_handle.parts_uploaded.load();
@@ -1152,7 +1152,7 @@ string AWSListObjectV2::Request(string &path, HTTPParams &http_params, S3AuthPar
 
 	auto client = S3FileSystem::GetClient(
 	    http_params, (parsed_url.http_proto + parsed_url.host).c_str()); // Get requests use fresh connection
-	std::stringstream response;
+	stringstream response;
 	auto res = client->Get(
 	    listobjectv2_url.c_str(), *headers,
 	    [&](const duckdb_httplib_openssl::Response &response) {

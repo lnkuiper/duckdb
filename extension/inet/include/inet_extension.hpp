@@ -16,7 +16,7 @@ namespace duckdb {
 class InetExtension : public Extension {
 public:
 	void Load(DuckDB &db) override;
-	std::string Name() override;
+	string Name() override;
 };
 
 } // namespace duckdb

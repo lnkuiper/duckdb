@@ -200,7 +200,7 @@ interval_t CastInterpolation::Interpolate(const interval_t &lo, const double d, 
 }
 
 template <>
-string_t CastInterpolation::Cast(const std::string &src, Vector &result) {
+string_t CastInterpolation::Cast(const string &src, Vector &result) {
 	return StringVector::AddString(result, src);
 }
 
@@ -1017,7 +1017,7 @@ AggregateFunction GetDiscreteQuantileAggregateFunction(const LogicalType &type) 
 	case LogicalTypeId::INTERVAL:
 		return GetTypedDiscreteQuantileAggregateFunction<interval_t, interval_t>(type);
 	case LogicalTypeId::ANY:
-		return GetTypedDiscreteQuantileAggregateFunction<string_t, std::string>(type);
+		return GetTypedDiscreteQuantileAggregateFunction<string_t, string>(type);
 
 	default:
 		throw NotImplementedException("Unimplemented discrete quantile aggregate");
@@ -1139,7 +1139,7 @@ AggregateFunction GetDiscreteQuantileListAggregateFunction(const LogicalType &ty
 	case LogicalTypeId::INTERVAL:
 		return GetTypedDiscreteQuantileListAggregateFunction<interval_t, interval_t>(type);
 	case LogicalTypeId::ANY:
-		return GetTypedDiscreteQuantileListAggregateFunction<string_t, std::string>(type);
+		return GetTypedDiscreteQuantileListAggregateFunction<string_t, string>(type);
 	default:
 		throw NotImplementedException("Unimplemented discrete quantile list aggregate");
 	}

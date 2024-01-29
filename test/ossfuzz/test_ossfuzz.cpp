@@ -1,10 +1,10 @@
 #include "catch.hpp"
 #include "duckdb/common/file_system.hpp"
+#include "duckdb/common/stringstream.hpp"
 #include "test_helpers.hpp"
 
 #include <fstream>
 #include <streambuf>
-#include <sstream>
 #include <string>
 
 using namespace duckdb;
@@ -25,7 +25,8 @@ static void test_runner() {
 	auto query = buffer.str();
 	result = con.Query(query.c_str());
 
-	unordered_set<string> internal_error_messages = {"Unoptimized Result differs from original result!", "INTERNAL"};
+	unordered_set<duckdb::string> internal_error_messages = {"Unoptimized Result differs from original result!",
+	                                                         "INTERNAL"};
 	if (result->HasError()) {
 		if (TestIsInternalError(internal_error_messages, result->GetError())) {
 			result->Print();
@@ -42,8 +43,8 @@ struct RegisterOssfuzzTests {
 	RegisterOssfuzzTests() {
 		// register a separate test for each file in the QUERY_DIRECTORY
 		duckdb::unique_ptr<FileSystem> fs = FileSystem::CreateLocal();
-		fs->ListFiles(QUERY_DIRECTORY, [&](string path, bool) {
-			REGISTER_TEST_CASE(test_runner, string(QUERY_DIRECTORY) + "/" + path, "[ossfuzz][.]");
+		fs->ListFiles(QUERY_DIRECTORY, [&](duckdb::string path, bool) {
+			REGISTER_TEST_CASE(test_runner, (duckdb::string(QUERY_DIRECTORY) + "/" + path).c_str(), "[ossfuzz][.]");
 		});
 	}
 };

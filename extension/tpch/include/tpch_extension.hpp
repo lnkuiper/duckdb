@@ -15,12 +15,12 @@ namespace duckdb {
 class TpchExtension : public Extension {
 public:
 	void Load(DuckDB &db) override;
-	std::string Name() override;
+	string Name() override;
 
 	//! Gets the specified TPC-H Query number as a string
-	static std::string GetQuery(int query);
+	static string GetQuery(int query);
 	//! Returns the CSV answer of a TPC-H query
-	static std::string GetAnswer(double sf, int query);
+	static string GetAnswer(double sf, int query);
 };
 
 } // namespace duckdb

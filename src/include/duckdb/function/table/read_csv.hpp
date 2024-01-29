@@ -63,14 +63,14 @@ struct WriteCSVData : public BaseCSVData {
 struct ColumnInfo {
 	ColumnInfo() {
 	}
-	ColumnInfo(vector<std::string> names_p, vector<LogicalType> types_p) {
+	ColumnInfo(vector<string> names_p, vector<LogicalType> types_p) {
 		names = std::move(names_p);
 		types = std::move(types_p);
 	}
 	void Serialize(Serializer &serializer) const;
 	static ColumnInfo Deserialize(Deserializer &deserializer);
 
-	vector<std::string> names;
+	vector<string> names;
 	vector<LogicalType> types;
 };
 

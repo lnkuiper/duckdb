@@ -5,7 +5,7 @@
 #include "re2/filtered_re2.h"
 
 #include <stddef.h>
-#include <string>
+#include "duckdb/common/string.hpp"
 
 #include "util/util.h"
 #include "util/logging.h"
@@ -49,7 +49,7 @@ RE2::ErrorCode FilteredRE2::Add(const StringPiece& pattern,
   return code;
 }
 
-void FilteredRE2::Compile(std::vector<std::string>* atoms) {
+void FilteredRE2::Compile(std::vector<duckdb::string>* atoms) {
   if (compiled_) {
     LOG(ERROR) << "Compile called already.";
     return;

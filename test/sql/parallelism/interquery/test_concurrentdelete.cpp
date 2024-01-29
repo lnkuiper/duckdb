@@ -29,7 +29,7 @@ TEST_CASE("Single thread delete", "[interquery][.]") {
 	int sum = 0;
 	for (size_t i = 0; i < CONCURRENT_DELETE_INSERT_ELEMENTS; i++) {
 		for (size_t j = 0; j < 10; j++) {
-			con.Query("INSERT INTO integers VALUES (" + to_string(j + 1) + ");");
+			con.Query("INSERT INTO integers VALUES (" + duckdb::to_string(j + 1) + ");");
 			sum += j + 1;
 		}
 	}
@@ -66,7 +66,7 @@ TEST_CASE("Sequential delete", "[interquery][.]") {
 	int sum = 0;
 	for (size_t i = 0; i < CONCURRENT_DELETE_INSERT_ELEMENTS; i++) {
 		for (size_t j = 0; j < 10; j++) {
-			con.Query("INSERT INTO integers VALUES (" + to_string(j + 1) + ");");
+			con.Query("INSERT INTO integers VALUES (" + duckdb::to_string(j + 1) + ");");
 			sum += j + 1;
 		}
 	}
@@ -83,7 +83,7 @@ TEST_CASE("Sequential delete", "[interquery][.]") {
 		count = result->GetValue(0, 0);
 		REQUIRE(count == sum);
 		// delete the elements for this thread
-		REQUIRE_NO_FAIL(connections[i]->Query("DELETE FROM integers WHERE i=" + to_string(i + 1)));
+		REQUIRE_NO_FAIL(connections[i]->Query("DELETE FROM integers WHERE i=" + duckdb::to_string(i + 1)));
 		// check the updated count
 		result = connections[i]->Query("SELECT SUM(i) FROM integers");
 		REQUIRE_NO_FAIL(*result);
@@ -125,7 +125,7 @@ TEST_CASE("Rollback delete", "[interquery][.]") {
 	int sum = 0;
 	for (size_t i = 0; i < CONCURRENT_DELETE_INSERT_ELEMENTS; i++) {
 		for (size_t j = 0; j < 10; j++) {
-			con.Query("INSERT INTO integers VALUES (" + to_string(j + 1) + ");");
+			con.Query("INSERT INTO integers VALUES (" + duckdb::to_string(j + 1) + ");");
 			sum += j + 1;
 		}
 	}
@@ -167,7 +167,7 @@ static void delete_elements(DuckDB *db, bool *correct, size_t threadnr) {
 	for (size_t i = 0; i < CONCURRENT_DELETE_INSERT_ELEMENTS; i++) {
 		// count should decrease by one for every delete we do
 		auto element = CONCURRENT_DELETE_INSERT_ELEMENTS * threadnr + i;
-		if (con.Query("DELETE FROM integers WHERE i=" + to_string(element))->HasError()) {
+		if (con.Query("DELETE FROM integers WHERE i=" + duckdb::to_string(element))->HasError()) {
 			correct[threadnr] = false;
 		}
 		result = con.Query("SELECT COUNT(*) FROM integers");
@@ -203,7 +203,7 @@ TEST_CASE("Concurrent delete", "[interquery][.]") {
 	for (size_t i = 0; i < CONCURRENT_DELETE_INSERT_ELEMENTS; i++) {
 		for (size_t j = 0; j < CONCURRENT_DELETE_THREAD_COUNT; j++) {
 			auto element = CONCURRENT_DELETE_INSERT_ELEMENTS * j + i;
-			con.Query("INSERT INTO integers VALUES (" + to_string(element) + ");");
+			con.Query("INSERT INTO integers VALUES (" + duckdb::to_string(element) + ");");
 		}
 	}
 

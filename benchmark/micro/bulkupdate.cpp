@@ -37,7 +37,7 @@ string VerifyResult(QueryResult *result) override {
 	auto &materialized = (MaterializedQueryResult &)*result;
 	Value val = materialized.GetValue(0, 0);
 	if (val != Value::BIGINT(sum + count)) {
-		return string("Value " + val.ToString() + " does not match expected value " + std::to_string(sum + count));
+		return string("Value " + val.ToString() + " does not match expected value " + to_string(sum + count));
 	}
 	return string();
 }
@@ -76,7 +76,7 @@ string VerifyResult(QueryResult *result) override {
 	auto &materialized = (MaterializedQueryResult &)*result;
 	Value val = materialized.GetValue(0, 0);
 	if (val != Value::BIGINT(sum - count)) {
-		return string("Value " + val.ToString() + " does not match expected value " + std::to_string(sum - count));
+		return string("Value " + val.ToString() + " does not match expected value " + to_string(sum - count));
 	}
 	return string();
 }

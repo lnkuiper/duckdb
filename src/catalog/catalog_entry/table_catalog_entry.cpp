@@ -67,7 +67,7 @@ unique_ptr<CreateInfo> TableCatalogEntry::GetInfo() const {
 }
 
 string TableCatalogEntry::ColumnsToSQL(const ColumnList &columns, const vector<unique_ptr<Constraint>> &constraints) {
-	std::stringstream ss;
+	stringstream ss;
 
 	ss << "(";
 

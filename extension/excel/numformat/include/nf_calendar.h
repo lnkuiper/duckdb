@@ -23,7 +23,7 @@
 #define _NF_CALENDAR_H
 
 #include <stdint.h>
-#include <string>
+#include "duckdb/common/string.hpp"
 #include <algorithm>
 #include "duckdb/common/vector.hpp"
 
@@ -90,7 +90,7 @@ typedef sal_uInt64 sal_uIntPtr;
 #endif
 
 #define EraseAllChars(A, B)      A.erase(std::remove(A.begin(), A.end(), B), A.end())
-#define EraseTrailingChars(A, B) A.erase(A.find_last_not_of(B) + 1, std::string::npos)
+#define EraseTrailingChars(A, B) A.erase(A.find_last_not_of(B) + 1, duckdb::string::npos)
 #define EraseLeadingChars(A, B)  A.erase(0, std::min(A.find_first_not_of(B), A.size() - 1))
 #define ConvertToUpper(A)        std::transform(A.begin(), A.end(), A.begin(), ::toupper)
 #define ConvertToLower(A)        std::transform(A.begin(), A.end(), A.begin(), ::tolower)

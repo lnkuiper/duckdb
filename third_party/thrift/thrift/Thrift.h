@@ -34,7 +34,7 @@
 #ifdef HAVE_INTTYPES_H
 #include <inttypes.h>
 #endif
-#include <string>
+#include "duckdb/common/string.hpp"
 #include <map>
 #include <list>
 #include <set>
@@ -83,7 +83,7 @@ class TException : public std::exception {
 public:
   TException() : message_() {}
 
-  TException(const std::string& message) : message_(message) {}
+  TException(const duckdb::string& message) : message_(message) {}
 
   ~TException() noexcept override = default;
 
@@ -96,7 +96,7 @@ public:
   }
 
 protected:
-  std::string message_;
+  duckdb::string message_;
 };
 
 class TDelayedException {

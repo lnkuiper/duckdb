@@ -75,7 +75,7 @@ void CSVReaderOptions::SetCompression(const string &compression_p) {
 }
 
 string CSVReaderOptions::GetEscape() const {
-	return std::string(1, this->dialect_options.state_machine_options.escape.GetValue());
+	return string(1, this->dialect_options.state_machine_options.escape.GetValue());
 }
 
 void CSVReaderOptions::SetEscape(const string &input) {
@@ -98,7 +98,7 @@ void CSVReaderOptions::SetSkipRows(int64_t skip_rows) {
 }
 
 string CSVReaderOptions::GetDelimiter() const {
-	return std::string(1, this->dialect_options.state_machine_options.delimiter.GetValue());
+	return string(1, this->dialect_options.state_machine_options.delimiter.GetValue());
 }
 
 void CSVReaderOptions::SetDelimiter(const string &input) {
@@ -113,7 +113,7 @@ void CSVReaderOptions::SetDelimiter(const string &input) {
 }
 
 string CSVReaderOptions::GetQuote() const {
-	return std::string(1, this->dialect_options.state_machine_options.quote.GetValue());
+	return string(1, this->dialect_options.state_machine_options.quote.GetValue());
 }
 
 void CSVReaderOptions::SetQuote(const string &quote_p) {
@@ -326,13 +326,13 @@ string CSVReaderOptions::ToString() const {
 
 	// Now we do options that can only be set by the user, that might hold some general significance
 	// null padding
-	error += "null_padding=" + std::to_string(null_padding) + "\n  ";
+	error += "null_padding=" + to_string(null_padding) + "\n  ";
 	// sample_size
-	error += "sample_size=" + std::to_string(sample_size_chunks * STANDARD_VECTOR_SIZE) + "\n  ";
+	error += "sample_size=" + to_string(sample_size_chunks * STANDARD_VECTOR_SIZE) + "\n  ";
 	// ignore_errors
-	error += "ignore_errors=" + std::to_string(ignore_errors) + "\n  ";
+	error += "ignore_errors=" + to_string(ignore_errors) + "\n  ";
 	// all_varchar
-	error += "all_varchar=" + std::to_string(all_varchar) + "\n";
+	error += "all_varchar=" + to_string(all_varchar) + "\n";
 
 	// Add information regarding sniffer mismatches (if any)
 	error += sniffer_user_mismatch_error;

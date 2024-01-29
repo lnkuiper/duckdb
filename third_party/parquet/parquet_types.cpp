@@ -242,12 +242,12 @@ Statistics::~Statistics() throw() {
 }
 
 
-void Statistics::__set_max(const std::string& val) {
+void Statistics::__set_max(const duckdb::string& val) {
   this->max = val;
 __isset.max = true;
 }
 
-void Statistics::__set_min(const std::string& val) {
+void Statistics::__set_min(const duckdb::string& val) {
   this->min = val;
 __isset.min = true;
 }
@@ -262,12 +262,12 @@ void Statistics::__set_distinct_count(const int64_t val) {
 __isset.distinct_count = true;
 }
 
-void Statistics::__set_max_value(const std::string& val) {
+void Statistics::__set_max_value(const duckdb::string& val) {
   this->max_value = val;
 __isset.max_value = true;
 }
 
-void Statistics::__set_min_value(const std::string& val) {
+void Statistics::__set_min_value(const duckdb::string& val) {
   this->min_value = val;
 __isset.min_value = true;
 }
@@ -282,7 +282,7 @@ uint32_t Statistics::read(::duckdb_apache::thrift::protocol::TProtocol* iprot) {
 
   ::duckdb_apache::thrift::protocol::TInputRecursionTracker tracker(*iprot);
   uint32_t xfer = 0;
-  std::string fname;
+  duckdb::string fname;
   ::duckdb_apache::thrift::protocol::TType ftype;
   int16_t fid;
 
@@ -456,7 +456,7 @@ uint32_t StringType::read(::duckdb_apache::thrift::protocol::TProtocol* iprot) {
 
   ::duckdb_apache::thrift::protocol::TInputRecursionTracker tracker(*iprot);
   uint32_t xfer = 0;
-  std::string fname;
+  duckdb::string fname;
   ::duckdb_apache::thrift::protocol::TType ftype;
   int16_t fid;
 
@@ -524,7 +524,7 @@ uint32_t UUIDType::read(::duckdb_apache::thrift::protocol::TProtocol* iprot) {
 
   ::duckdb_apache::thrift::protocol::TInputRecursionTracker tracker(*iprot);
   uint32_t xfer = 0;
-  std::string fname;
+  duckdb::string fname;
   ::duckdb_apache::thrift::protocol::TType ftype;
   int16_t fid;
 
@@ -592,7 +592,7 @@ uint32_t MapType::read(::duckdb_apache::thrift::protocol::TProtocol* iprot) {
 
   ::duckdb_apache::thrift::protocol::TInputRecursionTracker tracker(*iprot);
   uint32_t xfer = 0;
-  std::string fname;
+  duckdb::string fname;
   ::duckdb_apache::thrift::protocol::TType ftype;
   int16_t fid;
 
@@ -660,7 +660,7 @@ uint32_t ListType::read(::duckdb_apache::thrift::protocol::TProtocol* iprot) {
 
   ::duckdb_apache::thrift::protocol::TInputRecursionTracker tracker(*iprot);
   uint32_t xfer = 0;
-  std::string fname;
+  duckdb::string fname;
   ::duckdb_apache::thrift::protocol::TType ftype;
   int16_t fid;
 
@@ -728,7 +728,7 @@ uint32_t EnumType::read(::duckdb_apache::thrift::protocol::TProtocol* iprot) {
 
   ::duckdb_apache::thrift::protocol::TInputRecursionTracker tracker(*iprot);
   uint32_t xfer = 0;
-  std::string fname;
+  duckdb::string fname;
   ::duckdb_apache::thrift::protocol::TType ftype;
   int16_t fid;
 
@@ -796,7 +796,7 @@ uint32_t DateType::read(::duckdb_apache::thrift::protocol::TProtocol* iprot) {
 
   ::duckdb_apache::thrift::protocol::TInputRecursionTracker tracker(*iprot);
   uint32_t xfer = 0;
-  std::string fname;
+  duckdb::string fname;
   ::duckdb_apache::thrift::protocol::TType ftype;
   int16_t fid;
 
@@ -864,7 +864,7 @@ uint32_t NullType::read(::duckdb_apache::thrift::protocol::TProtocol* iprot) {
 
   ::duckdb_apache::thrift::protocol::TInputRecursionTracker tracker(*iprot);
   uint32_t xfer = 0;
-  std::string fname;
+  duckdb::string fname;
   ::duckdb_apache::thrift::protocol::TType ftype;
   int16_t fid;
 
@@ -940,7 +940,7 @@ uint32_t DecimalType::read(::duckdb_apache::thrift::protocol::TProtocol* iprot) 
 
   ::duckdb_apache::thrift::protocol::TInputRecursionTracker tracker(*iprot);
   uint32_t xfer = 0;
-  std::string fname;
+  duckdb::string fname;
   ::duckdb_apache::thrift::protocol::TType ftype;
   int16_t fid;
 
@@ -1047,7 +1047,7 @@ uint32_t MilliSeconds::read(::duckdb_apache::thrift::protocol::TProtocol* iprot)
 
   ::duckdb_apache::thrift::protocol::TInputRecursionTracker tracker(*iprot);
   uint32_t xfer = 0;
-  std::string fname;
+  duckdb::string fname;
   ::duckdb_apache::thrift::protocol::TType ftype;
   int16_t fid;
 
@@ -1115,7 +1115,7 @@ uint32_t MicroSeconds::read(::duckdb_apache::thrift::protocol::TProtocol* iprot)
 
   ::duckdb_apache::thrift::protocol::TInputRecursionTracker tracker(*iprot);
   uint32_t xfer = 0;
-  std::string fname;
+  duckdb::string fname;
   ::duckdb_apache::thrift::protocol::TType ftype;
   int16_t fid;
 
@@ -1183,7 +1183,7 @@ uint32_t NanoSeconds::read(::duckdb_apache::thrift::protocol::TProtocol* iprot) 
 
   ::duckdb_apache::thrift::protocol::TInputRecursionTracker tracker(*iprot);
   uint32_t xfer = 0;
-  std::string fname;
+  duckdb::string fname;
   ::duckdb_apache::thrift::protocol::TType ftype;
   int16_t fid;
 
@@ -1266,7 +1266,7 @@ uint32_t TimeUnit::read(::duckdb_apache::thrift::protocol::TProtocol* iprot) {
 
   ::duckdb_apache::thrift::protocol::TInputRecursionTracker tracker(*iprot);
   uint32_t xfer = 0;
-  std::string fname;
+  duckdb::string fname;
   ::duckdb_apache::thrift::protocol::TType ftype;
   int16_t fid;
 
@@ -1397,7 +1397,7 @@ uint32_t TimestampType::read(::duckdb_apache::thrift::protocol::TProtocol* iprot
 
   ::duckdb_apache::thrift::protocol::TInputRecursionTracker tracker(*iprot);
   uint32_t xfer = 0;
-  std::string fname;
+  duckdb::string fname;
   ::duckdb_apache::thrift::protocol::TType ftype;
   int16_t fid;
 
@@ -1512,7 +1512,7 @@ uint32_t TimeType::read(::duckdb_apache::thrift::protocol::TProtocol* iprot) {
 
   ::duckdb_apache::thrift::protocol::TInputRecursionTracker tracker(*iprot);
   uint32_t xfer = 0;
-  std::string fname;
+  duckdb::string fname;
   ::duckdb_apache::thrift::protocol::TType ftype;
   int16_t fid;
 
@@ -1627,7 +1627,7 @@ uint32_t IntType::read(::duckdb_apache::thrift::protocol::TProtocol* iprot) {
 
   ::duckdb_apache::thrift::protocol::TInputRecursionTracker tracker(*iprot);
   uint32_t xfer = 0;
-  std::string fname;
+  duckdb::string fname;
   ::duckdb_apache::thrift::protocol::TType ftype;
   int16_t fid;
 
@@ -1734,7 +1734,7 @@ uint32_t JsonType::read(::duckdb_apache::thrift::protocol::TProtocol* iprot) {
 
   ::duckdb_apache::thrift::protocol::TInputRecursionTracker tracker(*iprot);
   uint32_t xfer = 0;
-  std::string fname;
+  duckdb::string fname;
   ::duckdb_apache::thrift::protocol::TType ftype;
   int16_t fid;
 
@@ -1802,7 +1802,7 @@ uint32_t BsonType::read(::duckdb_apache::thrift::protocol::TProtocol* iprot) {
 
   ::duckdb_apache::thrift::protocol::TInputRecursionTracker tracker(*iprot);
   uint32_t xfer = 0;
-  std::string fname;
+  duckdb::string fname;
   ::duckdb_apache::thrift::protocol::TType ftype;
   int16_t fid;
 
@@ -1935,7 +1935,7 @@ uint32_t LogicalType::read(::duckdb_apache::thrift::protocol::TProtocol* iprot) 
 
   ::duckdb_apache::thrift::protocol::TInputRecursionTracker tracker(*iprot);
   uint32_t xfer = 0;
-  std::string fname;
+  duckdb::string fname;
   ::duckdb_apache::thrift::protocol::TType ftype;
   int16_t fid;
 
@@ -2233,7 +2233,7 @@ void SchemaElement::__set_repetition_type(const FieldRepetitionType::type val) {
 __isset.repetition_type = true;
 }
 
-void SchemaElement::__set_name(const std::string& val) {
+void SchemaElement::__set_name(const duckdb::string& val) {
   this->name = val;
 }
 
@@ -2277,7 +2277,7 @@ uint32_t SchemaElement::read(::duckdb_apache::thrift::protocol::TProtocol* iprot
 
   ::duckdb_apache::thrift::protocol::TInputRecursionTracker tracker(*iprot);
   uint32_t xfer = 0;
-  std::string fname;
+  duckdb::string fname;
   ::duckdb_apache::thrift::protocol::TType ftype;
   int16_t fid;
 
@@ -2548,7 +2548,7 @@ uint32_t DataPageHeader::read(::duckdb_apache::thrift::protocol::TProtocol* ipro
 
   ::duckdb_apache::thrift::protocol::TInputRecursionTracker tracker(*iprot);
   uint32_t xfer = 0;
-  std::string fname;
+  duckdb::string fname;
   ::duckdb_apache::thrift::protocol::TType ftype;
   int16_t fid;
 
@@ -2719,7 +2719,7 @@ uint32_t IndexPageHeader::read(::duckdb_apache::thrift::protocol::TProtocol* ipr
 
   ::duckdb_apache::thrift::protocol::TInputRecursionTracker tracker(*iprot);
   uint32_t xfer = 0;
-  std::string fname;
+  duckdb::string fname;
   ::duckdb_apache::thrift::protocol::TType ftype;
   int16_t fid;
 
@@ -2800,7 +2800,7 @@ uint32_t DictionaryPageHeader::read(::duckdb_apache::thrift::protocol::TProtocol
 
   ::duckdb_apache::thrift::protocol::TInputRecursionTracker tracker(*iprot);
   uint32_t xfer = 0;
-  std::string fname;
+  duckdb::string fname;
   ::duckdb_apache::thrift::protocol::TType ftype;
   int16_t fid;
 
@@ -2963,7 +2963,7 @@ uint32_t DataPageHeaderV2::read(::duckdb_apache::thrift::protocol::TProtocol* ip
 
   ::duckdb_apache::thrift::protocol::TInputRecursionTracker tracker(*iprot);
   uint32_t xfer = 0;
-  std::string fname;
+  duckdb::string fname;
   ::duckdb_apache::thrift::protocol::TType ftype;
   int16_t fid;
 
@@ -3222,7 +3222,7 @@ uint32_t PageHeader::read(::duckdb_apache::thrift::protocol::TProtocol* iprot) {
 
   ::duckdb_apache::thrift::protocol::TInputRecursionTracker tracker(*iprot);
   uint32_t xfer = 0;
-  std::string fname;
+  duckdb::string fname;
   ::duckdb_apache::thrift::protocol::TType ftype;
   int16_t fid;
 
@@ -3428,11 +3428,11 @@ KeyValue::~KeyValue() throw() {
 }
 
 
-void KeyValue::__set_key(const std::string& val) {
+void KeyValue::__set_key(const duckdb::string& val) {
   this->key = val;
 }
 
-void KeyValue::__set_value(const std::string& val) {
+void KeyValue::__set_value(const duckdb::string& val) {
   this->value = val;
 __isset.value = true;
 }
@@ -3447,7 +3447,7 @@ uint32_t KeyValue::read(::duckdb_apache::thrift::protocol::TProtocol* iprot) {
 
   ::duckdb_apache::thrift::protocol::TInputRecursionTracker tracker(*iprot);
   uint32_t xfer = 0;
-  std::string fname;
+  duckdb::string fname;
   ::duckdb_apache::thrift::protocol::TType ftype;
   int16_t fid;
 
@@ -3567,7 +3567,7 @@ uint32_t SortingColumn::read(::duckdb_apache::thrift::protocol::TProtocol* iprot
 
   ::duckdb_apache::thrift::protocol::TInputRecursionTracker tracker(*iprot);
   uint32_t xfer = 0;
-  std::string fname;
+  duckdb::string fname;
   ::duckdb_apache::thrift::protocol::TType ftype;
   int16_t fid;
 
@@ -3705,7 +3705,7 @@ uint32_t PageEncodingStats::read(::duckdb_apache::thrift::protocol::TProtocol* i
 
   ::duckdb_apache::thrift::protocol::TInputRecursionTracker tracker(*iprot);
   uint32_t xfer = 0;
-  std::string fname;
+  duckdb::string fname;
   ::duckdb_apache::thrift::protocol::TType ftype;
   int16_t fid;
 
@@ -3833,7 +3833,7 @@ void ColumnMetaData::__set_encodings(const duckdb::vector<Encoding::type> & val)
   this->encodings = val;
 }
 
-void ColumnMetaData::__set_path_in_schema(const duckdb::vector<std::string> & val) {
+void ColumnMetaData::__set_path_in_schema(const duckdb::vector<duckdb::string> & val) {
   this->path_in_schema = val;
 }
 
@@ -3892,7 +3892,7 @@ uint32_t ColumnMetaData::read(::duckdb_apache::thrift::protocol::TProtocol* ipro
 
   ::duckdb_apache::thrift::protocol::TInputRecursionTracker tracker(*iprot);
   uint32_t xfer = 0;
-  std::string fname;
+  duckdb::string fname;
   ::duckdb_apache::thrift::protocol::TType ftype;
   int16_t fid;
 
@@ -4127,7 +4127,7 @@ uint32_t ColumnMetaData::write(::duckdb_apache::thrift::protocol::TProtocol* opr
   xfer += oprot->writeFieldBegin("path_in_schema", ::duckdb_apache::thrift::protocol::T_LIST, 3);
   {
     xfer += oprot->writeListBegin(::duckdb_apache::thrift::protocol::T_STRING, static_cast<uint32_t>(this->path_in_schema.size()));
-    duckdb::vector<std::string> ::const_iterator _iter91;
+    duckdb::vector<duckdb::string> ::const_iterator _iter91;
     for (_iter91 = this->path_in_schema.begin(); _iter91 != this->path_in_schema.end(); ++_iter91)
     {
       xfer += oprot->writeString((*_iter91));
@@ -4287,7 +4287,7 @@ uint32_t EncryptionWithFooterKey::read(::duckdb_apache::thrift::protocol::TProto
 
   ::duckdb_apache::thrift::protocol::TInputRecursionTracker tracker(*iprot);
   uint32_t xfer = 0;
-  std::string fname;
+  duckdb::string fname;
   ::duckdb_apache::thrift::protocol::TType ftype;
   int16_t fid;
 
@@ -4345,11 +4345,11 @@ EncryptionWithColumnKey::~EncryptionWithColumnKey() throw() {
 }
 
 
-void EncryptionWithColumnKey::__set_path_in_schema(const duckdb::vector<std::string> & val) {
+void EncryptionWithColumnKey::__set_path_in_schema(const duckdb::vector<duckdb::string> & val) {
   this->path_in_schema = val;
 }
 
-void EncryptionWithColumnKey::__set_key_metadata(const std::string& val) {
+void EncryptionWithColumnKey::__set_key_metadata(const duckdb::string& val) {
   this->key_metadata = val;
 __isset.key_metadata = true;
 }
@@ -4364,7 +4364,7 @@ uint32_t EncryptionWithColumnKey::read(::duckdb_apache::thrift::protocol::TProto
 
   ::duckdb_apache::thrift::protocol::TInputRecursionTracker tracker(*iprot);
   uint32_t xfer = 0;
-  std::string fname;
+  duckdb::string fname;
   ::duckdb_apache::thrift::protocol::TType ftype;
   int16_t fid;
 
@@ -4432,7 +4432,7 @@ uint32_t EncryptionWithColumnKey::write(::duckdb_apache::thrift::protocol::TProt
   xfer += oprot->writeFieldBegin("path_in_schema", ::duckdb_apache::thrift::protocol::T_LIST, 1);
   {
     xfer += oprot->writeListBegin(::duckdb_apache::thrift::protocol::T_STRING, static_cast<uint32_t>(this->path_in_schema.size()));
-    duckdb::vector<std::string> ::const_iterator _iter103;
+    duckdb::vector<duckdb::string> ::const_iterator _iter103;
     for (_iter103 = this->path_in_schema.begin(); _iter103 != this->path_in_schema.end(); ++_iter103)
     {
       xfer += oprot->writeString((*_iter103));
@@ -4502,7 +4502,7 @@ uint32_t ColumnCryptoMetaData::read(::duckdb_apache::thrift::protocol::TProtocol
 
   ::duckdb_apache::thrift::protocol::TInputRecursionTracker tracker(*iprot);
   uint32_t xfer = 0;
-  std::string fname;
+  duckdb::string fname;
   ::duckdb_apache::thrift::protocol::TType ftype;
   int16_t fid;
 
@@ -4598,7 +4598,7 @@ ColumnChunk::~ColumnChunk() throw() {
 }
 
 
-void ColumnChunk::__set_file_path(const std::string& val) {
+void ColumnChunk::__set_file_path(const duckdb::string& val) {
   this->file_path = val;
 __isset.file_path = true;
 }
@@ -4637,7 +4637,7 @@ void ColumnChunk::__set_crypto_metadata(const ColumnCryptoMetaData& val) {
 __isset.crypto_metadata = true;
 }
 
-void ColumnChunk::__set_encrypted_column_metadata(const std::string& val) {
+void ColumnChunk::__set_encrypted_column_metadata(const duckdb::string& val) {
   this->encrypted_column_metadata = val;
 __isset.encrypted_column_metadata = true;
 }
@@ -4652,7 +4652,7 @@ uint32_t ColumnChunk::read(::duckdb_apache::thrift::protocol::TProtocol* iprot) 
 
   ::duckdb_apache::thrift::protocol::TInputRecursionTracker tracker(*iprot);
   uint32_t xfer = 0;
-  std::string fname;
+  duckdb::string fname;
   ::duckdb_apache::thrift::protocol::TType ftype;
   int16_t fid;
 
@@ -4911,7 +4911,7 @@ uint32_t RowGroup::read(::duckdb_apache::thrift::protocol::TProtocol* iprot) {
 
   ::duckdb_apache::thrift::protocol::TInputRecursionTracker tracker(*iprot);
   uint32_t xfer = 0;
-  std::string fname;
+  duckdb::string fname;
   ::duckdb_apache::thrift::protocol::TType ftype;
   int16_t fid;
 
@@ -5148,7 +5148,7 @@ uint32_t TypeDefinedOrder::read(::duckdb_apache::thrift::protocol::TProtocol* ip
 
   ::duckdb_apache::thrift::protocol::TInputRecursionTracker tracker(*iprot);
   uint32_t xfer = 0;
-  std::string fname;
+  duckdb::string fname;
   ::duckdb_apache::thrift::protocol::TType ftype;
   int16_t fid;
 
@@ -5221,7 +5221,7 @@ uint32_t ColumnOrder::read(::duckdb_apache::thrift::protocol::TProtocol* iprot) 
 
   ::duckdb_apache::thrift::protocol::TInputRecursionTracker tracker(*iprot);
   uint32_t xfer = 0;
-  std::string fname;
+  duckdb::string fname;
   ::duckdb_apache::thrift::protocol::TType ftype;
   int16_t fid;
 
@@ -5322,7 +5322,7 @@ uint32_t PageLocation::read(::duckdb_apache::thrift::protocol::TProtocol* iprot)
 
   ::duckdb_apache::thrift::protocol::TInputRecursionTracker tracker(*iprot);
   uint32_t xfer = 0;
-  std::string fname;
+  duckdb::string fname;
   ::duckdb_apache::thrift::protocol::TType ftype;
   int16_t fid;
 
@@ -5452,7 +5452,7 @@ uint32_t OffsetIndex::read(::duckdb_apache::thrift::protocol::TProtocol* iprot) 
 
   ::duckdb_apache::thrift::protocol::TInputRecursionTracker tracker(*iprot);
   uint32_t xfer = 0;
-  std::string fname;
+  duckdb::string fname;
   ::duckdb_apache::thrift::protocol::TType ftype;
   int16_t fid;
 
@@ -5554,11 +5554,11 @@ void ColumnIndex::__set_null_pages(const duckdb::vector<bool> & val) {
   this->null_pages = val;
 }
 
-void ColumnIndex::__set_min_values(const duckdb::vector<std::string> & val) {
+void ColumnIndex::__set_min_values(const duckdb::vector<duckdb::string> & val) {
   this->min_values = val;
 }
 
-void ColumnIndex::__set_max_values(const duckdb::vector<std::string> & val) {
+void ColumnIndex::__set_max_values(const duckdb::vector<duckdb::string> & val) {
   this->max_values = val;
 }
 
@@ -5581,7 +5581,7 @@ uint32_t ColumnIndex::read(::duckdb_apache::thrift::protocol::TProtocol* iprot) 
 
   ::duckdb_apache::thrift::protocol::TInputRecursionTracker tracker(*iprot);
   uint32_t xfer = 0;
-  std::string fname;
+  duckdb::string fname;
   ::duckdb_apache::thrift::protocol::TType ftype;
   int16_t fid;
 
@@ -5732,7 +5732,7 @@ uint32_t ColumnIndex::write(::duckdb_apache::thrift::protocol::TProtocol* oprot)
   xfer += oprot->writeFieldBegin("min_values", ::duckdb_apache::thrift::protocol::T_LIST, 2);
   {
     xfer += oprot->writeListBegin(::duckdb_apache::thrift::protocol::T_STRING, static_cast<uint32_t>(this->min_values.size()));
-    duckdb::vector<std::string> ::const_iterator _iter160;
+    duckdb::vector<duckdb::string> ::const_iterator _iter160;
     for (_iter160 = this->min_values.begin(); _iter160 != this->min_values.end(); ++_iter160)
     {
       xfer += oprot->writeBinary((*_iter160));
@@ -5744,7 +5744,7 @@ uint32_t ColumnIndex::write(::duckdb_apache::thrift::protocol::TProtocol* oprot)
   xfer += oprot->writeFieldBegin("max_values", ::duckdb_apache::thrift::protocol::T_LIST, 3);
   {
     xfer += oprot->writeListBegin(::duckdb_apache::thrift::protocol::T_STRING, static_cast<uint32_t>(this->max_values.size()));
-    duckdb::vector<std::string> ::const_iterator _iter161;
+    duckdb::vector<duckdb::string> ::const_iterator _iter161;
     for (_iter161 = this->max_values.begin(); _iter161 != this->max_values.end(); ++_iter161)
     {
       xfer += oprot->writeBinary((*_iter161));
@@ -5818,12 +5818,12 @@ AesGcmV1::~AesGcmV1() throw() {
 }
 
 
-void AesGcmV1::__set_aad_prefix(const std::string& val) {
+void AesGcmV1::__set_aad_prefix(const duckdb::string& val) {
   this->aad_prefix = val;
 __isset.aad_prefix = true;
 }
 
-void AesGcmV1::__set_aad_file_unique(const std::string& val) {
+void AesGcmV1::__set_aad_file_unique(const duckdb::string& val) {
   this->aad_file_unique = val;
 __isset.aad_file_unique = true;
 }
@@ -5843,7 +5843,7 @@ uint32_t AesGcmV1::read(::duckdb_apache::thrift::protocol::TProtocol* iprot) {
 
   ::duckdb_apache::thrift::protocol::TInputRecursionTracker tracker(*iprot);
   uint32_t xfer = 0;
-  std::string fname;
+  duckdb::string fname;
   ::duckdb_apache::thrift::protocol::TType ftype;
   int16_t fid;
 
@@ -5956,12 +5956,12 @@ AesGcmCtrV1::~AesGcmCtrV1() throw() {
 }
 
 
-void AesGcmCtrV1::__set_aad_prefix(const std::string& val) {
+void AesGcmCtrV1::__set_aad_prefix(const duckdb::string& val) {
   this->aad_prefix = val;
 __isset.aad_prefix = true;
 }
 
-void AesGcmCtrV1::__set_aad_file_unique(const std::string& val) {
+void AesGcmCtrV1::__set_aad_file_unique(const duckdb::string& val) {
   this->aad_file_unique = val;
 __isset.aad_file_unique = true;
 }
@@ -5981,7 +5981,7 @@ uint32_t AesGcmCtrV1::read(::duckdb_apache::thrift::protocol::TProtocol* iprot) 
 
   ::duckdb_apache::thrift::protocol::TInputRecursionTracker tracker(*iprot);
   uint32_t xfer = 0;
-  std::string fname;
+  duckdb::string fname;
   ::duckdb_apache::thrift::protocol::TType ftype;
   int16_t fid;
 
@@ -6114,7 +6114,7 @@ uint32_t EncryptionAlgorithm::read(::duckdb_apache::thrift::protocol::TProtocol*
 
   ::duckdb_apache::thrift::protocol::TInputRecursionTracker tracker(*iprot);
   uint32_t xfer = 0;
-  std::string fname;
+  duckdb::string fname;
   ::duckdb_apache::thrift::protocol::TType ftype;
   int16_t fid;
 
@@ -6231,7 +6231,7 @@ void FileMetaData::__set_key_value_metadata(const duckdb::vector<KeyValue> & val
 __isset.key_value_metadata = true;
 }
 
-void FileMetaData::__set_created_by(const std::string& val) {
+void FileMetaData::__set_created_by(const duckdb::string& val) {
   this->created_by = val;
 __isset.created_by = true;
 }
@@ -6246,7 +6246,7 @@ void FileMetaData::__set_encryption_algorithm(const EncryptionAlgorithm& val) {
 __isset.encryption_algorithm = true;
 }
 
-void FileMetaData::__set_footer_signing_key_metadata(const std::string& val) {
+void FileMetaData::__set_footer_signing_key_metadata(const duckdb::string& val) {
   this->footer_signing_key_metadata = val;
 __isset.footer_signing_key_metadata = true;
 }
@@ -6261,7 +6261,7 @@ uint32_t FileMetaData::read(::duckdb_apache::thrift::protocol::TProtocol* iprot)
 
   ::duckdb_apache::thrift::protocol::TInputRecursionTracker tracker(*iprot);
   uint32_t xfer = 0;
-  std::string fname;
+  duckdb::string fname;
   ::duckdb_apache::thrift::protocol::TType ftype;
   int16_t fid;
 
@@ -6569,7 +6569,7 @@ void FileCryptoMetaData::__set_encryption_algorithm(const EncryptionAlgorithm& v
   this->encryption_algorithm = val;
 }
 
-void FileCryptoMetaData::__set_key_metadata(const std::string& val) {
+void FileCryptoMetaData::__set_key_metadata(const duckdb::string& val) {
   this->key_metadata = val;
 __isset.key_metadata = true;
 }
@@ -6584,7 +6584,7 @@ uint32_t FileCryptoMetaData::read(::duckdb_apache::thrift::protocol::TProtocol* 
 
   ::duckdb_apache::thrift::protocol::TInputRecursionTracker tracker(*iprot);
   uint32_t xfer = 0;
-  std::string fname;
+  duckdb::string fname;
   ::duckdb_apache::thrift::protocol::TType ftype;
   int16_t fid;
 

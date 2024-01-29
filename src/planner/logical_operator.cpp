@@ -187,7 +187,7 @@ unique_ptr<LogicalOperator> LogicalOperator::Copy(ClientContext &context) const 
 	} catch (NotImplementedException &ex) {
 		throw NotImplementedException("Logical Operator Copy requires the logical operator and all of its children to "
 		                              "be serializable: " +
-		                              std::string(ex.what()));
+		                              string(ex.what()));
 	}
 	stream.Rewind();
 	bound_parameter_map_t parameters;

@@ -32,7 +32,7 @@ void ShellExtension::Load(DuckDB &db) {
 	                                                             GetEnvFunction, GetEnvBind));
 }
 
-std::string ShellExtension::Name() {
+string ShellExtension::Name() {
 	return "shell";
 }
 

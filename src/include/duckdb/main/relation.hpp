@@ -160,8 +160,8 @@ public:
 	DUCKDB_API virtual void Delete(const string &condition = string());
 	//! Create a relation from calling a table in/out function on the input relation
 	//! Create a relation from calling a table in/out function on the input relation
-	DUCKDB_API shared_ptr<Relation> TableFunction(const std::string &fname, const vector<Value> &values);
-	DUCKDB_API shared_ptr<Relation> TableFunction(const std::string &fname, const vector<Value> &values,
+	DUCKDB_API shared_ptr<Relation> TableFunction(const string &fname, const vector<Value> &values);
+	DUCKDB_API shared_ptr<Relation> TableFunction(const string &fname, const vector<Value> &values,
 	                                              const named_parameter_map_t &named_parameters);
 
 public:

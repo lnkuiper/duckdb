@@ -9,9 +9,10 @@
 #pragma once
 
 #include "duckdb/common/constants.hpp"
+#include "duckdb/common/list.hpp"
+#include "duckdb/common/string.hpp"
 #include "duckdb/common/vector.hpp"
 #include "duckdb/main/query_profiler.hpp"
-#include "duckdb/common/list.hpp"
 
 namespace duckdb {
 class ColumnDataCollection;

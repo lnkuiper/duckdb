@@ -14,7 +14,7 @@ void CompareDuckDBDecimal(const duckdb_decimal &left, const duckdb_decimal &righ
 	REQUIRE(left.value.upper == right.value.upper);
 }
 
-void TestFetchAsDecimal(CAPITester &tester, string query, string type_cast) {
+void TestFetchAsDecimal(CAPITester &tester, duckdb::string query, duckdb::string type_cast) {
 	auto result = tester.Query(StringUtil::Format(query, type_cast));
 	REQUIRE_NO_FAIL(*result);
 

@@ -149,7 +149,7 @@ size_t Utf8Proc::RenderWidth(const char *s, size_t len, size_t pos) {
     return properties->charwidth;
 }
 
-size_t Utf8Proc::RenderWidth(const std::string &str) {
+size_t Utf8Proc::RenderWidth(const string &str) {
 	size_t render_width = 0;
 	size_t pos = 0;
 	while(pos < str.size()) {

@@ -17,13 +17,13 @@ using namespace std;
 struct BindReplaceDemoFun {
 	struct CustomFunctionData : public TableFunctionData {
 		int64_t current_depth;
-		string current_name;
+		duckdb::string current_name;
 		bool done = false;
 	};
 
 	static duckdb::unique_ptr<FunctionData> Bind(ClientContext &context, TableFunctionBindInput &input,
 	                                             duckdb::vector<LogicalType> &return_types,
-	                                             duckdb::vector<string> &names) {
+	                                             duckdb::vector<duckdb::string> &names) {
 		auto result = make_uniq<BindReplaceDemoFun::CustomFunctionData>();
 
 		result->current_depth = input.inputs[0].GetValue<int64_t>();

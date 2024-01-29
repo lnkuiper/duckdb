@@ -6,12 +6,12 @@
 using namespace duckdb;
 using namespace std;
 
-static idx_t GetWALFileSize(FileSystem &fs, const string &path) {
+static idx_t GetWALFileSize(FileSystem &fs, const duckdb::string &path) {
 	auto handle = fs.OpenFile(path, FileFlags::FILE_FLAGS_READ, FileLockType::NO_LOCK);
 	return fs.GetFileSize(*handle);
 }
 
-static void TruncateWAL(FileSystem &fs, const string &path, idx_t new_size) {
+static void TruncateWAL(FileSystem &fs, const duckdb::string &path, idx_t new_size) {
 	auto handle = fs.OpenFile(path, FileFlags::FILE_FLAGS_WRITE);
 	fs.Truncate(*handle, new_size);
 }
@@ -61,7 +61,7 @@ TEST_CASE("Test torn WAL writes", "[storage][.]") {
 	DeleteDatabase(storage_database);
 }
 
-static void FlipWALByte(FileSystem &fs, const string &path, idx_t byte_pos) {
+static void FlipWALByte(FileSystem &fs, const duckdb::string &path, idx_t byte_pos) {
 	auto handle = fs.OpenFile(path, FileFlags::FILE_FLAGS_WRITE | FileFlags::FILE_FLAGS_READ);
 	idx_t wal_size = handle->GetFileSize();
 	auto wal_contents = duckdb::unique_ptr<data_t[]>(new data_t[wal_size]);

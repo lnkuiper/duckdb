@@ -10,6 +10,7 @@
 #include <iosfwd>
 
 #include "duckdb/common/vector.hpp"
+#include "duckdb/common/string.hpp"
 
 #include "thrift/Thrift.h"
 #include "thrift/TApplicationException.h"
@@ -235,26 +236,26 @@ class Statistics : public virtual ::duckdb_apache::thrift::TBase {
   }
 
   virtual ~Statistics() throw();
-  std::string max;
-  std::string min;
+  duckdb::string max;
+  duckdb::string min;
   int64_t null_count;
   int64_t distinct_count;
-  std::string max_value;
-  std::string min_value;
+  duckdb::string max_value;
+  duckdb::string min_value;
 
   _Statistics__isset __isset;
 
-  void __set_max(const std::string& val);
+  void __set_max(const duckdb::string& val);
 
-  void __set_min(const std::string& val);
+  void __set_min(const duckdb::string& val);
 
   void __set_null_count(const int64_t val);
 
   void __set_distinct_count(const int64_t val);
 
-  void __set_max_value(const std::string& val);
+  void __set_max_value(const duckdb::string& val);
 
-  void __set_min_value(const std::string& val);
+  void __set_min_value(const duckdb::string& val);
 
   bool operator == (const Statistics & rhs) const
   {
@@ -1061,7 +1062,7 @@ class SchemaElement : public virtual ::duckdb_apache::thrift::TBase {
   Type::type type;
   int32_t type_length;
   FieldRepetitionType::type repetition_type;
-  std::string name;
+  duckdb::string name;
   int32_t num_children;
   ConvertedType::type converted_type;
   int32_t scale;
@@ -1077,7 +1078,7 @@ class SchemaElement : public virtual ::duckdb_apache::thrift::TBase {
 
   void __set_repetition_type(const FieldRepetitionType::type val);
 
-  void __set_name(const std::string& val);
+  void __set_name(const duckdb::string& val);
 
   void __set_num_children(const int32_t val);
 
@@ -1485,14 +1486,14 @@ class KeyValue : public virtual ::duckdb_apache::thrift::TBase {
   }
 
   virtual ~KeyValue() throw();
-  std::string key;
-  std::string value;
+  duckdb::string key;
+  duckdb::string value;
 
   _KeyValue__isset __isset;
 
-  void __set_key(const std::string& val);
+  void __set_key(const duckdb::string& val);
 
-  void __set_value(const std::string& val);
+  void __set_value(const duckdb::string& val);
 
   bool operator == (const KeyValue & rhs) const
   {
@@ -1632,7 +1633,7 @@ class ColumnMetaData : public virtual ::duckdb_apache::thrift::TBase {
   virtual ~ColumnMetaData() throw();
   Type::type type;
   duckdb::vector<Encoding::type>  encodings;
-  duckdb::vector<std::string>  path_in_schema;
+  duckdb::vector<duckdb::string>  path_in_schema;
   CompressionCodec::type codec;
   int64_t num_values;
   int64_t total_uncompressed_size;
@@ -1650,7 +1651,7 @@ class ColumnMetaData : public virtual ::duckdb_apache::thrift::TBase {
 
   void __set_encodings(const duckdb::vector<Encoding::type> & val);
 
-  void __set_path_in_schema(const duckdb::vector<std::string> & val);
+  void __set_path_in_schema(const duckdb::vector<duckdb::string> & val);
 
   void __set_codec(const CompressionCodec::type val);
 
@@ -1773,14 +1774,14 @@ class EncryptionWithColumnKey : public virtual ::duckdb_apache::thrift::TBase {
   }
 
   virtual ~EncryptionWithColumnKey() throw();
-  duckdb::vector<std::string>  path_in_schema;
-  std::string key_metadata;
+  duckdb::vector<duckdb::string>  path_in_schema;
+  duckdb::string key_metadata;
 
   _EncryptionWithColumnKey__isset __isset;
 
-  void __set_path_in_schema(const duckdb::vector<std::string> & val);
+  void __set_path_in_schema(const duckdb::vector<duckdb::string> & val);
 
-  void __set_key_metadata(const std::string& val);
+  void __set_key_metadata(const duckdb::string& val);
 
   bool operator == (const EncryptionWithColumnKey & rhs) const
   {
@@ -1881,7 +1882,7 @@ class ColumnChunk : public virtual ::duckdb_apache::thrift::TBase {
   }
 
   virtual ~ColumnChunk() throw();
-  std::string file_path;
+  duckdb::string file_path;
   int64_t file_offset;
   ColumnMetaData meta_data;
   int64_t offset_index_offset;
@@ -1889,11 +1890,11 @@ class ColumnChunk : public virtual ::duckdb_apache::thrift::TBase {
   int64_t column_index_offset;
   int32_t column_index_length;
   ColumnCryptoMetaData crypto_metadata;
-  std::string encrypted_column_metadata;
+  duckdb::string encrypted_column_metadata;
 
   _ColumnChunk__isset __isset;
 
-  void __set_file_path(const std::string& val);
+  void __set_file_path(const duckdb::string& val);
 
   void __set_file_offset(const int64_t val);
 
@@ -1909,7 +1910,7 @@ class ColumnChunk : public virtual ::duckdb_apache::thrift::TBase {
 
   void __set_crypto_metadata(const ColumnCryptoMetaData& val);
 
-  void __set_encrypted_column_metadata(const std::string& val);
+  void __set_encrypted_column_metadata(const duckdb::string& val);
 
   bool operator == (const ColumnChunk & rhs) const
   {
@@ -2220,8 +2221,8 @@ class ColumnIndex : public virtual ::duckdb_apache::thrift::TBase {
 
   virtual ~ColumnIndex() throw();
   duckdb::vector<bool>  null_pages;
-  duckdb::vector<std::string>  min_values;
-  duckdb::vector<std::string>  max_values;
+  duckdb::vector<duckdb::string>  min_values;
+  duckdb::vector<duckdb::string>  max_values;
   BoundaryOrder::type boundary_order;
   duckdb::vector<int64_t>  null_counts;
 
@@ -2229,9 +2230,9 @@ class ColumnIndex : public virtual ::duckdb_apache::thrift::TBase {
 
   void __set_null_pages(const duckdb::vector<bool> & val);
 
-  void __set_min_values(const duckdb::vector<std::string> & val);
+  void __set_min_values(const duckdb::vector<duckdb::string> & val);
 
-  void __set_max_values(const duckdb::vector<std::string> & val);
+  void __set_max_values(const duckdb::vector<duckdb::string> & val);
 
   void __set_boundary_order(const BoundaryOrder::type val);
 
@@ -2285,15 +2286,15 @@ class AesGcmV1 : public virtual ::duckdb_apache::thrift::TBase {
   }
 
   virtual ~AesGcmV1() throw();
-  std::string aad_prefix;
-  std::string aad_file_unique;
+  duckdb::string aad_prefix;
+  duckdb::string aad_file_unique;
   bool supply_aad_prefix;
 
   _AesGcmV1__isset __isset;
 
-  void __set_aad_prefix(const std::string& val);
+  void __set_aad_prefix(const duckdb::string& val);
 
-  void __set_aad_file_unique(const std::string& val);
+  void __set_aad_file_unique(const duckdb::string& val);
 
   void __set_supply_aad_prefix(const bool val);
 
@@ -2345,15 +2346,15 @@ class AesGcmCtrV1 : public virtual ::duckdb_apache::thrift::TBase {
   }
 
   virtual ~AesGcmCtrV1() throw();
-  std::string aad_prefix;
-  std::string aad_file_unique;
+  duckdb::string aad_prefix;
+  duckdb::string aad_file_unique;
   bool supply_aad_prefix;
 
   _AesGcmCtrV1__isset __isset;
 
-  void __set_aad_prefix(const std::string& val);
+  void __set_aad_prefix(const duckdb::string& val);
 
-  void __set_aad_file_unique(const std::string& val);
+  void __set_aad_file_unique(const duckdb::string& val);
 
   void __set_supply_aad_prefix(const bool val);
 
@@ -2464,10 +2465,10 @@ class FileMetaData : public virtual ::duckdb_apache::thrift::TBase {
   int64_t num_rows;
   duckdb::vector<RowGroup>  row_groups;
   duckdb::vector<KeyValue>  key_value_metadata;
-  std::string created_by;
+  duckdb::string created_by;
   duckdb::vector<ColumnOrder>  column_orders;
   EncryptionAlgorithm encryption_algorithm;
-  std::string footer_signing_key_metadata;
+  duckdb::string footer_signing_key_metadata;
 
   _FileMetaData__isset __isset;
 
@@ -2481,13 +2482,13 @@ class FileMetaData : public virtual ::duckdb_apache::thrift::TBase {
 
   void __set_key_value_metadata(const duckdb::vector<KeyValue> & val);
 
-  void __set_created_by(const std::string& val);
+  void __set_created_by(const duckdb::string& val);
 
   void __set_column_orders(const duckdb::vector<ColumnOrder> & val);
 
   void __set_encryption_algorithm(const EncryptionAlgorithm& val);
 
-  void __set_footer_signing_key_metadata(const std::string& val);
+  void __set_footer_signing_key_metadata(const duckdb::string& val);
 
   bool operator == (const FileMetaData & rhs) const
   {
@@ -2552,13 +2553,13 @@ class FileCryptoMetaData : public virtual ::duckdb_apache::thrift::TBase {
 
   virtual ~FileCryptoMetaData() throw();
   EncryptionAlgorithm encryption_algorithm;
-  std::string key_metadata;
+  duckdb::string key_metadata;
 
   _FileCryptoMetaData__isset __isset;
 
   void __set_encryption_algorithm(const EncryptionAlgorithm& val);
 
-  void __set_key_metadata(const std::string& val);
+  void __set_key_metadata(const duckdb::string& val);
 
   bool operator == (const FileCryptoMetaData & rhs) const
   {

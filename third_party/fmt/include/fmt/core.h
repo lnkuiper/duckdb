@@ -11,7 +11,7 @@
 #include <cstdio>  // std::FILE
 #include <cstring>
 #include <iterator>
-#include <string>
+#include "duckdb/common/string.hpp"
 #include <type_traits>
 
 // The fmt library version in the form major * 10000 + minor * 100 + patch.
@@ -223,7 +223,7 @@ template <typename... Ts> struct void_t_impl { using type = void; };
 #endif
 
 #if defined(FMT_USE_STRING_VIEW)
-template <typename Char> using std_string_view = std::basic_string_view<Char>;
+template <typename Char> using std_string_view = duckdb::basic_string_view<Char>;
 #elif defined(FMT_USE_EXPERIMENTAL_STRING_VIEW)
 template <typename Char>
 using std_string_view = std::experimental::basic_string_view<Char>;
@@ -257,9 +257,9 @@ template <typename... Ts>
 using void_t = typename internal::void_t_impl<Ts...>::type;
 
 /**
-  An implementation of ``std::basic_string_view`` for pre-C++17. It provides a
+  An implementation of ``duckdb::basic_string_view`` for pre-C++17. It provides a
   subset of the API. ``fmt::basic_string_view`` is used for format strings even
-  if ``std::string_view`` is available to prevent issues when a library is
+  if ``duckdb::string_view`` is available to prevent issues when a library is
   compiled with a different ``-std`` option than the client code (which is not
   recommended).
  */
@@ -288,10 +288,10 @@ template <typename Char> class basic_string_view {
   basic_string_view(const Char* s)
       : data_(s), size_(std::char_traits<Char>::length(s)) {}
 
-  /** Constructs a string reference from a ``std::basic_string`` object. */
+  /** Constructs a string reference from a ``duckdb::basic_string`` object. */
   template <typename Traits, typename Alloc>
   FMT_CONSTEXPR basic_string_view(
-      const std::basic_string<Char, Traits, Alloc>& s) FMT_NOEXCEPT
+      const duckdb::basic_string<Char, Traits, Alloc>& s) FMT_NOEXCEPT
       : data_(s.data()),
         size_(s.size()) {}
 
@@ -317,8 +317,8 @@ template <typename Char> class basic_string_view {
     size_ -= n;
   }
 
-  std::string to_string() {
-	  return std::string((char *) data(), size());
+  duckdb::string to_string() {
+	  return duckdb::string((char *) data(), size());
   }
 
   // Lexicographically compare this string reference to other.
@@ -380,7 +380,7 @@ template <> struct is_char<char32_t> : std::true_type {};
       return {s.data(), s.length()};
     }
     }
-    std::string message = fmt::format(my_string("The answer is {}"), 42);
+    duckdb::string message = fmt::format(my_string("The answer is {}"), 42);
   \endrst
  */
 template <typename Char, FMT_ENABLE_IF(is_char<Char>::value)>
@@ -390,7 +390,7 @@ inline basic_string_view<Char> to_string_view(const Char* s) {
 
 template <typename Char, typename Traits, typename Alloc>
 inline basic_string_view<Char> to_string_view(
-    const std::basic_string<Char, Traits, Alloc>& s) {
+    const duckdb::basic_string<Char, Traits, Alloc>& s) {
   return s;
 }
 
@@ -440,7 +440,7 @@ struct error_handler {
   FMT_CONSTEXPR error_handler(const error_handler&) = default;
 
   // This function is intentionally not constexpr to give a compile-time error.
-  FMT_NORETURN FMT_API void on_error(std::string message);
+  FMT_NORETURN FMT_API void on_error(duckdb::string message);
 };
 }  // namespace internal
 
@@ -518,7 +518,7 @@ class basic_format_parse_context : private ErrorHandler {
 
   FMT_CONSTEXPR void check_arg_id(basic_string_view<Char>) {}
 
-  FMT_CONSTEXPR void on_error(std::string message) {
+  FMT_CONSTEXPR void on_error(duckdb::string message) {
     ErrorHandler::on_error(message);
   }
 
@@ -1156,7 +1156,7 @@ template <typename OutputIt, typename Char> class basic_format_context {
   format_arg arg(basic_string_view<char_type> name);
 
   internal::error_handler error_handler() { return {}; }
-  void on_error(std::string message) { error_handler().on_error(message); }
+  void on_error(duckdb::string message) { error_handler().on_error(message); }
 
   // Returns an iterator to the beginning of the output range.
   iterator out() { return out_; }
@@ -1320,7 +1320,7 @@ struct wformat_args : basic_format_args<wformat_context> {
 template <typename Container> struct is_contiguous : std::false_type {};
 
 template <typename Char>
-struct is_contiguous<std::basic_string<Char>> : std::true_type {};
+struct is_contiguous<duckdb::basic_string<Char>> : std::true_type {};
 
 template <typename Char>
 struct is_contiguous<internal::buffer<Char>> : std::true_type {};
@@ -1384,7 +1384,7 @@ make_args_checked(const S& format_str,
 }
 
 template <typename Char>
-std::basic_string<Char> vformat(basic_string_view<Char> format_str,
+duckdb::basic_string<Char> vformat(basic_string_view<Char> format_str,
                                 basic_format_args<buffer_context<Char>> args);
 
 template <typename Char>
@@ -1444,7 +1444,7 @@ inline std::back_insert_iterator<Container> format_to(
 }
 
 template <typename S, typename Char = char_t<S>>
-inline std::basic_string<Char> vformat(
+inline duckdb::basic_string<Char> vformat(
     const S& format_str, basic_format_args<buffer_context<Char>> args) {
   return internal::vformat(to_string_view(format_str), args);
 }
@@ -1456,13 +1456,13 @@ inline std::basic_string<Char> vformat(
   **Example**::
 
     #include <fmt/core.h>
-    std::string message = fmt::format("The answer is {}", 42);
+    duckdb::string message = fmt::format("The answer is {}", 42);
   \endrst
 */
 // Pass char_t as a default template parameter instead of using
-// std::basic_string<char_t<S>> to reduce the symbol size.
+// duckdb::basic_string<char_t<S>> to reduce the symbol size.
 template <typename S, typename... Args, typename Char = char_t<S>>
-inline std::basic_string<Char> format(const S& format_str, Args&&... args) {
+inline duckdb::basic_string<Char> format(const S& format_str, Args&&... args) {
   return internal::vformat(
       to_string_view(format_str),
       {internal::make_args_checked<Args...>(format_str, args...)});

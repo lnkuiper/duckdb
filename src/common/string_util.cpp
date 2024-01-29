@@ -1,19 +1,19 @@
 #include "duckdb/common/string_util.hpp"
 
 #include "duckdb/common/exception.hpp"
-#include "duckdb/common/pair.hpp"
-#include "duckdb/common/to_string.hpp"
 #include "duckdb/common/helper.hpp"
+#include "duckdb/common/pair.hpp"
+#include "duckdb/common/stringstream.hpp"
+#include "duckdb/common/to_string.hpp"
 #include "duckdb/function/scalar/string_functions.hpp"
 
 #include <algorithm>
 #include <cctype>
 #include <iomanip>
 #include <memory>
-#include <sstream>
+#include <random>
 #include <stdarg.h>
 #include <string.h>
-#include <random>
 
 namespace duckdb {
 
@@ -22,7 +22,7 @@ string StringUtil::GenerateRandomName(idx_t length) {
 	std::mt19937 gen(rd());
 	std::uniform_int_distribution<> dis(0, 15);
 
-	std::stringstream ss;
+	stringstream ss;
 	ss << std::hex;
 	for (idx_t i = 0; i < length; i++) {
 		ss << dis(gen);
@@ -75,7 +75,7 @@ bool StringUtil::EndsWith(const string &str, const string &suffix) {
 }
 
 string StringUtil::Repeat(const string &str, idx_t n) {
-	std::ostringstream os;
+	ostringstream os;
 	for (idx_t i = 0; i < n; i++) {
 		os << str;
 	}
@@ -83,7 +83,7 @@ string StringUtil::Repeat(const string &str, idx_t n) {
 }
 
 vector<string> StringUtil::Split(const string &str, char delimiter) {
-	std::stringstream ss(str);
+	stringstream ss(str);
 	vector<string> lines;
 	string temp;
 	while (getline(ss, temp, delimiter)) {
@@ -157,7 +157,7 @@ string StringUtil::Join(const vector<string> &input, const string &separator) {
 
 string StringUtil::Join(const set<string> &input, const string &separator) {
 	// The result
-	std::string result;
+	string result;
 
 	auto it = input.begin();
 	while (it != input.end()) {

@@ -20,7 +20,7 @@
 #ifndef _DUCKDB_THRIFT_PROTOCOL_TPROTOCOLEXCEPTION_H_
 #define _DUCKDB_THRIFT_PROTOCOL_TPROTOCOLEXCEPTION_H_ 1
 
-#include <string>
+#include "duckdb/common/string.hpp"
 
 namespace duckdb_apache {
 namespace thrift {
@@ -53,10 +53,10 @@ public:
 
   TProtocolException(TProtocolExceptionType type) : duckdb_apache::thrift::TException(), type_(type) {}
 
-  TProtocolException(const std::string& message)
+  TProtocolException(const duckdb::string& message)
     : duckdb_apache::thrift::TException(message), type_(UNKNOWN) {}
 
-  TProtocolException(TProtocolExceptionType type, const std::string& message)
+  TProtocolException(TProtocolExceptionType type, const duckdb::string& message)
     : duckdb_apache::thrift::TException(message), type_(type) {}
 
   ~TProtocolException() noexcept override = default;

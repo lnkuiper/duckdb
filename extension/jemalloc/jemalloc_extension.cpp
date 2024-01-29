@@ -14,7 +14,7 @@ void JemallocExtension::Load(DuckDB &db) {
 	// NOP: This extension can only be loaded statically
 }
 
-std::string JemallocExtension::Name() {
+string JemallocExtension::Name() {
 	return "jemalloc";
 }
 

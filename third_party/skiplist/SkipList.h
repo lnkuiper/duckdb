@@ -444,6 +444,7 @@
 
 #include <functional>
 #include "duckdb/common/vector.hpp"
+#include "duckdb/common/string.hpp"
 #include <set> // Used for HeadNode::_lacksIntegrityNodeReferencesNotInList()
 #include <string> // Used for class Exception
 #include <random>
@@ -490,14 +491,14 @@ namespace duckdb_skiplistlib {
  */
         class Exception : public std::exception {
         public:
-            explicit Exception(const std::string &in_msg) : msg(in_msg) {}
+            explicit Exception(const duckdb::string &in_msg) : msg(in_msg) {}
 
-            const std::string &message() const { return msg; }
+            const duckdb::string &message() const { return msg; }
 
             virtual ~Exception() throw() {}
 
         protected:
-            std::string msg;
+            duckdb::string msg;
         };
 
 /**
@@ -505,7 +506,7 @@ namespace duckdb_skiplistlib {
  */
         class IndexError : public Exception {
         public:
-            explicit IndexError(const std::string &in_msg) : Exception(in_msg) {}
+            explicit IndexError(const duckdb::string &in_msg) : Exception(in_msg) {}
         };
 
 /**
@@ -513,13 +514,13 @@ namespace duckdb_skiplistlib {
  */
         class ValueError : public Exception {
         public:
-            explicit ValueError(const std::string &in_msg) : Exception(in_msg) {}
+            explicit ValueError(const duckdb::string &in_msg) : Exception(in_msg) {}
         };
 
 /** @brief Specialised exception used for NaN detection where value != value (example NaNs). */
         class FailedComparison : public Exception {
         public:
-            explicit FailedComparison(const std::string &in_msg) : Exception(in_msg) {}
+            explicit FailedComparison(const duckdb::string &in_msg) : Exception(in_msg) {}
         };
 
 /**

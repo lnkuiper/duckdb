@@ -381,14 +381,14 @@ TEST_CASE("PREPARE multiple statements", "[prepared]") {
 	DuckDB db(nullptr);
 	Connection con(db);
 
-	string query = "SELECT $1::INTEGER; SELECT $1::INTEGER;";
+	duckdb::string query = "SELECT $1::INTEGER; SELECT $1::INTEGER;";
 	// cannot prepare multiple statements like this
 	auto prepared = con.Prepare(query);
 	REQUIRE(prepared->HasError());
 	// we can use ExtractStatements to execute the individual statements though
 	auto statements = con.ExtractStatements(query);
 	for (auto &statement : statements) {
-		string stmt = query.substr(statement->stmt_location, statement->stmt_length);
+		duckdb::string stmt = query.substr(statement->stmt_location, statement->stmt_length);
 		prepared = con.Prepare(stmt);
 		REQUIRE(!prepared->HasError());
 
@@ -397,7 +397,7 @@ TEST_CASE("PREPARE multiple statements", "[prepared]") {
 	}
 }
 
-static duckdb::unique_ptr<QueryResult> TestExecutePrepared(Connection &con, string query) {
+static duckdb::unique_ptr<QueryResult> TestExecutePrepared(Connection &con, duckdb::string query) {
 	auto prepared = con.Prepare(query);
 	REQUIRE(!prepared->HasError());
 	return prepared->Execute();
@@ -409,7 +409,7 @@ TEST_CASE("Prepare all types of statements", "[prepared]") {
 	Connection con(db);
 	auto &fs = db.GetFileSystem();
 
-	string csv_path = TestCreatePath("prepared_files");
+	duckdb::string csv_path = TestCreatePath("prepared_files");
 	if (fs.DirectoryExists(csv_path)) {
 		fs.RemoveDirectory(csv_path);
 	}

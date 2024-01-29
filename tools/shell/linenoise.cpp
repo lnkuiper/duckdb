@@ -103,25 +103,25 @@
  *
  */
 
-#include <termios.h>
-#include <unistd.h>
-#include <stdlib.h>
-#include <stdio.h>
-#include <errno.h>
-#include <string.h>
-#include <stdlib.h>
-#include <ctype.h>
-#include <sys/stat.h>
-#include <sys/types.h>
-#include <sys/ioctl.h>
-#include <unistd.h>
-#include <signal.h>
 #include "linenoise.h"
-#include "utf8proc_wrapper.hpp"
-#include <unordered_set>
-#include <vector>
+
 #include "duckdb_shell_wrapper.h"
 #include "sqlite3.h"
+#include "utf8proc_wrapper.hpp"
+
+#include <ctype.h>
+#include <errno.h>
+#include <signal.h>
+#include <stdio.h>
+#include <stdlib.h>
+#include <string.h>
+#include <sys/ioctl.h>
+#include <sys/stat.h>
+#include <sys/types.h>
+#include <termios.h>
+#include <unistd.h>
+#include <unordered_set>
+#include <vector>
 #ifdef __MVS__
 #include <strings.h>
 #include <sys/time.h>
@@ -148,7 +148,8 @@ static int history_len = 0;
 static char **history = NULL;
 static char *history_file = NULL;
 #ifndef DISABLE_HIGHLIGHT
-#include <string>
+
+#include "duckdb/common/stringstream.hpp"
 
 static int enableHighlighting = 1;
 struct Color {
@@ -163,11 +164,11 @@ static Color terminal_colors[] = {{"red", "\033[31m"},           {"green", "\033
                                   {"brightyellow", "\033[93m"},  {"brightblue", "\033[94m"},
                                   {"brightmagenta", "\033[95m"}, {"brightcyan", "\033[96m"},
                                   {"brightwhite", "\033[97m"},   {nullptr, nullptr}};
-static std::string bold = "\033[1m";
-static std::string underline = "\033[4m";
-static std::string keyword = "\033[32m";
-static std::string constant = "\033[33m";
-static std::string reset = "\033[00m";
+static duckdb::string bold = "\033[1m";
+static duckdb::string underline = "\033[4m";
+static duckdb::string keyword = "\033[32m";
+static duckdb::string constant = "\033[33m";
+static duckdb::string reset = "\033[00m";
 #endif
 
 struct searchMatch {
@@ -202,7 +203,7 @@ struct linenoiseState {
 	bool search;                             /* Whether or not we are searching our history */
 	bool render;                             /* Whether or not to re-render */
 	bool has_more_data;                      /* Whether or not there is more data available in the buffer (copy+paste)*/
-	std::string search_buf;                  //! The search buffer
+	duckdb::string search_buf;               //! The search buffer
 	std::vector<searchMatch> search_matches; //! The set of search matches in our history
 	size_t search_index;                     //! The current match index
 };
@@ -766,8 +767,9 @@ int linenoiseParseOption(const char **azArg, int nArg, const char **out_error) {
 }
 
 #ifndef DISABLE_HIGHLIGHT
-#include <sstream>
 #include "duckdb/parser/parser.hpp"
+
+#include <sstream>
 
 struct highlightToken {
 	duckdb::SimplifiedTokenType type;
@@ -775,10 +777,10 @@ struct highlightToken {
 	bool search_match = false;
 };
 
-std::string highlightText(char *buf, size_t len, size_t start_pos, size_t end_pos, searchMatch *match = nullptr) {
-	std::string sql(buf, len);
+duckdb::string highlightText(char *buf, size_t len, size_t start_pos, size_t end_pos, searchMatch *match = nullptr) {
+	duckdb::string sql(buf, len);
 	auto parseTokens = duckdb::Parser::Tokenize(sql);
-	std::stringstream ss;
+	duckdb::stringstream ss;
 	std::vector<highlightToken> tokens;
 
 	for (auto &token : parseTokens) {
@@ -855,7 +857,7 @@ std::string highlightText(char *buf, size_t len, size_t start_pos, size_t end_po
 		if (end <= start) {
 			continue;
 		}
-		std::string text = std::string(buf + start, end - start);
+		duckdb::string text = duckdb::string(buf + start, end - start);
 		if (token.search_match) {
 			ss << underline;
 		}
@@ -879,7 +881,7 @@ std::string highlightText(char *buf, size_t len, size_t start_pos, size_t end_po
 #endif
 
 static void renderText(size_t &render_pos, char *&buf, size_t &len, size_t pos, size_t cols, size_t plen,
-                       std::string &highlight_buffer, bool highlight, searchMatch *match = nullptr) {
+                       duckdb::string &highlight_buffer, bool highlight, searchMatch *match = nullptr) {
 	if (duckdb::Utf8Proc::IsValid(buf, len)) {
 		// utf8 in prompt, handle rendering
 		size_t remaining_render_width = cols - plen - 1;
@@ -950,7 +952,7 @@ static void refreshSingleLine(struct linenoiseState *l) {
 	size_t len = l->len;
 	struct abuf ab;
 	size_t render_pos = 0;
-	std::string highlight_buffer;
+	duckdb::string highlight_buffer;
 
 	renderText(render_pos, buf, len, l->pos, l->ws.ws_col, plen, highlight_buffer, enableHighlighting);
 
@@ -975,16 +977,16 @@ static void refreshSingleLine(struct linenoiseState *l) {
 }
 
 static void refreshSearch(struct linenoiseState *l) {
-	std::string search_prompt;
+	duckdb::string search_prompt;
 	static const size_t SEARCH_PROMPT_RENDER_SIZE = 28;
-	std::string no_matches_text = "(no matches)";
+	duckdb::string no_matches_text = "(no matches)";
 	bool no_matches = l->search_index >= l->search_matches.size();
 	if (l->search_buf.empty()) {
-		search_prompt = "search" + std::string(SEARCH_PROMPT_RENDER_SIZE - 8, ' ') + "> ";
+		search_prompt = "search" + duckdb::string(SEARCH_PROMPT_RENDER_SIZE - 8, ' ') + "> ";
 		no_matches_text = "(type to search)";
 	} else {
-		std::string search_text;
-		std::string matches_text;
+		duckdb::string search_text;
+		duckdb::string matches_text;
 		search_text += l->search_buf;
 		if (!no_matches) {
 			matches_text += std::to_string(l->search_index + 1);
@@ -996,7 +998,7 @@ static void refreshSearch(struct linenoiseState *l) {
 		if (total_text_length < SEARCH_PROMPT_RENDER_SIZE - 2) {
 			// search text is short: we can render the entire search text
 			search_prompt = search_text;
-			search_prompt += std::string(SEARCH_PROMPT_RENDER_SIZE - 2 - total_text_length, ' ');
+			search_prompt += duckdb::string(SEARCH_PROMPT_RENDER_SIZE - 2 - total_text_length, ' ');
 			search_prompt += matches_text;
 			search_prompt += "> ";
 		} else {
@@ -1009,10 +1011,10 @@ static void refreshSearch(struct linenoiseState *l) {
 			if (render_matches) {
 				max_render_size -= matches_text_length;
 			}
-			std::string highlight_buffer;
+			duckdb::string highlight_buffer;
 			renderText(search_render_pos, search_buf, search_len, search_len, max_render_size, 0, highlight_buffer,
 			           false);
-			search_prompt = std::string(search_buf, search_len);
+			search_prompt = duckdb::string(search_buf, search_len);
 			for (size_t i = search_render_pos; i < max_render_size; i++) {
 				search_prompt += " ";
 			}
@@ -1154,7 +1156,7 @@ static void refreshMultiLine(struct linenoiseState *l) {
 	int old_rows = l->maxrows ? l->maxrows : 1;
 	int fd = l->ofd, j;
 	struct abuf ab;
-	std::string highlight_buffer;
+	duckdb::string highlight_buffer;
 	auto buf = l->buf;
 	auto len = l->len;
 	if (l->clear_screen) {
@@ -1544,7 +1546,7 @@ int hasMoreData(int fd) {
 
 static void cancelSearch(linenoiseState *l) {
 	l->search = false;
-	l->search_buf = std::string();
+	l->search_buf = duckdb::string();
 	l->search_matches.clear();
 	l->search_index = 0;
 	refreshLine(l);
@@ -1576,7 +1578,7 @@ static void performSearch(linenoiseState *l) {
 	if (l->search_buf.empty()) {
 		return;
 	}
-	std::unordered_set<std::string> matches;
+	std::unordered_set<duckdb::string> matches;
 	auto lsearch = duckdb::StringUtil::Lower(l->search_buf);
 	for (size_t i = history_len; i > 0; i--) {
 		size_t history_index = i - 1;
@@ -1976,7 +1978,7 @@ static int linenoiseEdit(int stdin_fd, int stdout_fd, char *buf, size_t buflen, 
 		case CTRL_R: /* ctrl-r */ {
 			// initiate reverse search
 			l.search = true;
-			l.search_buf = std::string();
+			l.search_buf = duckdb::string();
 			l.search_matches.clear();
 			l.search_index = 0;
 			refreshSearch(&l);
@@ -2406,7 +2408,7 @@ int linenoiseHistoryLoad(const char *filename) {
 		return -1;
 	}
 
-	std::string result;
+	duckdb::string result;
 	while (fgets(buf, LINENOISE_MAX_LINE, fp) != NULL) {
 		char *p;
 
@@ -2429,7 +2431,7 @@ int linenoiseHistoryLoad(const char *filename) {
 		if (sqlite3_complete(result.c_str())) {
 			// this line contains a full SQL statement - add it to the history
 			linenoiseHistoryAdd(result.c_str());
-			result = std::string();
+			result = duckdb::string();
 			continue;
 		}
 		// the result does not contain a full SQL statement - add a newline deliminator and move on to the next line

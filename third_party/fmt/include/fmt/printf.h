@@ -363,7 +363,7 @@ template <typename OutputIt, typename Char> class basic_printf_context {
 
   basic_format_parse_context<Char>& parse_context() { return parse_ctx_; }
 
-  FMT_CONSTEXPR void on_error(std::string message) {
+  FMT_CONSTEXPR void on_error(duckdb::string message) {
     parse_ctx_.on_error(message);
   }
 
@@ -613,7 +613,7 @@ inline format_arg_store<wprintf_context, Args...> make_wprintf_args(
 }
 
 template <typename S, typename Char = char_t<S>>
-inline std::basic_string<Char> vsprintf(
+inline duckdb::basic_string<Char> vsprintf(
     const S& format, basic_format_args<basic_printf_context_t<Char>> args) {
   basic_memory_buffer<Char> buffer;
   printf(buffer, to_string_view(format), args);
@@ -626,12 +626,12 @@ inline std::basic_string<Char> vsprintf(
 
   **Example**::
 
-    std::string message = fmt::sprintf("The answer is %d", 42);
+    duckdb::string message = fmt::sprintf("The answer is %d", 42);
   \endrst
 */
 template <typename S, typename... Args,
           typename Char = enable_if_t<internal::is_string<S>::value, char_t<S>>>
-inline std::basic_string<Char> sprintf(const S& format, const Args&... args) {
+inline duckdb::basic_string<Char> sprintf(const S& format, const Args&... args) {
   using context = basic_printf_context_t<Char>;
   return vsprintf(to_string_view(format), {make_format_args<context>(args...)});
 }

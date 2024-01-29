@@ -2,7 +2,7 @@
 /// @brief Base class for grammar productions
 
 #include <iostream>
-#include <string>
+#include "duckdb/common/string.hpp"
 
 #ifndef PROD_HH
 #define PROD_HH

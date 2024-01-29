@@ -12,7 +12,7 @@
 #include <stdint.h>
 #include <functional>
 #include <mutex>
-#include <string>
+#include "duckdb/common/string.hpp"
 #include <vector>
 #include <type_traits>
 
@@ -119,7 +119,7 @@ class Prog {
     }
 
     // Returns string representation for debugging.
-    std::string Dump();
+    duckdb::string Dump();
 
     // Maximum instruction id.
     // (Must fit in out_opcode_. PatchList/last steal another bit.)
@@ -224,9 +224,9 @@ class Prog {
   int first_byte();
 
   // Returns string representation of program for debugging.
-  std::string Dump();
-  std::string DumpUnanchored();
-  std::string DumpByteMap();
+  duckdb::string Dump();
+  duckdb::string DumpUnanchored();
+  duckdb::string DumpByteMap();
 
   // Returns the set of kEmpty flags that are in effect at
   // position p within context.
@@ -348,7 +348,7 @@ class Prog {
   // do not compile down to infinite repetitions.
   //
   // Returns true on success, false on error.
-  bool PossibleMatchRange(std::string* min, std::string* max, int maxlen);
+  bool PossibleMatchRange(duckdb::string* min, duckdb::string* max, int maxlen);
 
   // EXPERIMENTAL! SUBJECT TO CHANGE!
   // Outputs the program fanout into the given sparse array.

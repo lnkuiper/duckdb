@@ -136,7 +136,7 @@ void BenchmarkRunner::RunBenchmark(Benchmark *benchmark) {
 					LogOutput("INCORRECT RESULT: " + verify);
 					break;
 				} else {
-					LogResult(std::to_string(profiler.Elapsed()));
+					LogResult(duckdb::to_string(profiler.Elapsed()));
 				}
 			}
 		}
@@ -243,7 +243,7 @@ void parse_arguments(const int arg_counter, char const *const *arg_values) {
 				exit(1);
 			}
 			auto &file = StringUtil::StartsWith(arg, "--out=") ? instance.out_file : instance.log_file;
-			file.open(splits[1]);
+			file.open(splits[1].c_str());
 			if (!file.good()) {
 				fprintf(stderr, "Could not open file %s for writing\n", splits[1].c_str());
 				exit(1);

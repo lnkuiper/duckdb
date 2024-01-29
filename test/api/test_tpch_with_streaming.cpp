@@ -18,10 +18,10 @@ TEST_CASE("Test TPC-H SF0.01 using streaming api", "[tpch][.]") {
 		return;
 	}
 
-	REQUIRE_NO_FAIL(con.Query("CALL dbgen(sf=" + to_string(sf) + ")"));
+	REQUIRE_NO_FAIL(con.Query("CALL dbgen(sf=" + duckdb::to_string(sf) + ")"));
 
 	for (idx_t tpch_num = 1; tpch_num <= 22; tpch_num++) {
-		result = con.SendQuery("pragma tpch(" + to_string(tpch_num) + ");");
+		result = con.SendQuery("pragma tpch(" + duckdb::to_string(tpch_num) + ");");
 
 		duckdb::ColumnDataCollection collection(duckdb::Allocator::DefaultAllocator(), result->types);
 

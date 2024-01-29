@@ -16,7 +16,7 @@ TEST_CASE("Test that sequence never returns the same value twice even with abort
 	// disabled test for now
 	return;
 
-	string dbdir = TestCreatePath("defaultseq");
+	duckdb::string dbdir = TestCreatePath("defaultseq");
 	DeleteDatabase(dbdir);
 	// create a database
 	{
@@ -82,7 +82,7 @@ TEST_CASE("Test that sequence never returns the same value twice even with abort
 	// disabled test for now
 	return;
 
-	string dbdir = TestCreatePath("defaultseqconcurrent");
+	duckdb::string dbdir = TestCreatePath("defaultseqconcurrent");
 	DeleteDatabase(dbdir);
 	// create a database
 	{

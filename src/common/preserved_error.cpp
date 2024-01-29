@@ -21,7 +21,7 @@ PreservedError::PreservedError(const string &message)
 	// Given a message in the form: 	xxxxx Error: yyyyy
 	// Try to match xxxxxxx with known error so to potentially reconstruct the original error type
 	auto position_semicolon = raw_message.find(':');
-	if (position_semicolon == std::string::npos) {
+	if (position_semicolon == string::npos) {
 		// Semicolon not found, bail out
 		return;
 	}

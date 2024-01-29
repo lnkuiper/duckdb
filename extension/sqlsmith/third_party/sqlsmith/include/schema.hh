@@ -7,7 +7,7 @@
 #include <iostream>
 #include <memory>
 #include <numeric>
-#include <string>
+#include "duckdb/common/string.hpp"
 
 #include "random.hh"
 #include "relmodel.hh"
@@ -45,7 +45,7 @@ struct schema {
 	const char *true_literal = "true";
 	const char *false_literal = "false";
 
-	virtual std::string quote_name(const std::string &id) = 0;
+	virtual duckdb::string quote_name(const duckdb::string &id) = 0;
 
 	void summary() {
 		std::cout << "Found " << tables.size() << " user table(s) in information schema." << std::endl;

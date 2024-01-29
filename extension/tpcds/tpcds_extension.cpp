@@ -172,15 +172,15 @@ void TpcdsExtension::Load(DuckDB &db) {
 	ExtensionUtil::RegisterFunction(db_instance, tpcds_query_answer_func);
 }
 
-std::string TpcdsExtension::GetQuery(int query) {
+string TpcdsExtension::GetQuery(int query) {
 	return tpcds::DSDGenWrapper::GetQuery(query);
 }
 
-std::string TpcdsExtension::GetAnswer(double sf, int query) {
+string TpcdsExtension::GetAnswer(double sf, int query) {
 	return tpcds::DSDGenWrapper::GetAnswer(sf, query);
 }
 
-std::string TpcdsExtension::Name() {
+string TpcdsExtension::Name() {
 	return "tpcds";
 }
 

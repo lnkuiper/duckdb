@@ -22,7 +22,7 @@ TEST_CASE("Test write lock with multiple processes", "[persistence][.]") {
 	    (uint64_t *)mmap(NULL, sizeof(uint64_t), PROT_READ | PROT_WRITE, MAP_ANONYMOUS | MAP_SHARED, 0, 0);
 	*count = 0;
 
-	string dbdir = TestCreatePath("writelocktest");
+	duckdb::string dbdir = TestCreatePath("writelocktest");
 	DeleteDatabase(dbdir);
 	// test write lock
 	// fork away a child
@@ -62,7 +62,7 @@ TEST_CASE("Test read lock with multiple processes", "[persistence][.]") {
 	    (uint64_t *)mmap(NULL, sizeof(uint64_t), PROT_READ | PROT_WRITE, MAP_ANONYMOUS | MAP_SHARED, 0, 0);
 	*count = 0;
 
-	string dbdir = TestCreatePath("readlocktest");
+	duckdb::string dbdir = TestCreatePath("readlocktest");
 	DeleteDatabase(dbdir);
 
 	// create the database

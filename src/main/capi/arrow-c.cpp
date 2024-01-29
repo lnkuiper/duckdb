@@ -3,6 +3,7 @@
 #include "duckdb/function/table/arrow.hpp"
 #include "duckdb/main/capi/capi_internal.hpp"
 #include "duckdb/main/prepared_statement_data.hpp"
+#include "duckdb/common/to_string.hpp"
 
 using duckdb::ArrowConverter;
 using duckdb::ArrowResultWrapper;
@@ -51,7 +52,7 @@ duckdb_state duckdb_prepared_arrow_schema(duckdb_prepared_statement prepared, du
 		auto type = LogicalType::SQLNULL;
 
 		// FIXME: we don't support named parameters yet, but when we do, this needs to be updated
-		auto name = std::to_string(i);
+		auto name = duckdb::to_string(i);
 		prepared_types.push_back(std::move(type));
 		prepared_names.push_back(name);
 	}

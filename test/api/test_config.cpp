@@ -1,8 +1,8 @@
 #include "catch.hpp"
 #include "test_helpers.hpp"
 
-#include <set>
 #include <map>
+#include <set>
 
 using namespace duckdb;
 using namespace std;
@@ -12,7 +12,7 @@ TEST_CASE("Test DB config configuration", "[api]") {
 
 	auto options = config.GetOptions();
 
-	duckdb::map<string, duckdb::vector<string>> test_options;
+	duckdb::map<duckdb::string, duckdb::vector<duckdb::string>> test_options;
 	test_options["access_mode"] = {"automatic", "read_only", "read_write"};
 	test_options["default_order"] = {"asc", "desc"};
 	test_options["default_null_order"] = {"nulls_first", "nulls_last"};
@@ -45,7 +45,7 @@ TEST_CASE("Test user_agent", "[api]") {
 		DuckDB db(nullptr);
 		Connection con(db);
 		auto res = con.Query("PRAGMA user_agent");
-		REQUIRE_THAT(res->GetValue(0, 0).ToString(), Catch::Matchers::Matches("duckdb/.*(.*) cpp"));
+		REQUIRE_THAT(res->GetValue(0, 0).ToString().c_str(), Catch::Matchers::Matches("duckdb/.*(.*) cpp"));
 	}
 	{
 		// The latest provided duckdb_api is used
@@ -55,6 +55,6 @@ TEST_CASE("Test user_agent", "[api]") {
 		DuckDB db("", &config);
 		Connection con(db);
 		auto res = con.Query("PRAGMA user_agent");
-		REQUIRE_THAT(res->GetValue(0, 0).ToString(), Catch::Matchers::Matches("duckdb/.*(.*) go"));
+		REQUIRE_THAT(res->GetValue(0, 0).ToString().c_str(), Catch::Matchers::Matches("duckdb/.*(.*) go"));
 	}
 }

@@ -22,7 +22,7 @@
 
 #include "thrift/thrift-config.h"
 
-using std::string;
+using duckdb::string;
 
 namespace duckdb_apache {
 namespace thrift {

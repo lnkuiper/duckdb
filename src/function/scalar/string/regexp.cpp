@@ -174,7 +174,7 @@ static void RegexReplaceFunction(DataChunk &args, ExpressionState &state, Vector
 		auto &lstate = ExecuteFunctionState::GetFunctionState(state)->Cast<RegexLocalState>();
 		BinaryExecutor::Execute<string_t, string_t, string_t>(
 		    strings, replaces, result, args.size(), [&](string_t input, string_t replace) {
-			    std::string sstring = input.GetString();
+			    string sstring = input.GetString();
 			    if (info.global_replace) {
 				    RE2::GlobalReplace(&sstring, lstate.constant_pattern, CreateStringPiece(replace));
 			    } else {
@@ -186,7 +186,7 @@ static void RegexReplaceFunction(DataChunk &args, ExpressionState &state, Vector
 		TernaryExecutor::Execute<string_t, string_t, string_t, string_t>(
 		    strings, patterns, replaces, result, args.size(), [&](string_t input, string_t pattern, string_t replace) {
 			    RE2 re(CreateStringPiece(pattern), info.options);
-			    std::string sstring = input.GetString();
+			    string sstring = input.GetString();
 			    if (info.global_replace) {
 				    RE2::GlobalReplace(&sstring, re, CreateStringPiece(replace));
 			    } else {

@@ -44,16 +44,16 @@ public:
 	DUCKDB_API ObjectCache &GetObjectCache();
 	DUCKDB_API ConnectionManager &GetConnectionManager();
 	DUCKDB_API ValidChecker &GetValidChecker();
-	DUCKDB_API void SetExtensionLoaded(const std::string &extension_name);
+	DUCKDB_API void SetExtensionLoaded(const string &extension_name);
 
 	idx_t NumberOfThreads();
 
 	DUCKDB_API static DatabaseInstance &GetDatabase(ClientContext &context);
 
-	DUCKDB_API const unordered_set<std::string> &LoadedExtensions();
-	DUCKDB_API bool ExtensionIsLoaded(const std::string &name);
+	DUCKDB_API const unordered_set<string> &LoadedExtensions();
+	DUCKDB_API bool ExtensionIsLoaded(const string &name);
 
-	DUCKDB_API bool TryGetCurrentSetting(const std::string &key, Value &result);
+	DUCKDB_API bool TryGetCurrentSetting(const string &key, Value &result);
 
 	unique_ptr<AttachedDatabase> CreateAttachedDatabase(const AttachInfo &info, const string &type,
 	                                                    AccessMode access_mode);
@@ -70,7 +70,7 @@ private:
 	unique_ptr<TaskScheduler> scheduler;
 	unique_ptr<ObjectCache> object_cache;
 	unique_ptr<ConnectionManager> connection_manager;
-	unordered_set<std::string> loaded_extensions;
+	unordered_set<string> loaded_extensions;
 	ValidChecker db_validity;
 };
 
@@ -105,7 +105,7 @@ public:
 	DUCKDB_API static const char *LibraryVersion();
 	DUCKDB_API static idx_t StandardVectorSize();
 	DUCKDB_API static string Platform();
-	DUCKDB_API bool ExtensionIsLoaded(const std::string &name);
+	DUCKDB_API bool ExtensionIsLoaded(const string &name);
 };
 
 } // namespace duckdb

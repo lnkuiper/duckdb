@@ -4,15 +4,15 @@
 #ifndef DUT_HH
 #define DUT_HH
 #include <stdexcept>
-#include <string>
+#include "duckdb/common/string.hpp"
 
 #include "prod.hh"
 
 namespace dut {
 
 struct failure : public std::exception {
-	std::string errstr;
-	std::string sqlstate;
+	duckdb::string errstr;
+	duckdb::string sqlstate;
 	const char *what() const throw() {
 		return errstr.c_str();
 	}
@@ -40,8 +40,8 @@ struct syntax : failure {
 } // namespace dut
 
 struct dut_base {
-	std::string version;
-	virtual void test(const std::string &stmt) = 0;
+	duckdb::string version;
+	virtual void test(const duckdb::string &stmt) = 0;
 };
 
 #endif

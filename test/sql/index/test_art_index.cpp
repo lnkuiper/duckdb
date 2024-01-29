@@ -45,21 +45,21 @@ TEST_CASE("Test ART index with the same value multiple times", "[art][.]") {
 		REQUIRE_NO_FAIL(con.Query("INSERT INTO integers VALUES ($1)", val));
 	}
 	for (int32_t val = 0; val < 100; val++) {
-		result = con.Query("SELECT COUNT(*) FROM integers WHERE i = " + to_string(val));
+		result = con.Query("SELECT COUNT(*) FROM integers WHERE i = " + duckdb::to_string(val));
 		REQUIRE(CHECK_COLUMN(result, 0, {1}));
 	}
 	for (int32_t it = 0; it < 10; it++) {
 		for (int32_t val = 0; val < 100; val++) {
-			result = con.Query("SELECT COUNT(*) FROM integers WHERE i = " + to_string(val));
+			result = con.Query("SELECT COUNT(*) FROM integers WHERE i = " + duckdb::to_string(val));
 			REQUIRE(CHECK_COLUMN(result, 0, {it + 1}));
 		}
 		for (int32_t val = 0; val < 100; val++) {
 			REQUIRE_NO_FAIL(con.Query("INSERT INTO integers VALUES ($1)", val));
-			result = con.Query("SELECT COUNT(*) FROM integers WHERE i = " + to_string(val));
+			result = con.Query("SELECT COUNT(*) FROM integers WHERE i = " + duckdb::to_string(val));
 			REQUIRE(CHECK_COLUMN(result, 0, {it + 2}));
 		}
 		for (int32_t val = 0; val < 100; val++) {
-			result = con.Query("SELECT COUNT(*) FROM integers WHERE i = " + to_string(val));
+			result = con.Query("SELECT COUNT(*) FROM integers WHERE i = " + duckdb::to_string(val));
 			REQUIRE(CHECK_COLUMN(result, 0, {it + 2}));
 		}
 	}
@@ -122,7 +122,7 @@ TEST_CASE("ART Floating Point Small", "[art-float-small]") {
 	// Insert values and create index
 	REQUIRE_NO_FAIL(con.Query("BEGIN TRANSACTION"));
 	for (idx_t i = 0; i < n; i++) {
-		REQUIRE_NO_FAIL(con.Query("INSERT INTO numbers VALUES (" + to_string(keys[i]) + ")"));
+		REQUIRE_NO_FAIL(con.Query("INSERT INTO numbers VALUES (" + duckdb::to_string(keys[i]) + ")"));
 	}
 	REQUIRE_NO_FAIL(con.Query("COMMIT"));
 	REQUIRE_NO_FAIL(con.Query("CREATE INDEX i_index ON numbers(i)"));
@@ -151,8 +151,8 @@ TEST_CASE("ART Floating Point Small", "[art-float-small]") {
 		int64_t low = Radix::EncodeFloat(min_values[i]);
 		int64_t high = Radix::EncodeFloat(max_values[i]);
 		int answer = full_scan<int64_t>(keys.get(), n, low, high);
-		string query =
-		    "SELECT COUNT(i) FROM numbers WHERE i >= " + to_string(low) + " and i <= " + to_string(high) + ";";
+		duckdb::string query = "SELECT COUNT(i) FROM numbers WHERE i >= " + duckdb::to_string(low) +
+		                       " and i <= " + duckdb::to_string(high) + ";";
 		result = con.Query(query);
 		if (!CHECK_COLUMN(result, 0, {answer})) {
 			cout << "Wrong answer on floating point real-small!" << std::endl << "Queries to reproduce:" << std::endl;
@@ -194,7 +194,7 @@ TEST_CASE("ART Floating Point Double Small", "[art-double-small]") {
 	// Insert values and create index
 	REQUIRE_NO_FAIL(con.Query("BEGIN TRANSACTION"));
 	for (idx_t i = 0; i < n; i++) {
-		REQUIRE_NO_FAIL(con.Query("INSERT INTO numbers VALUES (" + to_string(keys[i]) + ")"));
+		REQUIRE_NO_FAIL(con.Query("INSERT INTO numbers VALUES (" + duckdb::to_string(keys[i]) + ")"));
 	}
 	REQUIRE_NO_FAIL(con.Query("COMMIT"));
 	REQUIRE_NO_FAIL(con.Query("CREATE INDEX i_index ON numbers(i)"));
@@ -223,8 +223,8 @@ TEST_CASE("ART Floating Point Double Small", "[art-double-small]") {
 		int64_t low = Radix::EncodeDouble(min_values[i]);
 		int64_t high = Radix::EncodeDouble(max_values[i]);
 		int answer = full_scan<int64_t>(keys.get(), n, low, high);
-		string query =
-		    "SELECT COUNT(i) FROM numbers WHERE i >= " + to_string(low) + " and i <= " + to_string(high) + ";";
+		duckdb::string query = "SELECT COUNT(i) FROM numbers WHERE i >= " + duckdb::to_string(low) +
+		                       " and i <= " + duckdb::to_string(high) + ";";
 		result = con.Query(query);
 		if (!CHECK_COLUMN(result, 0, {answer})) {
 			cout << "Wrong answer on double!" << std::endl << "Queries to reproduce:" << std::endl;
@@ -266,7 +266,7 @@ TEST_CASE("ART Floating Point", "[art-float][.]") {
 	// Insert values and create index
 	REQUIRE_NO_FAIL(con.Query("BEGIN TRANSACTION"));
 	for (idx_t i = 0; i < n; i++) {
-		REQUIRE_NO_FAIL(con.Query("INSERT INTO numbers VALUES (" + to_string(keys[i]) + ")"));
+		REQUIRE_NO_FAIL(con.Query("INSERT INTO numbers VALUES (" + duckdb::to_string(keys[i]) + ")"));
 	}
 	REQUIRE_NO_FAIL(con.Query("COMMIT"));
 	REQUIRE_NO_FAIL(con.Query("CREATE INDEX i_index ON numbers(i)"));
@@ -295,8 +295,8 @@ TEST_CASE("ART Floating Point", "[art-float][.]") {
 		int64_t low = Radix::EncodeFloat(min_values[i]);
 		int64_t high = Radix::EncodeFloat(max_values[i]);
 		int answer = full_scan<int64_t>(keys.get(), n, low, high);
-		string query =
-		    "SELECT COUNT(i) FROM numbers WHERE i >= " + to_string(low) + " and i <= " + to_string(high) + ";";
+		duckdb::string query = "SELECT COUNT(i) FROM numbers WHERE i >= " + duckdb::to_string(low) +
+		                       " and i <= " + duckdb::to_string(high) + ";";
 		result = con.Query(query);
 		if (!CHECK_COLUMN(result, 0, {answer})) {
 			cout << "Wrong answer on floating point real-small!" << std::endl << "Queries to reproduce:" << std::endl;
@@ -338,7 +338,7 @@ TEST_CASE("ART Floating Point Double", "[art-double][.]") {
 	// Insert values and create index
 	REQUIRE_NO_FAIL(con.Query("BEGIN TRANSACTION"));
 	for (idx_t i = 0; i < n; i++) {
-		REQUIRE_NO_FAIL(con.Query("INSERT INTO numbers VALUES (" + to_string(keys[i]) + ")"));
+		REQUIRE_NO_FAIL(con.Query("INSERT INTO numbers VALUES (" + duckdb::to_string(keys[i]) + ")"));
 	}
 	REQUIRE_NO_FAIL(con.Query("COMMIT"));
 	REQUIRE_NO_FAIL(con.Query("CREATE INDEX i_index ON numbers(i)"));
@@ -367,8 +367,8 @@ TEST_CASE("ART Floating Point Double", "[art-double][.]") {
 		int64_t low = Radix::EncodeDouble(min_values[i]);
 		int64_t high = Radix::EncodeDouble(max_values[i]);
 		int answer = full_scan<int64_t>(keys.get(), n, low, high);
-		string query =
-		    "SELECT COUNT(i) FROM numbers WHERE i >= " + to_string(low) + " and i <= " + to_string(high) + ";";
+		duckdb::string query = "SELECT COUNT(i) FROM numbers WHERE i >= " + duckdb::to_string(low) +
+		                       " and i <= " + duckdb::to_string(high) + ";";
 		result = con.Query(query);
 		if (!CHECK_COLUMN(result, 0, {answer})) {
 			cout << "Wrong answer on floating point real-small!" << std::endl << "Queries to reproduce:" << std::endl;

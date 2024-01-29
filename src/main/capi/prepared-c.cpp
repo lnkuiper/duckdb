@@ -5,6 +5,7 @@
 #include "duckdb/common/uhugeint.hpp"
 #include "duckdb/common/optional_ptr.hpp"
 #include "duckdb/common/case_insensitive_map.hpp"
+#include "duckdb/common/to_string.hpp"
 
 using duckdb::case_insensitive_map_t;
 using duckdb::Connection;
@@ -125,7 +126,7 @@ duckdb_type duckdb_param_type(duckdb_prepared_statement prepared_statement, idx_
 		return DUCKDB_TYPE_INVALID;
 	}
 	LogicalType param_type;
-	auto identifier = std::to_string(param_idx);
+	auto identifier = duckdb::to_string(param_idx);
 	if (wrapper->statement->data->TryGetType(identifier, param_type)) {
 		return ConvertCPPTypeToC(param_type);
 	}
@@ -173,7 +174,7 @@ duckdb_state duckdb_bind_parameter_index(duckdb_prepared_statement prepared_stat
 	if (!name_p || !param_idx_out) {
 		return DuckDBError;
 	}
-	auto name = std::string(name_p);
+	auto name = duckdb::string(name_p);
 	for (auto &pair : wrapper->statement->named_param_map) {
 		if (duckdb::StringUtil::CIEquals(pair.first, name)) {
 			*param_idx_out = pair.second;
@@ -295,7 +296,7 @@ duckdb_state duckdb_bind_varchar(duckdb_prepared_statement prepared_statement, i
 duckdb_state duckdb_bind_varchar_length(duckdb_prepared_statement prepared_statement, idx_t param_idx, const char *val,
                                         idx_t length) {
 	try {
-		auto value = Value(std::string(val, length));
+		auto value = Value(duckdb::string(val, length));
 		return duckdb_bind_value(prepared_statement, param_idx, (duckdb_value)&value);
 	} catch (...) {
 		return DuckDBError;

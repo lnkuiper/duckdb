@@ -1,7 +1,7 @@
 #include "catch.hpp"
 #include "duckdb/common/file_system.hpp"
-#include "test_helpers.hpp"
 #include "duckdb/storage/storage_info.hpp"
+#include "test_helpers.hpp"
 
 #include <fstream>
 
@@ -14,15 +14,15 @@ TEST_CASE("Test repeated load and checkpoint of storage", "[storage][.]") {
 	auto csv_file = TestCreatePath("rload.csv");
 	auto config = GetTestConfig();
 
-	duckdb::vector<string> model {"M11", "F22", "U33"};
-	duckdb::vector<string> shop {"www.goodshop.com", "www.badshop.com"};
-	duckdb::vector<string> name {"Electronics  Something  One",   "Electronics  Something  Two",
-	                             "Electronics  Something  Three", "Electronics  Something  Four",
-	                             "Electronics  Something  Five",  "Electronics  Something  Six",
-	                             "Electronics  Something  Seven", "Electronics  Something  Eight",
-	                             "Electronics  Something  Nine",  "Electronics  Something  Ten"};
-	duckdb::vector<string> brand {"AAAAA", "BBBBB", "CCCC", "DDDDDD", "PPPP"};
-	duckdb::vector<string> color {"violet", "indigo", "blue", "green", "yellow", "orange", "red"};
+	duckdb::vector<duckdb::string> model {"M11", "F22", "U33"};
+	duckdb::vector<duckdb::string> shop {"www.goodshop.com", "www.badshop.com"};
+	duckdb::vector<duckdb::string> name {"Electronics  Something  One",   "Electronics  Something  Two",
+	                                     "Electronics  Something  Three", "Electronics  Something  Four",
+	                                     "Electronics  Something  Five",  "Electronics  Something  Six",
+	                                     "Electronics  Something  Seven", "Electronics  Something  Eight",
+	                                     "Electronics  Something  Nine",  "Electronics  Something  Ten"};
+	duckdb::vector<duckdb::string> brand {"AAAAA", "BBBBB", "CCCC", "DDDDDD", "PPPP"};
+	duckdb::vector<duckdb::string> color {"violet", "indigo", "blue", "green", "yellow", "orange", "red"};
 	idx_t row_count = 1000;
 	const idx_t checkpoint_loop_count = 100;
 
@@ -36,7 +36,7 @@ TEST_CASE("Test repeated load and checkpoint of storage", "[storage][.]") {
 			REQUIRE(CHECK_COLUMN(result, 0, {Value::BIGINT(counter * row_count)}));
 		}
 		// generate the csv file
-		ofstream csv_writer(csv_file);
+		ofstream csv_writer(csv_file.c_str());
 		for (idx_t i = 0; i < row_count; i++) {
 			idx_t z = i + counter;
 			idx_t record_id = i + (row_count * counter);

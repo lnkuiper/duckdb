@@ -1,23 +1,25 @@
 #include "dsdgen_helpers.hpp"
 
+#include "duckdb/common/to_string.hpp"
+
 #define DECLARER
 #include "address.h"
 #include "build_support.h"
 #include "config.h"
 #include "dist.h"
 #include "genrand.h"
+#include "init.h"
 #include "params.h"
 #include "porting.h"
 #include "scaling.h"
 #include "tdefs.h"
-#include "init.h"
 
 namespace tpcds {
 
 void InitializeDSDgen(double scale) {
 	InitConstants::Reset();
 	ResetCountCount();
-	std::string t = std::to_string(scale);
+	duckdb::string t = duckdb::to_string(scale);
 	set_str("SCALE", (char *)t.c_str()); // set SF, which also does a default init (e.g. random seed)
 	init_rand();                         // no random numbers without this
 }

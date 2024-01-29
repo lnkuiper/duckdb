@@ -46,7 +46,7 @@ public:
   TProtocolDecorator(shared_ptr<TProtocol> proto)
     : TProtocol(proto->getTransport()), protocol(proto) {}
 
-  uint32_t writeMessageBegin_virt(const std::string& name,
+  uint32_t writeMessageBegin_virt(const duckdb::string& name,
                                           const TMessageType messageType,
                                           const int32_t seqid) override {
     return protocol->writeMessageBegin(name, messageType, seqid);
@@ -91,22 +91,22 @@ public:
   uint32_t writeI64_virt(const int64_t i64) override { return protocol->writeI64(i64); }
 
   uint32_t writeDouble_virt(const double dub) override { return protocol->writeDouble(dub); }
-  uint32_t writeString_virt(const std::string& str) override { return protocol->writeString(str); }
-  uint32_t writeBinary_virt(const std::string& str) override { return protocol->writeBinary(str); }
+  uint32_t writeString_virt(const duckdb::string& str) override { return protocol->writeString(str); }
+  uint32_t writeBinary_virt(const duckdb::string& str) override { return protocol->writeBinary(str); }
 
-  uint32_t readMessageBegin_virt(std::string& name,
+  uint32_t readMessageBegin_virt(duckdb::string& name,
                                          TMessageType& messageType,
                                          int32_t& seqid) override {
     return protocol->readMessageBegin(name, messageType, seqid);
   }
   uint32_t readMessageEnd_virt() override { return protocol->readMessageEnd(); }
 
-  uint32_t readStructBegin_virt(std::string& name) override {
+  uint32_t readStructBegin_virt(duckdb::string& name) override {
     return protocol->readStructBegin(name);
   }
   uint32_t readStructEnd_virt() override { return protocol->readStructEnd(); }
 
-  uint32_t readFieldBegin_virt(std::string& name, TType& fieldType, int16_t& fieldId) override {
+  uint32_t readFieldBegin_virt(duckdb::string& name, TType& fieldType, int16_t& fieldId) override {
     return protocol->readFieldBegin(name, fieldType, fieldId);
   }
   uint32_t readFieldEnd_virt() override { return protocol->readFieldEnd(); }
@@ -139,8 +139,8 @@ public:
 
   uint32_t readDouble_virt(double& dub) override { return protocol->readDouble(dub); }
 
-  uint32_t readString_virt(std::string& str) override { return protocol->readString(str); }
-  uint32_t readBinary_virt(std::string& str) override { return protocol->readBinary(str); }
+  uint32_t readString_virt(duckdb::string& str) override { return protocol->readString(str); }
+  uint32_t readBinary_virt(duckdb::string& str) override { return protocol->readBinary(str); }
 
 private:
   shared_ptr<TProtocol> protocol;

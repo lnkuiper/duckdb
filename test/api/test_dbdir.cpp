@@ -6,11 +6,11 @@
 using namespace duckdb;
 using namespace std;
 
-static void test_in_memory_initialization(string dbdir) {
+static void test_in_memory_initialization(duckdb::string dbdir) {
 	duckdb::unique_ptr<FileSystem> fs = FileSystem::CreateLocal();
 	duckdb::unique_ptr<DuckDB> db;
 	duckdb::unique_ptr<Connection> con;
-	string in_memory_tmp = ".tmp";
+	duckdb::string in_memory_tmp = ".tmp";
 
 	// make sure the temporary folder does not exist
 	DeleteDatabase(dbdir);

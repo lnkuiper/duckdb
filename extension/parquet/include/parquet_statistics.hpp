@@ -20,7 +20,7 @@ struct ParquetStatisticsUtils {
 	                                                            const vector<ColumnChunk> &columns);
 
 	static Value ConvertValue(const LogicalType &type, const duckdb_parquet::format::SchemaElement &schema_ele,
-	                          const std::string &stats);
+	                          const string &stats);
 };
 
 } // namespace duckdb

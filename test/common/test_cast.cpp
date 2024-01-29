@@ -1,7 +1,7 @@
 #include "catch.hpp"
+#include "duckdb/common/limits.hpp"
 #include "duckdb/common/operator/cast_operators.hpp"
 #include "duckdb/common/string_util.hpp"
-#include "duckdb/common/limits.hpp"
 #include "duckdb/common/types.hpp"
 #include "duckdb/common/types/vector.hpp"
 #include "duckdb/common/vector.hpp"
@@ -45,8 +45,8 @@ static void TestNumericCast(duckdb::vector<SRC> &working_values, duckdb::vector<
 }
 
 template <class DST>
-static void TestStringCast(duckdb::vector<string> &working_values, duckdb::vector<DST> &expected_values,
-                           duckdb::vector<string> &broken_values) {
+static void TestStringCast(duckdb::vector<duckdb::string> &working_values, duckdb::vector<DST> &expected_values,
+                           duckdb::vector<duckdb::string> &broken_values) {
 	DST result;
 	for (idx_t i = 0; i < working_values.size(); i++) {
 		auto &value = working_values[i];
@@ -56,7 +56,7 @@ static void TestStringCast(duckdb::vector<string> &working_values, duckdb::vecto
 		REQUIRE(result == expected_value);
 
 		StringUtil::Trim(value);
-		duckdb::vector<string> splits;
+		duckdb::vector<duckdb::string> splits;
 		splits = StringUtil::Split(value, 'e');
 		if (splits.size() > 1 || value[0] == '+') {
 			continue;
@@ -73,16 +73,16 @@ static void TestStringCast(duckdb::vector<string> &working_values, duckdb::vecto
 template <class T>
 static void TestExponent() {
 	T parse_result;
-	string str;
+	duckdb::string str;
 	double value = 1;
 	T expected_value = 1;
 	for (idx_t exponent = 0; exponent < 100; exponent++) {
 		if (value < (double)NumericLimits<T>::Maximum()) {
 			// expect success
-			str = "1e" + to_string(exponent);
+			str = "1e" + duckdb::to_string(exponent);
 			REQUIRE(TryCast::Operation<string_t, T>(string_t(str), parse_result));
 			REQUIRE(parse_result == expected_value);
-			str = "-1e" + to_string(exponent);
+			str = "-1e" + duckdb::to_string(exponent);
 			REQUIRE(TryCast::Operation<string_t, T>(string_t(str), parse_result));
 			REQUIRE(parse_result == -expected_value);
 			value *= 10;
@@ -92,18 +92,19 @@ static void TestExponent() {
 			}
 		} else {
 			// expect failure
-			str = "1e" + to_string(exponent);
+			str = "1e" + duckdb::to_string(exponent);
 			REQUIRE(!TryCast::Operation<string_t, T>(string_t(str), parse_result));
-			str = "-1e" + to_string(exponent);
+			str = "-1e" + duckdb::to_string(exponent);
 			REQUIRE(!TryCast::Operation<string_t, T>(string_t(str), parse_result));
 		}
 	}
 }
 
 TEST_CASE("Test casting to boolean", "[cast]") {
-	duckdb::vector<string> working_values = {"true", "false", "TRUE", "FALSE", "T", "F", "1", "0", "False", "True"};
+	duckdb::vector<duckdb::string> working_values = {"true", "false", "TRUE", "FALSE", "T",
+	                                                 "F",    "1",     "0",    "False", "True"};
 	duckdb::vector<bool> expected_values = {true, false, true, false, true, false, true, false, false, true};
-	duckdb::vector<string> broken_values = {"304", "1002", "blabla", "", "aaaaaaaaaaaaaaaaaaaaaaaaaaaaa"};
+	duckdb::vector<duckdb::string> broken_values = {"304", "1002", "blabla", "", "aaaaaaaaaaaaaaaaaaaaaaaaaaaaa"};
 
 	bool result;
 	for (idx_t i = 0; i < working_values.size(); i++) {
@@ -141,23 +142,24 @@ TEST_CASE("Test casting to int8_t", "[cast]") {
 	duckdb::vector<double> broken_values_double = {128, -129, 10000000000.0, -10000000000.0, 1e100, -1e100};
 	TestNumericCast<double, int8_t>(working_values_double, broken_values_double);
 	// string -> int8_t
-	duckdb::vector<string> working_values_str = {"10",  "+10", "-10",   "127", "-128", "1.3",   "1e2",
-	                                             "2e1", "2e0", "20e-1", "1.",  "  3",  " 3   ", "\t3 \t \n"};
+	duckdb::vector<duckdb::string> working_values_str = {"10",  "+10", "-10",   "127", "-128", "1.3",   "1e2",
+	                                                     "2e1", "2e0", "20e-1", "1.",  "  3",  " 3   ", "\t3 \t \n"};
 	duckdb::vector<int8_t> expected_values_str = {10, 10, -10, 127, -128, 1, 100, 20, 2, 2, 1, 3, 3, 3};
-	duckdb::vector<string> broken_values_str = {"128",
-	                                            "-129",
-	                                            "10000000000000000000000000000000000000000000000000000000000000",
-	                                            "aaaa",
-	                                            "19A",
-	                                            "",
-	                                            "1e3",
-	                                            "1e",
-	                                            "1e-",
-	                                            "1e100",
-	                                            "1e100000000",
-	                                            "10000e-1",
-	                                            " 3 2",
-	                                            "+"};
+	duckdb::vector<duckdb::string> broken_values_str = {
+	    "128",
+	    "-129",
+	    "10000000000000000000000000000000000000000000000000000000000000",
+	    "aaaa",
+	    "19A",
+	    "",
+	    "1e3",
+	    "1e",
+	    "1e-",
+	    "1e100",
+	    "1e100000000",
+	    "10000e-1",
+	    " 3 2",
+	    "+"};
 	TestStringCast<int8_t>(working_values_str, expected_values_str, broken_values_str);
 	TestExponent<int8_t>();
 }
@@ -180,10 +182,10 @@ TEST_CASE("Test casting to int16_t", "[cast]") {
 	duckdb::vector<double> broken_values_double = {32768, -32769, 10000000000.0, -10000000000.0, 1e100, -1e100};
 	TestNumericCast<double, int16_t>(working_values_double, broken_values_double);
 	// string -> int16_t
-	duckdb::vector<string> working_values_str = {"10",  "-10",   "32767", "-32768", "1.3",
-	                                             "3e4", "250e2", "3e+4",  "3e0",    "30e-1"};
+	duckdb::vector<duckdb::string> working_values_str = {"10",  "-10",   "32767", "-32768", "1.3",
+	                                                     "3e4", "250e2", "3e+4",  "3e0",    "30e-1"};
 	duckdb::vector<int16_t> expected_values_str = {10, -10, 32767, -32768, 1, 30000, 25000, 30000, 3, 3};
-	duckdb::vector<string> broken_values_str = {
+	duckdb::vector<duckdb::string> broken_values_str = {
 	    "32768", "-32769",      "10000000000000000000000000000000000000000000000000000000000000",
 	    "aaaa",  "19A",         "",
 	    "1.A",   "1e",          "1e-",
@@ -208,9 +210,10 @@ TEST_CASE("Test casting to int32_t", "[cast]") {
 	                                               -10000000000.0, 1e100,         -1e100};
 	TestNumericCast<double, int32_t>(working_values_double, broken_values_double);
 	// string -> int32_t
-	duckdb::vector<string> working_values_str = {"10", "-10", "2147483647", "-2147483647", "1.3", "-1.3", "1e6"};
+	duckdb::vector<duckdb::string> working_values_str = {"10",  "-10",  "2147483647", "-2147483647",
+	                                                     "1.3", "-1.3", "1e6"};
 	duckdb::vector<int32_t> expected_values_str = {10, -10, 2147483647, -2147483647, 1, -1, 1000000};
-	duckdb::vector<string> broken_values_str = {
+	duckdb::vector<duckdb::string> broken_values_str = {
 	    "2147483648", "-2147483649", "10000000000000000000000000000000000000000000000000000000000000",
 	    "aaaa",       "19A",         "",
 	    "1.A",        "1e1e1e1"};
@@ -238,7 +241,7 @@ TEST_CASE("Test casting to int64_t", "[cast]") {
 	duckdb::vector<double> broken_values_double = {18446744073709551616.0, -18446744073709551617.0, 1e100, -1e100};
 	TestNumericCast<double, int64_t>(working_values_double, broken_values_double);
 	// string -> int64_t
-	duckdb::vector<string> working_values_str = {
+	duckdb::vector<duckdb::string> working_values_str = {
 	    "10",    "-10", "9223372036854775807", "-9223372036854775807", "1.3", "-9223372036854775807.1293813", "1e18",
 	    "1e+18", "1."};
 	duckdb::vector<int64_t> expected_values_str = {10,
@@ -250,25 +253,26 @@ TEST_CASE("Test casting to int64_t", "[cast]") {
 	                                               1000000000000000000LL,
 	                                               1000000000000000000LL,
 	                                               1};
-	duckdb::vector<string> broken_values_str = {"9223372036854775808",
-	                                            "-9223372036854775809",
-	                                            "10000000000000000000000000000000000000000000000000000000000000",
-	                                            "aaaa",
-	                                            "19A",
-	                                            "",
-	                                            "1.A",
-	                                            "1.2382398723A",
-	                                            "1e++1",
-	                                            "1e+1+1",
-	                                            "1e+1-1",
-	                                            "+"};
+	duckdb::vector<duckdb::string> broken_values_str = {
+	    "9223372036854775808",
+	    "-9223372036854775809",
+	    "10000000000000000000000000000000000000000000000000000000000000",
+	    "aaaa",
+	    "19A",
+	    "",
+	    "1.A",
+	    "1.2382398723A",
+	    "1e++1",
+	    "1e+1+1",
+	    "1e+1-1",
+	    "+"};
 	TestStringCast<int64_t>(working_values_str, expected_values_str, broken_values_str);
 	TestExponent<int64_t>();
 }
 
 template <class DST>
-static void TestStringCastDouble(duckdb::vector<string> &working_values, duckdb::vector<DST> &expected_values,
-                                 duckdb::vector<string> &broken_values) {
+static void TestStringCastDouble(duckdb::vector<duckdb::string> &working_values, duckdb::vector<DST> &expected_values,
+                                 duckdb::vector<duckdb::string> &broken_values) {
 	DST result;
 	for (idx_t i = 0; i < working_values.size(); i++) {
 		auto &value = working_values[i];
@@ -289,13 +293,13 @@ static void TestStringCastDouble(duckdb::vector<string> &working_values, duckdb:
 
 TEST_CASE("Test casting to float", "[cast]") {
 	// string -> float
-	duckdb::vector<string> working_values = {
+	duckdb::vector<duckdb::string> working_values = {
 	    "1.3",         "1.34514", "1e10", "1e-2", "-1e-1", "1.1781237378938173987123987123981723981723981723987123",
 	    "1.123456789", "1."};
 	duckdb::vector<float> expected_values = {
 	    1.3f,         1.34514f, 1e10f, 1e-2f, -1e-1f, 1.1781237378938173987123987123981723981723981723987123f,
 	    1.123456789f, 1.0f};
-	duckdb::vector<string> broken_values = {
+	duckdb::vector<duckdb::string> broken_values = {
 	    "-",     "",        "aaa",
 	    "12aaa", "1e10e10", "1e",
 	    "1e-",   "1e10a",   "1.1781237378938173987123987123981723981723981723934834583490587123w",
@@ -305,24 +309,24 @@ TEST_CASE("Test casting to float", "[cast]") {
 
 TEST_CASE("Test casting to double", "[cast]") {
 	// string -> double
-	duckdb::vector<string> working_values = {"1.3",
-	                                         "+1.3",
-	                                         "1.34514",
-	                                         "1e10",
-	                                         "1e-2",
-	                                         "-1e-1",
-	                                         "1.1781237378938173987123987123981723981723981723987123",
-	                                         "1.123456789",
-	                                         "1.",
-	                                         "-1.2",
-	                                         "-1.2e1",
-	                                         " 1.2 ",
-	                                         "  1.2e2  ",
-	                                         " \t 1.2e2 \t"};
+	duckdb::vector<duckdb::string> working_values = {"1.3",
+	                                                 "+1.3",
+	                                                 "1.34514",
+	                                                 "1e10",
+	                                                 "1e-2",
+	                                                 "-1e-1",
+	                                                 "1.1781237378938173987123987123981723981723981723987123",
+	                                                 "1.123456789",
+	                                                 "1.",
+	                                                 "-1.2",
+	                                                 "-1.2e1",
+	                                                 " 1.2 ",
+	                                                 "  1.2e2  ",
+	                                                 " \t 1.2e2 \t"};
 	duckdb::vector<double> expected_values = {
 	    1.3,         1.3, 1.34514, 1e10, 1e-2, -1e-1, 1.1781237378938173987123987123981723981723981723987123,
 	    1.123456789, 1.0, -1.2,    -12,  1.2,  120,   120};
-	duckdb::vector<string> broken_values = {
+	duckdb::vector<duckdb::string> broken_values = {
 	    "-",     "",        "aaa",
 	    "12aaa", "1e10e10", "1e",
 	    "1e-",   "1e10a",   "1.1781237378938173987123987123981723981723981723934834583490587123w",

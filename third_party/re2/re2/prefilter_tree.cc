@@ -9,7 +9,7 @@
 #include <map>
 #include <memory>
 #include <set>
-#include <string>
+#include "duckdb/common/string.hpp"
 #include <utility>
 #include <vector>
 
@@ -52,7 +52,7 @@ void PrefilterTree::Add(Prefilter* prefilter) {
   prefilter_vec_.push_back(prefilter);
 }
 
-void PrefilterTree::Compile(std::vector<std::string>* atom_vec) {
+void PrefilterTree::Compile(std::vector<duckdb::string>* atom_vec) {
   if (compiled_) {
     LOG(DFATAL) << "Compile called already.";
     return;
@@ -101,16 +101,16 @@ void PrefilterTree::Compile(std::vector<std::string>* atom_vec) {
 }
 
 Prefilter* PrefilterTree::CanonicalNode(NodeMap* nodes, Prefilter* node) {
-  std::string node_string = NodeString(node);
-  std::map<std::string, Prefilter*>::iterator iter = nodes->find(node_string);
+  duckdb::string node_string = NodeString(node);
+  std::map<duckdb::string, Prefilter*>::iterator iter = nodes->find(node_string);
   if (iter == nodes->end())
     return NULL;
   return (*iter).second;
 }
 
-std::string PrefilterTree::NodeString(Prefilter* node) const {
+duckdb::string PrefilterTree::NodeString(Prefilter* node) const {
   // Adding the operation disambiguates AND/OR/atom nodes.
-  std::string s = StringPrintf("%d", node->op()) + ":";
+  duckdb::string s = StringPrintf("%d", node->op()) + ":";
   if (node->op() == Prefilter::ATOM) {
     s += node->atom();
   } else {
@@ -161,7 +161,7 @@ bool PrefilterTree::KeepNode(Prefilter* node) const {
 }
 
 void PrefilterTree::AssignUniqueIds(NodeMap* nodes,
-                                    std::vector<std::string>* atom_vec) {
+                                    std::vector<duckdb::string>* atom_vec) {
   atom_vec->clear();
 
   // Build vector of all filter nodes, sorted topologically
@@ -372,14 +372,14 @@ void PrefilterTree::PrintDebugInfo(NodeMap* nodes) {
       LOG(ERROR) << it->first;
   }
   LOG(ERROR) << "Map:";
-  for (std::map<std::string, Prefilter*>::const_iterator iter = nodes->begin();
+  for (std::map<duckdb::string, Prefilter*>::const_iterator iter = nodes->begin();
        iter != nodes->end(); ++iter)
     LOG(ERROR) << "NodeId: " << (*iter).second->unique_id()
                << " Str: " << (*iter).first;
 }
 
-std::string PrefilterTree::DebugNodeString(Prefilter* node) const {
-  std::string node_string = "";
+duckdb::string PrefilterTree::DebugNodeString(Prefilter* node) const {
+  duckdb::string node_string = "";
   if (node->op() == Prefilter::ATOM) {
     DCHECK(!node->atom().empty());
     node_string += node->atom();

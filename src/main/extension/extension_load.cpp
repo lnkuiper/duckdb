@@ -31,18 +31,18 @@ static T LoadFunctionFromDLL(void *dll, const string &function_name, const strin
 	return (T)function;
 }
 
-static void ComputeSHA256String(const std::string &to_hash, std::string *res) {
+static void ComputeSHA256String(const string &to_hash, string *res) {
 	// Invoke MbedTls function to actually compute sha256
 	*res = duckdb_mbedtls::MbedTlsWrapper::ComputeSha256Hash(to_hash);
 }
 
-static void ComputeSHA256FileSegment(FileHandle *handle, const idx_t start, const idx_t end, std::string *res) {
+static void ComputeSHA256FileSegment(FileHandle *handle, const idx_t start, const idx_t end, string *res) {
 	idx_t iter = start;
 	const idx_t segment_size = 1024 * 8;
 
 	duckdb_mbedtls::MbedTlsWrapper::SHA256State state;
 
-	std::string to_hash;
+	string to_hash;
 	while (iter < end) {
 		idx_t len = std::min(end - iter, segment_size);
 		to_hash.resize(len);
@@ -89,7 +89,7 @@ bool ExtensionHelper::TryInitialLoad(DBConfig &config, FileSystem &fs, const str
 			    return stringOnWasmHeap;
 		    },
 		    filename.c_str(), url.c_str());
-		std::string address(str);
+		string address(str);
 		free(str);
 
 		filename = address;
@@ -130,7 +130,7 @@ bool ExtensionHelper::TryInitialLoad(DBConfig &config, FileSystem &fs, const str
 
 		const idx_t maxLenChunks = 1024ULL * 1024ULL;
 		const idx_t numChunks = (signature_offset + maxLenChunks - 1) / maxLenChunks;
-		std::vector<std::string> hash_chunks(numChunks);
+		std::vector<string> hash_chunks(numChunks);
 		std::vector<idx_t> splits(numChunks + 1);
 
 		for (idx_t i = 0; i < numChunks; i++) {
@@ -212,17 +212,17 @@ bool ExtensionHelper::TryInitialLoad(DBConfig &config, FileSystem &fs, const str
 
 	version_fun = LoadFunctionFromDLL<ext_version_fun_t>(lib_hdl, version_fun_name, filename);
 
-	std::string engine_version = std::string(DuckDB::LibraryVersion());
+	string engine_version = string(DuckDB::LibraryVersion());
 
 	auto version_fun_result = (*version_fun)();
 	if (version_fun_result == nullptr) {
 		throw InvalidInputException("Extension \"%s\" returned a nullptr", filename);
 	}
-	std::string extension_version = std::string(version_fun_result);
+	string extension_version = string(version_fun_result);
 
 	// Trim v's if necessary
-	std::string extension_version_trimmed = extension_version;
-	std::string engine_version_trimmed = engine_version;
+	string extension_version_trimmed = extension_version;
+	string engine_version_trimmed = engine_version;
 	if (extension_version.length() > 0 && extension_version[0] == 'v') {
 		extension_version_trimmed = extension_version.substr(1);
 	}

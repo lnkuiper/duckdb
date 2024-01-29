@@ -16,7 +16,7 @@ bool SUCCESS(AdbcStatusCode status) {
 const char *duckdb_lib = std::getenv("DUCKDB_INSTALL_LIB");
 class ADBCTestDatabase {
 public:
-	explicit ADBCTestDatabase(const string &path_parameter = ":memory:") {
+	explicit ADBCTestDatabase(const duckdb::string &path_parameter = ":memory:") {
 		InitializeADBCError(&adbc_error);
 		if (path_parameter != ":memory:") {
 			path = TestCreatePath(path_parameter);
@@ -45,18 +45,18 @@ public:
 		REQUIRE(SUCCESS(AdbcDatabaseRelease(&adbc_database, &adbc_error)));
 	}
 
-	bool QueryAndCheck(const string &query) {
+	bool QueryAndCheck(const duckdb::string &query) {
 		QueryArrow(query);
 		auto cconn = reinterpret_cast<duckdb::Connection *>(adbc_connection.private_data);
 		return ArrowTestHelper::RunArrowComparison(*cconn, query, arrow_stream);
 	}
 
-	duckdb::unique_ptr<MaterializedQueryResult> Query(const string &query) {
+	duckdb::unique_ptr<MaterializedQueryResult> Query(const duckdb::string &query) {
 		auto cconn = reinterpret_cast<duckdb::Connection *>(adbc_connection.private_data);
 		return cconn->Query(query);
 	}
 
-	ArrowArrayStream &QueryArrow(const string &query) {
+	ArrowArrayStream &QueryArrow(const duckdb::string &query) {
 		if (arrow_stream.release) {
 			arrow_stream.release(&arrow_stream);
 			arrow_stream.release = nullptr;
@@ -71,7 +71,7 @@ public:
 		return arrow_stream;
 	}
 
-	void CreateTable(const string &table_name, ArrowArrayStream &input_data) {
+	void CreateTable(const duckdb::string &table_name, ArrowArrayStream &input_data) {
 		REQUIRE(input_data.release);
 		AdbcStatement adbc_statement;
 		REQUIRE(SUCCESS(AdbcStatementNew(&adbc_connection, &adbc_statement, &adbc_error)));
@@ -392,7 +392,7 @@ TEST_CASE("Test ADBC Statement Bind (unhappy)", "[adbc]") {
 	AdbcError adbc_error;
 	InitializeADBCError(&adbc_error);
 
-	string query = "select ?, ?, ?";
+	duckdb::string query = "select ?, ?, ?";
 
 	// Create connection - database and whatnot
 	REQUIRE(SUCCESS(AdbcDatabaseNew(&adbc_database, &adbc_error)));
@@ -473,7 +473,7 @@ TEST_CASE("Test ADBC Statement Bind", "[adbc]") {
 
 	// Create prepared parameter array
 	auto &input_data = db.QueryArrow("SELECT 42, true, 'this is a string'");
-	string query = "select ?, ?, ?";
+	duckdb::string query = "select ?, ?, ?";
 
 	AdbcDatabase adbc_database;
 	AdbcConnection adbc_connection;
@@ -503,8 +503,8 @@ TEST_CASE("Test ADBC Statement Bind", "[adbc]") {
 	REQUIRE(expected_schema.n_children == 3);
 	for (int64_t i = 0; i < expected_schema.n_children; i++) {
 		auto child = expected_schema.children[i];
-		std::string child_name = child->name;
-		std::string expected_name = StringUtil::Format("%d", i);
+		duckdb::string child_name = child->name;
+		duckdb::string expected_name = StringUtil::Format("%d", i);
 		REQUIRE(child_name == expected_name);
 	}
 	expected_schema.release(&expected_schema);
@@ -544,8 +544,8 @@ TEST_CASE("Test ADBC Transactions", "[adbc]") {
 
 	// Create Arrow Result
 	auto &input_data = db.QueryArrow("SELECT 42");
-	string table_name = "test";
-	string query = "select count(*) from test";
+	duckdb::string table_name = "test";
+	duckdb::string query = "select count(*) from test";
 
 	AdbcDatabase adbc_database;
 	AdbcConnection adbc_connection;
@@ -923,7 +923,7 @@ TEST_CASE("Test ADBC Substrait", "[adbc]") {
 	// Insert Data
 	ADBCTestDatabase db;
 	auto &input_data = db.QueryArrow("SELECT 'Push Ups' as exercise, 3 as difficulty_level;");
-	string table_name = "crossfit";
+	duckdb::string table_name = "crossfit";
 	REQUIRE(SUCCESS(AdbcStatementNew(&adbc_connection, &adbc_statement, &adbc_error)));
 
 	REQUIRE(
@@ -1019,7 +1019,7 @@ TEST_CASE("Test AdbcConnectionGetTableTypes", "[adbc]") {
 	if (!duckdb_lib) {
 		return;
 	}
-	string path_db;
+	duckdb::string path_db;
 
 	ADBCTestDatabase db("AdbcConnectionGetTableTypes.db");
 

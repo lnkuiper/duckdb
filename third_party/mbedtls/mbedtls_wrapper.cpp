@@ -46,15 +46,15 @@ void MbedTlsWrapper::ComputeSha256Hash(const char *in, size_t in_len, char *out)
 	mbedtls_sha256_free(&sha_context);
 }
 
-string MbedTlsWrapper::ComputeSha256Hash(const string &file_content) {
-	string hash;
+duckdb::string MbedTlsWrapper::ComputeSha256Hash(const duckdb::string &file_content) {
+	duckdb::string hash;
 	hash.resize(MbedTlsWrapper::SHA256_HASH_LENGTH_BYTES);
 	ComputeSha256Hash(file_content.data(), file_content.size(), (char *)hash.data());
 	return hash;
 }
 
-bool MbedTlsWrapper::IsValidSha256Signature(const std::string &pubkey, const std::string &signature,
-                                            const std::string &sha256_hash) {
+bool MbedTlsWrapper::IsValidSha256Signature(const duckdb::string &pubkey, const duckdb::string &signature,
+                                            const duckdb::string &sha256_hash) {
 
 	if (signature.size() != 256 || sha256_hash.size() != 32) {
 		throw std::runtime_error("Invalid input lengths, expected signature length 256, got " +
@@ -150,17 +150,17 @@ MbedTlsWrapper::SHA256State::~SHA256State() {
 	delete context;
 }
 
-void MbedTlsWrapper::SHA256State::AddString(const std::string &str) {
+void MbedTlsWrapper::SHA256State::AddString(const duckdb::string &str) {
 	auto context = reinterpret_cast<mbedtls_sha256_context *>(sha_context);
 	if (mbedtls_sha256_update(context, (unsigned char *)str.data(), str.size())) {
 		throw std::runtime_error("SHA256 Error");
 	}
 }
 
-std::string MbedTlsWrapper::SHA256State::Finalize() {
+duckdb::string MbedTlsWrapper::SHA256State::Finalize() {
 	auto context = reinterpret_cast<mbedtls_sha256_context *>(sha_context);
 
-	string hash;
+	duckdb::string hash;
 	hash.resize(MbedTlsWrapper::SHA256_HASH_LENGTH_BYTES);
 
 	if (mbedtls_sha256_finish(context, (unsigned char *)hash.data())) {
@@ -183,7 +183,7 @@ void MbedTlsWrapper::SHA256State::FinishHex(char *out) {
 	MbedTlsWrapper::ToBase16(const_cast<char *>(hash.c_str()), out, MbedTlsWrapper::SHA256_HASH_LENGTH_BYTES);
 }
 
-MbedTlsWrapper::AESGCMState::AESGCMState(const std::string &key) : gcm_context(new mbedtls_gcm_context()) {
+MbedTlsWrapper::AESGCMState::AESGCMState(const duckdb::string &key) : gcm_context(new mbedtls_gcm_context()) {
 	auto context = reinterpret_cast<mbedtls_gcm_context *>(gcm_context);
 	mbedtls_gcm_init(context);
 	if (mbedtls_gcm_setkey(context, MBEDTLS_CIPHER_ID_AES, reinterpret_cast<const unsigned char *>(key.c_str()),
@@ -198,7 +198,7 @@ MbedTlsWrapper::AESGCMState::~AESGCMState() {
 	delete context;
 }
 
-bool MbedTlsWrapper::AESGCMState::ValidKey(const std::string &key) {
+bool MbedTlsWrapper::AESGCMState::ValidKey(const duckdb::string &key) {
 	switch (key.size()) {
 	case 16:
 	case 24:

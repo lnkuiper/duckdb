@@ -34,6 +34,7 @@
 #define FMT_FORMAT_H_
 
 #include "duckdb/common/exception.hpp"
+#include "duckdb/common/to_string.hpp"
 #include "fmt/core.h"
 
 #include <algorithm>
@@ -292,8 +293,8 @@ template <typename It> class is_output_iterator {
   static const bool value = !std::is_const<remove_reference_t<type>>::value;
 };
 
-// A workaround for std::string not having mutable data() until C++17.
-template <typename Char> inline Char* get_data(std::basic_string<Char>& s) {
+// A workaround for duckdb::string not having mutable data() until C++17.
+template <typename Char> inline Char* get_data(duckdb::basic_string<Char>& s) {
   return &s[0];
 }
 template <typename Container>
@@ -584,7 +585,7 @@ enum { inline_buffer_size = 500 };
 
      The answer is 42.
 
-  The output can be converted to an ``std::string`` with ``to_string(out)``.
+  The output can be converted to an ``duckdb::string`` with ``to_string(out)``.
   \endrst
  */
 template <typename T, std::size_t SIZE = inline_buffer_size,
@@ -790,11 +791,11 @@ inline int count_digits(uint32_t n) {
 }
 #endif
 
-template <typename Char> FMT_API std::string grouping_impl(locale_ref loc);
-template <typename Char> inline std::string grouping(locale_ref loc) {
+template <typename Char> FMT_API duckdb::string grouping_impl(locale_ref loc);
+template <typename Char> inline duckdb::string grouping(locale_ref loc) {
   return grouping_impl<char>(loc);
 }
-template <> inline std::string grouping<wchar_t>(locale_ref loc) {
+template <> inline duckdb::string grouping<wchar_t>(locale_ref loc) {
   return grouping_impl<wchar_t>(loc);
 }
 
@@ -1156,7 +1157,7 @@ FMT_CONSTEXPR void handle_int_type_spec(const Spec& specs, Handler&& handler) {
     handler.on_num();
     break;
   default:
-    handler.on_error("Invalid type specifier \"" + std::string(1, specs.type) + "\" for formatting a value of type int");
+    handler.on_error("Invalid type specifier \"" + duckdb::string(1, specs.type) + "\" for formatting a value of type int");
   }
 }
 
@@ -1213,7 +1214,7 @@ FMT_CONSTEXPR float_specs parse_float_type_spec(
     result.locale = true;
     break;
   default:
-    eh.on_error("Invalid type specifier \"" + std::string(1, specs.type) + "\" for formatting a value of type float");
+    eh.on_error("Invalid type specifier \"" + duckdb::string(1, specs.type) + "\" for formatting a value of type float");
     break;
   }
   return result;
@@ -1236,17 +1237,17 @@ FMT_CONSTEXPR void handle_cstring_type_spec(Char spec, Handler&& handler) {
   else if (spec == 'p')
     handler.on_pointer();
   else
-    handler.on_error("Invalid type specifier \"" + std::string(1, spec) + "\" for formatting a value of type string");
+    handler.on_error("Invalid type specifier \"" + duckdb::string(1, spec) + "\" for formatting a value of type string");
 }
 
 template <typename Char, typename ErrorHandler>
 FMT_CONSTEXPR void check_string_type_spec(Char spec, ErrorHandler&& eh) {
-  if (spec != 0 && spec != 's') eh.on_error("Invalid type specifier \"" + std::string(1, spec) + "\" for formatting a value of type string");
+  if (spec != 0 && spec != 's') eh.on_error("Invalid type specifier \"" + duckdb::string(1, spec) + "\" for formatting a value of type string");
 }
 
 template <typename Char, typename ErrorHandler>
 FMT_CONSTEXPR void check_pointer_type_spec(Char spec, ErrorHandler&& eh) {
-  if (spec != 0 && spec != 'p') eh.on_error("Invalid type specifier \"" + std::string(1, spec) + "\" for formatting a value of type pointer");
+  if (spec != 0 && spec != 'p') eh.on_error("Invalid type specifier \"" + duckdb::string(1, spec) + "\" for formatting a value of type pointer");
 }
 
 template <typename ErrorHandler> class int_type_checker : private ErrorHandler {
@@ -1259,7 +1260,7 @@ template <typename ErrorHandler> class int_type_checker : private ErrorHandler {
   FMT_CONSTEXPR void on_oct() {}
   FMT_CONSTEXPR void on_num() {}
 
-  FMT_CONSTEXPR void on_error(std::string error) {
+  FMT_CONSTEXPR void on_error(duckdb::string error) {
     ErrorHandler::on_error(error);
   }
 };
@@ -1488,7 +1489,7 @@ template <typename Range> class basic_writer {
     struct num_writer {
       unsigned_type abs_value;
       int size;
-      const std::string& groups;
+      const duckdb::string& groups;
       char_type sep;
 
       template <typename It> void operator()(It&& it) const {
@@ -1496,7 +1497,7 @@ template <typename Range> class basic_writer {
         // Index of a decimal digit with the least significant digit having
         // index 0.
         int digit_index = 0;
-        std::string::const_iterator group = groups.cbegin();
+        duckdb::string::const_iterator group = groups.cbegin();
         it = format_decimal<char_type>(
             it, abs_value, size,
             [this, s, &group, &digit_index](char_type*& buffer) {
@@ -1515,13 +1516,13 @@ template <typename Range> class basic_writer {
     };
 
     void on_num() {
-      std::string groups = grouping<char_type>(writer.locale_);
+      duckdb::string groups = grouping<char_type>(writer.locale_);
       if (groups.empty()) return on_dec();
       auto sep = specs.thousands;
       if (!sep) return on_dec();
       int num_digits = count_digits(abs_value);
       int size = num_digits;
-      std::string::const_iterator group = groups.cbegin();
+      duckdb::string::const_iterator group = groups.cbegin();
       while (group != groups.cend() && num_digits > *group && *group > 0 &&
              *group != max_value<char>()) {
         size += sep_size;
@@ -1534,7 +1535,7 @@ template <typename Range> class basic_writer {
                        num_writer{abs_value, size, groups, static_cast<char_type>(sep)});
     }
 
-    FMT_NORETURN void on_error(std::string error) {
+    FMT_NORETURN void on_error(duckdb::string error) {
       FMT_THROW(duckdb::Exception(error));
     }
   };
@@ -2087,7 +2088,7 @@ struct auto_id {};
 template <typename Context>
 FMT_CONSTEXPR typename Context::format_arg get_arg(Context& ctx, int id) {
   auto arg = ctx.arg(id);
-  if (!arg) ctx.on_error("Argument index \"" + std::to_string(id) + "\" out of range");
+  if (!arg) ctx.on_error("Argument index \"" + duckdb::to_string(id) + "\" out of range");
   return arg;
 }
 
@@ -2113,7 +2114,7 @@ class specs_handler : public specs_setter<typename Context::char_type> {
         get_arg(arg_id), context_.error_handler());
   }
 
-  void on_error(std::string message) { context_.on_error(message); }
+  void on_error(duckdb::string message) { context_.on_error(message); }
 
  private:
   // This is only needed for compatibility with gcc 4.4.
@@ -2197,7 +2198,7 @@ class dynamic_specs_handler
     specs_.precision_ref = make_arg_ref(arg_id);
   }
 
-  FMT_CONSTEXPR void on_error(std::string message) {
+  FMT_CONSTEXPR void on_error(duckdb::string message) {
     context_.on_error(message);
   }
 
@@ -2263,7 +2264,7 @@ template <typename SpecHandler, typename Char> struct width_adapter {
     handler.on_dynamic_width(id);
   }
 
-  FMT_CONSTEXPR void on_error(std::string message) {
+  FMT_CONSTEXPR void on_error(duckdb::string message) {
     handler.on_error(message);
   }
 
@@ -2280,7 +2281,7 @@ template <typename SpecHandler, typename Char> struct precision_adapter {
     handler.on_dynamic_precision(id);
   }
 
-  FMT_CONSTEXPR void on_error(std::string message) {
+  FMT_CONSTEXPR void on_error(duckdb::string message) {
     handler.on_error(message);
   }
 
@@ -2459,7 +2460,7 @@ template <typename Handler, typename Char> struct id_adapter {
   FMT_CONSTEXPR void operator()(basic_string_view<Char> id) {
     handler.on_arg_id(id);
   }
-  FMT_CONSTEXPR void on_error(std::string message) {
+  FMT_CONSTEXPR void on_error(duckdb::string message) {
     handler.on_error(message);
   }
   Handler& handler;
@@ -2563,7 +2564,7 @@ class format_string_checker {
     return arg_id_ < num_args ? parse_funcs_[arg_id_](context_) : begin;
   }
 
-  FMT_CONSTEXPR void on_error(std::string message) {
+  FMT_CONSTEXPR void on_error(duckdb::string message) {
     context_.on_error(message);
   }
 
@@ -2734,10 +2735,10 @@ class format_int {
 
   /**
     \rst
-    Returns the content of the output buffer as an ``std::string``.
+    Returns the content of the output buffer as an ``duckdb::string``.
     \endrst
    */
-  std::string str() const { return std::string(str_, size()); }
+  duckdb::string str() const { return duckdb::string(str_, size()); }
 };
 
 // A formatter specialization for the core types corresponding to internal::type
@@ -2833,7 +2834,7 @@ FMT_FORMAT_AS(unsigned short, unsigned);
 FMT_FORMAT_AS(long, long long);
 FMT_FORMAT_AS(unsigned long, unsigned long long);
 FMT_FORMAT_AS(Char*, const Char*);
-FMT_FORMAT_AS(std::basic_string<Char>, basic_string_view<Char>);
+FMT_FORMAT_AS(duckdb::basic_string<Char>, basic_string_view<Char>);
 FMT_FORMAT_AS(std::nullptr_t, const void*);
 FMT_FORMAT_AS(internal::std_string_view<Char>, basic_string_view<Char>);
 
@@ -2856,7 +2857,7 @@ struct formatter<Char[N], Char> : formatter<basic_string_view<Char>, Char> {
 // A formatter for types known only at run time such as variant alternatives.
 //
 // Usage:
-//   using variant = std::variant<int, std::string>;
+//   using variant = std::variant<int, duckdb::string>;
 //   template <>
 //   struct formatter<variant>: dynamic_formatter<> {
 //     void format(buffer &buf, const variant &v, context &ctx) {
@@ -3083,17 +3084,17 @@ arg_join<internal::iterator_t<const Range>, wchar_t> join(const Range& range,
 
 /**
   \rst
-  Converts *value* to ``std::string`` using the default format for type *T*.
+  Converts *value* to ``duckdb::string`` using the default format for type *T*.
   It doesn't support user-defined types with custom formatters.
 
   **Example**::
 
     #include <fmt/format.h>
 
-    std::string answer = fmt::to_string(42);
+    duckdb::string answer = fmt::to_string(42);
   \endrst
  */
-template <typename T> inline std::string to_string(const T& value) {
+template <typename T> inline duckdb::string to_string(const T& value) {
   return format("{}", value);
 }
 
@@ -3105,8 +3106,8 @@ template <typename T> inline std::wstring to_wstring(const T& value) {
 }
 
 template <typename Char, std::size_t SIZE>
-std::basic_string<Char> to_string(const basic_memory_buffer<Char, SIZE>& buf) {
-  return std::basic_string<Char>(buf.data(), buf.size());
+duckdb::basic_string<Char> to_string(const basic_memory_buffer<Char, SIZE>& buf) {
+  return duckdb::basic_string<Char>(buf.data(), buf.size());
 }
 
 template <typename Char>
@@ -3227,7 +3228,7 @@ inline format_to_n_result<OutputIt> format_to_n(OutputIt out, std::size_t n,
 }
 
 template <typename Char>
-inline std::basic_string<Char> internal::vformat(
+inline duckdb::basic_string<Char> internal::vformat(
     basic_string_view<Char> format_str,
     basic_format_args<buffer_context<Char>> args) {
   basic_memory_buffer<Char> buffer;
@@ -3251,7 +3252,7 @@ namespace internal {
 template <typename Char, Char... CHARS> class udl_formatter {
  public:
   template <typename... Args>
-  std::basic_string<Char> operator()(Args&&... args) const {
+  duckdb::basic_string<Char> operator()(Args&&... args) const {
     FMT_CONSTEXPR_DECL Char s[] = {CHARS..., '\0'};
     FMT_CONSTEXPR_DECL bool invalid_format =
         do_check_format_string<Char, error_handler, remove_cvref_t<Args>...>(
@@ -3265,7 +3266,7 @@ template <typename Char> struct udl_formatter {
   basic_string_view<Char> str;
 
   template <typename... Args>
-  std::basic_string<Char> operator()(Args&&... args) const {
+  duckdb::basic_string<Char> operator()(Args&&... args) const {
     return format(str, std::forward<Args>(args)...);
   }
 };
@@ -3295,7 +3296,7 @@ FMT_CONSTEXPR internal::udl_formatter<Char, CHARS...> operator""_format() {
   **Example**::
 
     using namespace fmt::literals;
-    std::string message = "The answer is {}"_format(42);
+    duckdb::string message = "The answer is {}"_format(42);
   \endrst
  */
 FMT_CONSTEXPR internal::udl_formatter<char> operator"" _format(const char* s,
@@ -3353,7 +3354,7 @@ FMT_END_NAMESPACE
   **Example**::
 
     // A compile-time error because 'd' is an invalid specifier for strings.
-    std::string s = format(FMT_STRING("{:d}"), "foo");
+    duckdb::string s = format(FMT_STRING("{:d}"), "foo");
   \endrst
  */
 #define FMT_STRING(s) FMT_STRING_IMPL(s, )

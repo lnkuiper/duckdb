@@ -104,12 +104,12 @@ int NumericHelper::UnsignedLength(uint64_t value) {
 }
 
 template <>
-std::string NumericHelper::ToString(hugeint_t value) {
+string NumericHelper::ToString(hugeint_t value) {
 	return Hugeint::ToString(value);
 }
 
 template <>
-std::string NumericHelper::ToString(uhugeint_t value) {
+string NumericHelper::ToString(uhugeint_t value) {
 	return Uhugeint::ToString(value);
 }
 

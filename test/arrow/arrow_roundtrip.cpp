@@ -80,7 +80,7 @@ TEST_CASE("Test arrow roundtrip", "[arrow]") {
 }
 
 TEST_CASE("Test Parquet Files round-trip", "[arrow][.]") {
-	std::vector<std::string> data;
+	duckdb::vector<duckdb::string> data;
 	// data.emplace_back("data/parquet-testing/7-set.snappy.arrow2.parquet");
 	//	data.emplace_back("data/parquet-testing/adam_genotypes.parquet");
 	data.emplace_back("data/parquet-testing/apkwan.parquet");

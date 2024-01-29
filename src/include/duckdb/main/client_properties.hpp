@@ -8,7 +8,7 @@
 
 #pragma once
 
-#include <string>
+#include "duckdb/common/string.hpp"
 
 namespace duckdb {
 enum ArrowOffsetSize { REGULAR, LARGE };

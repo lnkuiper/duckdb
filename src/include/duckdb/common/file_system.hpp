@@ -243,7 +243,7 @@ public:
 	DUCKDB_API static unique_ptr<FileSystem> CreateLocal();
 
 	//! Return the name of the filesytem. Used for forming diagnosis messages.
-	DUCKDB_API virtual std::string GetName() const = 0;
+	DUCKDB_API virtual string GetName() const = 0;
 
 	//! Whether or not a file is remote or local, based only on file path
 	DUCKDB_API static bool IsRemoteFile(const string &path);

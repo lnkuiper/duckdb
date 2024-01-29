@@ -68,7 +68,7 @@ void FtsExtension::Load(DuckDB &db) {
 	ExtensionUtil::RegisterFunction(db_instance, drop_fts_index_func);
 }
 
-std::string FtsExtension::Name() {
+string FtsExtension::Name() {
 	return "fts";
 }
 

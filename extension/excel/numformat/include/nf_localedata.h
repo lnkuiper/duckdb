@@ -1,7 +1,7 @@
 #ifndef _NF_LOCALEDATA_H
 #define _NF_LOCALEDATA_H
 
-#include <string>
+#include "duckdb/common/string.hpp"
 #include "duckdb/common/vector.hpp"
 #include <map>
 #include "nf_calendar.h"

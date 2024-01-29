@@ -1,13 +1,12 @@
-#include <sstream>
-#include <string>
+#include "duckdb/common/stringstream.hpp"
 
 #include "dump.hh"
 #include "util.hh"
 
 using namespace std;
 
-std::string graphml_dumper::id(struct prod *p) {
-	ostringstream os;
+duckdb::string graphml_dumper::id(struct prod *p) {
+	duckdb::ostringstream os;
 	os << pretty_type(p) << "_" << p;
 	return os.str();
 }

@@ -89,7 +89,7 @@ unique_ptr<PendingQueryResult> PreparedStatement::PendingQuery(vector<Value> &va
 	case_insensitive_map_t<Value> named_values;
 	for (idx_t i = 0; i < values.size(); i++) {
 		auto &val = values[i];
-		named_values[std::to_string(i + 1)] = val;
+		named_values[to_string(i + 1)] = val;
 	}
 	return PendingQuery(named_values, allow_stream_result);
 }

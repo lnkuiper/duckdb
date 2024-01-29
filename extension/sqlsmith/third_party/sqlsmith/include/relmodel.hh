@@ -3,19 +3,20 @@
 
 #ifndef RELMODEL_HH
 #define RELMODEL_HH
+#include "duckdb/common/string.hpp"
+#include "duckdb/common/vector.hpp"
+
 #include <cassert>
 #include <map>
 #include <memory>
-#include <string>
 #include <utility>
-#include "duckdb/common/vector.hpp"
 
+using duckdb::string;
 using duckdb::vector;
 using std::make_pair;
 using std::map;
 using std::pair;
 using std::shared_ptr;
-using std::string;
 
 struct sqltype {
 	string name;
@@ -37,11 +38,11 @@ struct sqltype {
 };
 
 struct column {
-	string name;
+	duckdb::string name;
 	sqltype *type;
-	column(string name) : name(name) {
+	column(duckdb::string name) : name(name) {
 	}
-	column(string name, sqltype *t) : name(name), type(t) {
+	column(duckdb::string name, sqltype *t) : name(name), type(t) {
 		assert(t);
 	}
 };
@@ -56,13 +57,13 @@ struct relation {
 };
 
 struct named_relation : relation {
-	string name;
-	virtual string ident() {
+	duckdb::string name;
+	virtual duckdb::string ident() {
 		return name;
 	}
 	virtual ~named_relation() {
 	}
-	named_relation(string n) : name(n) {
+	named_relation(duckdb::string n) : name(n) {
 	}
 };
 

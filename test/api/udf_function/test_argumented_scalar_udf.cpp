@@ -14,7 +14,7 @@ TEST_CASE("UDF functions with arguments", "[coverage][.]") {
 	Connection con(db);
 	con.EnableQueryVerification();
 
-	string func_name, table_name, col_type;
+	duckdb::string func_name, table_name, col_type;
 	// The types supported by the argumented CreateScalarFunction
 	const duckdb::vector<LogicalTypeId> all_sql_types = {
 	    LogicalTypeId::BOOLEAN, LogicalTypeId::TINYINT, LogicalTypeId::SMALLINT, LogicalTypeId::DATE,
@@ -177,7 +177,7 @@ TEST_CASE("UDF functions with arguments", "[coverage][.]") {
 		for (LogicalType sql_type : all_sql_types) {
 			table_name = StringUtil::Lower(EnumUtil::ToString(sql_type.id()));
 
-			string query = "INSERT INTO " + table_name + " VALUES";
+			duckdb::string query = "INSERT INTO " + table_name + " VALUES";
 			if (sql_type == LogicalType::BOOLEAN) {
 				con.Query(query + "(true, true, true), (true, true, false), (false, false, false);");
 			} else if (sql_type.IsNumeric()) {
@@ -276,7 +276,7 @@ TEST_CASE("UDF functions with arguments", "[coverage][.]") {
 			REQUIRE_NO_FAIL(con.Query("DELETE FROM " + table_name));
 
 			// Inserting NULLs
-			string query = "INSERT INTO " + table_name + " VALUES";
+			duckdb::string query = "INSERT INTO " + table_name + " VALUES";
 			con.Query(query + "(NULL, NULL, NULL), (NULL, NULL, NULL), (NULL, NULL, NULL);");
 
 			// Testing NULLs

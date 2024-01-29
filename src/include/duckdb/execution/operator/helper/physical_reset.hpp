@@ -23,7 +23,7 @@ public:
 	static constexpr const PhysicalOperatorType TYPE = PhysicalOperatorType::RESET;
 
 public:
-	PhysicalReset(const std::string &name_p, SetScope scope_p, idx_t estimated_cardinality)
+	PhysicalReset(const string &name_p, SetScope scope_p, idx_t estimated_cardinality)
 	    : PhysicalOperator(PhysicalOperatorType::RESET, {LogicalType::BOOLEAN}, estimated_cardinality), name(name_p),
 	      scope(scope_p) {
 	}
@@ -37,7 +37,7 @@ public:
 	}
 
 public:
-	const std::string name;
+	const string name;
 	const SetScope scope;
 
 private:

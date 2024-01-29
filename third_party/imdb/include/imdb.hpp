@@ -8,6 +8,6 @@ namespace imdb {
 void dbgen(duckdb::DuckDB &database);
 
 //! Gets the specified IMDB JOB Query number as a string
-std::string get_query(int query);
+duckdb::string get_query(int query);
 
 } // namespace imdb

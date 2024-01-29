@@ -17,8 +17,8 @@ static void FileWorker(const string &dir, const string &template_path, const idx
 	for (idx_t i = start; i < end; i++) {
 
 		auto duplicate_path = dir + "/board_" + to_string(i) + ".db";
-		std::ifstream template_file(template_path, std::ios::binary);
-		std::ofstream duplicate(duplicate_path, std::ios::binary);
+		std::ifstream template_file(template_path.c_str(), std::ios::binary);
+		std::ofstream duplicate(duplicate_path.c_str(), std::ios::binary);
 		duplicate << template_file.rdbuf();
 	}
 }

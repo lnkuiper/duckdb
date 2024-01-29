@@ -410,7 +410,7 @@ void AutocompleteExtension::Load(DuckDB &db) {
 	LoadInternal(*db.instance);
 }
 
-std::string AutocompleteExtension::Name() {
+string AutocompleteExtension::Name() {
 	return "autocomplete";
 }
 

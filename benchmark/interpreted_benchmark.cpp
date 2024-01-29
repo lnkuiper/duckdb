@@ -2,17 +2,22 @@
 
 #include "benchmark_runner.hpp"
 #include "duckdb.hpp"
+#include "duckdb/common/helper.hpp"
 #include "duckdb/common/string_util.hpp"
+#include "duckdb/common/stringstream.hpp"
 #include "duckdb/main/client_context.hpp"
 #include "duckdb/main/extension_helper.hpp"
 #include "duckdb/main/query_profiler.hpp"
 #include "test_helpers.hpp"
-#include "duckdb/common/helper.hpp"
 
 #include <fstream>
-#include <sstream>
 
 namespace duckdb {
+
+std::exception runtime_error(duckdb::string message) {
+	// wrap so we can use duckdb::string
+	return std::runtime_error(message.c_str());
+}
 
 static string ParseGroupFromPath(string file) {
 	string extension = "";
@@ -56,12 +61,12 @@ struct InterpretedBenchmarkState : public BenchmarkState {
 };
 
 struct BenchmarkFileReader {
-	BenchmarkFileReader(string path_, unordered_map<std::string, std::string> replacement_map)
-	    : path(path_), infile(path), linenr(0), replacements(replacement_map) {
+	BenchmarkFileReader(duckdb::string path_, unordered_map<duckdb::string, duckdb::string> replacement_map)
+	    : path(path_), infile(path.c_str()), linenr(0), replacements(replacement_map) {
 	}
 
 public:
-	bool ReadLine(std::string &line) {
+	bool ReadLine(duckdb::string &line) {
 		if (!std::getline(infile, line)) {
 			return false;
 		}
@@ -77,15 +82,15 @@ public:
 		return linenr;
 	}
 
-	std::string FormatException(string exception_msg) {
-		return path + ":" + std::to_string(linenr) + " - " + exception_msg;
+	duckdb::string FormatException(string exception_msg) {
+		return path + ":" + duckdb::to_string(linenr) + " - " + exception_msg;
 	}
 
 private:
-	std::string path;
+	duckdb::string path;
 	std::ifstream infile;
 	int linenr;
-	unordered_map<std::string, std::string> replacements;
+	unordered_map<duckdb::string, duckdb::string> replacements;
 };
 
 InterpretedBenchmark::InterpretedBenchmark(string full_path)
@@ -119,8 +124,8 @@ void InterpretedBenchmark::ReadResultFromReader(BenchmarkFileReader &reader, con
 		}
 		auto result_splits = StringUtil::Split(line, "\t");
 		if ((int64_t)result_splits.size() != result_column_count) {
-			throw std::runtime_error(reader.FormatException("expected " + std::to_string(result_splits.size()) +
-			                                                " values but got " + std::to_string(result_column_count)));
+			throw runtime_error(reader.FormatException("expected " + duckdb::to_string(result_splits.size()) +
+			                                           " values but got " + duckdb::to_string(result_column_count)));
 		}
 		result_values.push_back(std::move(result_splits));
 	}
@@ -141,7 +146,7 @@ void InterpretedBenchmark::LoadBenchmark() {
 		auto splits = StringUtil::Split(StringUtil::Lower(line), ' ');
 		if (splits[0] == "load" || splits[0] == "run" || splits[0] == "init" || splits[0] == "cleanup") {
 			if (queries.find(splits[0]) != queries.end()) {
-				throw std::runtime_error("Multiple calls to " + splits[0] + " in the same benchmark file");
+				throw runtime_error("Multiple calls to " + splits[0] + " in the same benchmark file");
 			}
 			// load command: keep reading until we find a blank line or EOF
 			string query;
@@ -154,53 +159,53 @@ void InterpretedBenchmark::LoadBenchmark() {
 			}
 			if (splits.size() > 1 && !splits[1].empty()) {
 				// read entire file into query
-				std::ifstream file(splits[1], std::ios::ate);
+				std::ifstream file(splits[1].c_str(), std::ios::ate);
 				std::streamsize size = file.tellg();
 				file.seekg(0, std::ios::beg);
 				if (size < 0) {
-					throw std::runtime_error("Failed to read " + splits[0] + " from file " + splits[1]);
+					throw runtime_error("Failed to read " + splits[0] + " from file " + splits[1]);
 				}
 
 				auto buffer = make_unsafe_uniq_array<char>(size);
 				if (!file.read(buffer.get(), size)) {
-					throw std::runtime_error("Failed to read " + splits[0] + " from file " + splits[1]);
+					throw runtime_error("Failed to read " + splits[0] + " from file " + splits[1]);
 				}
 				query = string(buffer.get(), size);
 			}
 			StringUtil::Trim(query);
 			if (query.empty()) {
-				throw std::runtime_error("Encountered an empty " + splits[0] + " node!");
+				throw runtime_error("Encountered an empty " + splits[0] + " node!");
 			}
 			queries[splits[0]] = query;
 		} else if (splits[0] == "require") {
 			if (splits.size() != 2) {
-				throw std::runtime_error(reader.FormatException("require requires a single parameter"));
+				throw runtime_error(reader.FormatException("require requires a single parameter"));
 			}
 			extensions.insert(splits[1]);
 		} else if (splits[0] == "cache") {
 			if (splits.size() != 2) {
-				throw std::runtime_error(reader.FormatException("cache requires a single parameter"));
+				throw runtime_error(reader.FormatException("cache requires a single parameter"));
 			}
 			cache_db = splits[1];
 		} else if (splits[0] == "storage") {
 			if (splits.size() != 2) {
-				throw std::runtime_error(reader.FormatException("storage requires a single parameter"));
+				throw runtime_error(reader.FormatException("storage requires a single parameter"));
 			}
 			if (splits[1] == "transient") {
 				in_memory = true;
 			} else if (splits[1] == "persistent") {
 				in_memory = false;
 			} else {
-				throw std::runtime_error(reader.FormatException("Invalid argument for storage"));
+				throw runtime_error(reader.FormatException("Invalid argument for storage"));
 			}
 		} else if (splits[0] == "require_reinit") {
 			if (splits.size() != 1) {
-				throw std::runtime_error(reader.FormatException("require_reinit does not take any parameters"));
+				throw runtime_error(reader.FormatException("require_reinit does not take any parameters"));
 			}
 			require_reinit = true;
 		} else if (splits[0] == "name" || splits[0] == "group" || splits[0] == "subgroup") {
 			if (splits.size() == 1) {
-				throw std::runtime_error(reader.FormatException(splits[0] + " requires a parameter"));
+				throw runtime_error(reader.FormatException(splits[0] + " requires a parameter"));
 			}
 			string result = line.substr(splits[0].size() + 1, line.size() - 1);
 			StringUtil::Trim(result);
@@ -213,11 +218,11 @@ void InterpretedBenchmark::LoadBenchmark() {
 			}
 		} else if (splits[0] == "result_query") {
 			if (result_column_count > 0) {
-				throw std::runtime_error(reader.FormatException("multiple results found"));
+				throw runtime_error(reader.FormatException("multiple results found"));
 			}
 			// count the amount of columns
 			if (splits.size() <= 1 || splits[1].size() == 0) {
-				throw std::runtime_error(
+				throw runtime_error(
 				    reader.FormatException("result_query must be followed by a column count (e.g. result III)"));
 			}
 			bool is_file = false;
@@ -242,7 +247,7 @@ void InterpretedBenchmark::LoadBenchmark() {
 			}
 			result_query = sql;
 			if (!found_end) {
-				throw std::runtime_error(reader.FormatException(
+				throw runtime_error(reader.FormatException(
 				    "result_query must be followed by a query and a result (separated by ----)"));
 			}
 			if (!is_file) {
@@ -250,11 +255,11 @@ void InterpretedBenchmark::LoadBenchmark() {
 			}
 		} else if (splits[0] == "result") {
 			if (result_column_count > 0) {
-				throw std::runtime_error(reader.FormatException("multiple results found"));
+				throw runtime_error(reader.FormatException("multiple results found"));
 			}
 			// count the amount of columns
 			if (splits.size() <= 1 || splits[1].size() == 0) {
-				throw std::runtime_error(
+				throw runtime_error(
 				    reader.FormatException("result must be followed by a column count (e.g. result III) or a file "
 				                           "(e.g. result /path/to/file.csv)"));
 			}
@@ -288,8 +293,7 @@ void InterpretedBenchmark::LoadBenchmark() {
 				}
 				auto parameters = StringUtil::Split(line, '=');
 				if (parameters.size() != 2) {
-					throw std::runtime_error(
-					    reader.FormatException("Expected a template parameter in the form of X=Y"));
+					throw runtime_error(reader.FormatException("Expected a template parameter in the form of X=Y"));
 				}
 				replacement_mapping[parameters[0]] = parameters[1];
 			}
@@ -297,7 +301,7 @@ void InterpretedBenchmark::LoadBenchmark() {
 			LoadBenchmark();
 			return;
 		} else {
-			throw std::runtime_error(reader.FormatException("unrecognized command " + splits[0]));
+			throw runtime_error(reader.FormatException("unrecognized command " + splits[0]));
 		}
 	}
 	// set up the queries
@@ -325,10 +329,10 @@ unique_ptr<BenchmarkState> InterpretedBenchmark::Initialize(BenchmarkConfigurati
 	for (auto &extension : extensions) {
 		auto result = ExtensionHelper::LoadExtension(state->db, extension);
 		if (result == ExtensionLoadResult::EXTENSION_UNKNOWN) {
-			throw std::runtime_error("Unknown extension " + extension);
+			throw runtime_error("Unknown extension " + extension);
 		} else if (result == ExtensionLoadResult::NOT_LOADED) {
-			throw std::runtime_error("Extension " + extension +
-			                         " is not available/was not compiled. Cannot run this benchmark.");
+			throw runtime_error("Extension " + extension +
+			                    " is not available/was not compiled. Cannot run this benchmark.");
 		}
 	}
 
@@ -499,7 +503,7 @@ string InterpretedBenchmark::Verify(BenchmarkState *state_p) {
 		// now append the result to the answer table
 		auto table_info = state.con.TableInfo("__answer");
 		if (table_info == nullptr) {
-			throw std::runtime_error("Received a nullptr when querying table info of __answer");
+			throw runtime_error("Received a nullptr when querying table info of __answer");
 		}
 		state.con.Append(*table_info, collection);
 

@@ -15,7 +15,7 @@ namespace duckdb {
 template <class INTERNAL_TYPE>
 struct ToCDecimalCastWrapper {
 	template <class SOURCE_TYPE>
-	static bool Operation(SOURCE_TYPE input, duckdb_decimal &result, std::string *error, uint8_t width, uint8_t scale) {
+	static bool Operation(SOURCE_TYPE input, duckdb_decimal &result, string *error, uint8_t width, uint8_t scale) {
 		throw NotImplementedException("Type not implemented for CDecimalCastWrapper");
 	}
 };
@@ -24,7 +24,7 @@ struct ToCDecimalCastWrapper {
 template <>
 struct ToCDecimalCastWrapper<hugeint_t> {
 	template <class SOURCE_TYPE>
-	static bool Operation(SOURCE_TYPE input, duckdb_decimal &result, std::string *error, uint8_t width, uint8_t scale) {
+	static bool Operation(SOURCE_TYPE input, duckdb_decimal &result, string *error, uint8_t width, uint8_t scale) {
 		hugeint_t intermediate_result;
 
 		if (!TryCastToDecimal::Operation<SOURCE_TYPE, hugeint_t>(input, intermediate_result, error, width, scale)) {
@@ -47,7 +47,7 @@ struct ToCDecimalCastWrapper<hugeint_t> {
 template <>
 struct ToCDecimalCastWrapper<int16_t> {
 	template <class SOURCE_TYPE>
-	static bool Operation(SOURCE_TYPE input, duckdb_decimal &result, std::string *error, uint8_t width, uint8_t scale) {
+	static bool Operation(SOURCE_TYPE input, duckdb_decimal &result, string *error, uint8_t width, uint8_t scale) {
 		int16_t intermediate_result;
 
 		if (!TryCastToDecimal::Operation<SOURCE_TYPE, int16_t>(input, intermediate_result, error, width, scale)) {
@@ -70,7 +70,7 @@ struct ToCDecimalCastWrapper<int16_t> {
 template <>
 struct ToCDecimalCastWrapper<int32_t> {
 	template <class SOURCE_TYPE>
-	static bool Operation(SOURCE_TYPE input, duckdb_decimal &result, std::string *error, uint8_t width, uint8_t scale) {
+	static bool Operation(SOURCE_TYPE input, duckdb_decimal &result, string *error, uint8_t width, uint8_t scale) {
 		int32_t intermediate_result;
 
 		if (!TryCastToDecimal::Operation<SOURCE_TYPE, int32_t>(input, intermediate_result, error, width, scale)) {
@@ -93,7 +93,7 @@ struct ToCDecimalCastWrapper<int32_t> {
 template <>
 struct ToCDecimalCastWrapper<int64_t> {
 	template <class SOURCE_TYPE>
-	static bool Operation(SOURCE_TYPE input, duckdb_decimal &result, std::string *error, uint8_t width, uint8_t scale) {
+	static bool Operation(SOURCE_TYPE input, duckdb_decimal &result, string *error, uint8_t width, uint8_t scale) {
 		int64_t intermediate_result;
 
 		if (!TryCastToDecimal::Operation<SOURCE_TYPE, int64_t>(input, intermediate_result, error, width, scale)) {

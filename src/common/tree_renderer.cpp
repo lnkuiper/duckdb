@@ -2,6 +2,7 @@
 
 #include "duckdb/common/pair.hpp"
 #include "duckdb/common/string_util.hpp"
+#include "duckdb/common/stringstream.hpp"
 #include "duckdb/execution/operator/aggregate/physical_hash_aggregate.hpp"
 #include "duckdb/execution/operator/join/physical_delim_join.hpp"
 #include "duckdb/execution/operator/scan/physical_positional_scan.hpp"
@@ -9,8 +10,6 @@
 #include "duckdb/parallel/pipeline.hpp"
 #include "duckdb/planner/logical_operator.hpp"
 #include "utf8proc_wrapper.hpp"
-
-#include <sstream>
 
 namespace duckdb {
 
@@ -215,25 +214,25 @@ void TreeRenderer::RenderBoxContent(RenderTree &root, std::ostream &ss, idx_t y)
 }
 
 string TreeRenderer::ToString(const LogicalOperator &op) {
-	std::stringstream ss;
+	stringstream ss;
 	Render(op, ss);
 	return ss.str();
 }
 
 string TreeRenderer::ToString(const PhysicalOperator &op) {
-	std::stringstream ss;
+	stringstream ss;
 	Render(op, ss);
 	return ss.str();
 }
 
 string TreeRenderer::ToString(const QueryProfiler::TreeNode &op) {
-	std::stringstream ss;
+	stringstream ss;
 	Render(op, ss);
 	return ss.str();
 }
 
 string TreeRenderer::ToString(const Pipeline &op) {
-	std::stringstream ss;
+	stringstream ss;
 	Render(op, ss);
 	return ss.str();
 }

@@ -27,7 +27,7 @@ void prod::retry() {
 		return;
 
 	impedance::limit(this);
-	throw std::runtime_error(std::string("excessive retries in ") + typeid(*this).name());
+	throw std::runtime_error((duckdb::string("excessive retries in ") + typeid(*this).name()).c_str());
 }
 
 void prod::match() {

@@ -2,10 +2,9 @@
 
 #include "parquet_statistics.hpp"
 
-#include <sstream>
-
 #ifndef DUCKDB_AMALGAMATION
 #include "duckdb/common/multi_file_reader.hpp"
+#include "duckdb/common/stringstream.hpp"
 #include "duckdb/common/types/blob.hpp"
 #include "duckdb/common/types/column/column_data_collection.hpp"
 #include "duckdb/main/config.hpp"
@@ -49,14 +48,14 @@ public:
 
 template <class T>
 string ConvertParquetElementToString(T &&entry) {
-	std::stringstream ss;
+	stringstream ss;
 	ss << entry;
 	return ss.str();
 }
 
 template <class T>
 string PrintParquetElementToString(T &&entry) {
-	std::stringstream ss;
+	stringstream ss;
 	entry.printTo(ss);
 	return ss.str();
 }
@@ -170,7 +169,7 @@ void ParquetMetaDataOperatorData::BindMetaData(vector<LogicalType> &return_types
 }
 
 Value ConvertParquetStats(const LogicalType &type, const duckdb_parquet::format::SchemaElement &schema_ele,
-                          bool stats_is_set, const std::string &stats) {
+                          bool stats_is_set, const string &stats) {
 	if (!stats_is_set) {
 		return Value(LogicalType::VARCHAR);
 	}

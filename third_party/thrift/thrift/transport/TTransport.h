@@ -23,7 +23,7 @@
 #include "thrift/Thrift.h"
 #include "thrift/transport/TTransportException.h"
 #include <memory>
-#include <string>
+#include "duckdb/common/string.hpp"
 
 namespace duckdb_apache {
 namespace thrift {
@@ -236,7 +236,7 @@ public:
    *
    * The returned value can be used in a log message for example
    */
-  virtual const std::string getOrigin() const { return "Unknown"; }
+  virtual const duckdb::string getOrigin() const { return "Unknown"; }
 
 protected:
   /**

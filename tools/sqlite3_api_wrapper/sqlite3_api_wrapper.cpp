@@ -51,7 +51,7 @@ struct sqlite3_stmt {
 	//! The DB object that this statement belongs to
 	sqlite3 *db;
 	//! The query string
-	string query_string;
+	duckdb::string query_string;
 	//! The prepared statement object, if successfully prepared
 	duckdb::unique_ptr<PreparedStatement> prepared;
 	//! The result object, if successfully executed
@@ -63,7 +63,7 @@ struct sqlite3_stmt {
 	//! Bound values, used for binding to the prepared statement
 	duckdb::vector<Value> bound_values;
 	//! Names of the prepared parameters
-	duckdb::vector<string> bound_names;
+	duckdb::vector<duckdb::string> bound_names;
 	//! The current column values converted to string, used and filled by sqlite3_column_text
 	duckdb::unique_ptr<sqlite3_string_buffer[]> current_text;
 };
@@ -168,7 +168,7 @@ int sqlite3_prepare_v2(sqlite3 *db,           /* Database handle */
 		return SQLITE_MISUSE;
 	}
 	*ppStmt = nullptr;
-	string query = nByte < 0 ? zSql : string(zSql, nByte);
+	duckdb::string query = nByte < 0 ? zSql : duckdb::string(zSql, nByte);
 	if (pzTail) {
 		*pzTail = zSql + query.size();
 	}
@@ -216,7 +216,7 @@ int sqlite3_prepare_v2(sqlite3 *db,           /* Database handle */
 		stmt->prepared = std::move(prepared);
 		stmt->current_row = -1;
 		for (idx_t i = 0; i < stmt->prepared->n_param; i++) {
-			stmt->bound_names.push_back("$" + to_string(i + 1));
+			stmt->bound_names.push_back("$" + duckdb::to_string(i + 1));
 			stmt->bound_values.push_back(Value());
 		}
 
@@ -633,7 +633,7 @@ int sqlite3_bind_parameter_index(sqlite3_stmt *stmt, const char *zName) {
 		return 0;
 	}
 	for (idx_t i = 0; i < stmt->bound_names.size(); i++) {
-		if (stmt->bound_names[i] == string(zName)) {
+		if (stmt->bound_names[i] == duckdb::string(zName)) {
 			return i + 1;
 		}
 	}
@@ -676,11 +676,11 @@ int sqlite3_bind_text(sqlite3_stmt *stmt, int idx, const char *val, int length, 
 	if (!val) {
 		return SQLITE_MISUSE;
 	}
-	string value;
+	duckdb::string value;
 	if (length < 0) {
-		value = string(val);
+		value = duckdb::string(val);
 	} else {
-		value = string(val, length);
+		value = duckdb::string(val, length);
 	}
 	if (free_func && ((ptrdiff_t)free_func) != -1) {
 		free_func((void *)val);
@@ -699,7 +699,7 @@ int sqlite3_bind_blob(sqlite3_stmt *stmt, int idx, const void *val, int length, 
 	}
 	Value blob;
 	if (length < 0) {
-		blob = Value::BLOB(string((const char *)val));
+		blob = Value::BLOB(duckdb::string((const char *)val));
 	} else {
 		blob = Value::BLOB(const_data_ptr_cast(val), length);
 	}
@@ -1275,7 +1275,7 @@ int sqlite3_create_function(sqlite3 *db, const char *zFunctionName, int nArg, in
 	if ((!xFunc && !xStep && !xFinal) || !zFunctionName || nArg < -1) {
 		return SQLITE_MISUSE;
 	}
-	string fname = string(zFunctionName);
+	duckdb::string fname = duckdb::string(zFunctionName);
 
 	// Scalar function
 	if (!xFunc) {
@@ -1533,7 +1533,7 @@ SQLITE_API void sqlite3_result_blob64(sqlite3_context *context, const void *blob
 		return;
 	}
 	context->result.type = SQLiteTypeValue::BLOB;
-	context->result.str = string((char *)blob, n_bytes);
+	context->result.str = duckdb::string((char *)blob, n_bytes);
 	if (xDel && xDel != SQLITE_TRANSIENT) {
 		xDel((void *)blob);
 	}
@@ -1562,7 +1562,7 @@ SQLITE_API void sqlite3_result_error_nomem(sqlite3_context *context) {
 }
 
 SQLITE_API void sqlite3_result_error_code(sqlite3_context *context, int code) {
-	string error_msg;
+	duckdb::string error_msg;
 	switch (code) {
 	case SQLITE_NOMEM:
 		sqlite3_result_error_nomem(context);
@@ -1879,7 +1879,7 @@ SQLITE_API char *sqlite3_expanded_sql(sqlite3_stmt *pStmt) {
 }
 
 SQLITE_API int sqlite3_keyword_check(const char *str, int len) {
-	return Parser::IsKeyword(std::string(str, len));
+	return Parser::IsKeyword(duckdb::string(str, len));
 }
 
 SQLITE_API int sqlite3_keyword_count(void) {

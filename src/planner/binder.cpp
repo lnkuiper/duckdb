@@ -460,7 +460,7 @@ BoundStatement Binder::BindReturning(vector<unique_ptr<ParsedExpression>> return
                                      unique_ptr<LogicalOperator> child_operator, BoundStatement result) {
 
 	vector<LogicalType> types;
-	vector<std::string> names;
+	vector<string> names;
 
 	auto binder = Binder::CreateBinder(context);
 

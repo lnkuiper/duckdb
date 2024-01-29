@@ -182,15 +182,15 @@ void TpchExtension::Load(DuckDB &db) {
 	ExtensionUtil::RegisterFunction(db_instance, tpch_query_answer_func);
 }
 
-std::string TpchExtension::GetQuery(int query) {
+string TpchExtension::GetQuery(int query) {
 	return tpch::DBGenWrapper::GetQuery(query);
 }
 
-std::string TpchExtension::GetAnswer(double sf, int query) {
+string TpchExtension::GetAnswer(double sf, int query) {
 	return tpch::DBGenWrapper::GetAnswer(sf, query);
 }
 
-std::string TpchExtension::Name() {
+string TpchExtension::Name() {
 	return "tpch";
 }
 

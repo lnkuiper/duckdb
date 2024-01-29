@@ -25,11 +25,13 @@
 #include "duckdb/common/adbc/adbc.h"
 #include "duckdb/common/adbc/adbc.hpp"
 
+#include "duckdb/common/string.hpp"
+using duckdb::string;
+
 #include <algorithm>
 #include <array>
 #include <cctype>
 #include <cstring>
-#include <string>
 #include <unordered_map>
 #include <utility>
 
@@ -46,7 +48,7 @@
 
 #if defined(_WIN32)
 /// Append a description of the Windows error to the buffer.
-void GetWinError(std::string *buffer) {
+void GetWinError(string *buffer) {
 	DWORD rc = GetLastError();
 	LPVOID message;
 
@@ -55,7 +57,7 @@ void GetWinError(std::string *buffer) {
 	              reinterpret_cast<LPSTR>(&message), /*nSize=*/0, /*Arguments=*/nullptr);
 
 	(*buffer) += '(';
-	(*buffer) += std::to_string(rc);
+	(*buffer) += to_string(rc);
 	(*buffer) += ") ";
 	(*buffer) += reinterpret_cast<char *>(message);
 	LocalFree(message);
@@ -74,12 +76,12 @@ void ReleaseError(struct AdbcError *error) {
 	}
 }
 
-void SetError(struct AdbcError *error, const std::string &message) {
+void SetError(struct AdbcError *error, const string &message) {
 	if (!error)
 		return;
 	if (error->message) {
 		// Append
-		std::string buffer = error->message;
+		string buffer = error->message;
 		buffer.reserve(buffer.size() + message.size() + 1);
 		buffer += '\n';
 		buffer += message;
@@ -124,7 +126,7 @@ struct ManagedLibrary {
 	}
 
 	AdbcStatusCode Load(const char *library, struct AdbcError *error) {
-		std::string error_message;
+		string error_message;
 #if defined(_WIN32)
 		HMODULE handle = LoadLibraryExA(library, NULL, 0);
 		if (!handle) {
@@ -132,7 +134,7 @@ struct ManagedLibrary {
 			error_message += ": LoadLibraryExA() failed: ";
 			GetWinError(&error_message);
 
-			std::string full_driver_name = library;
+			string full_driver_name = library;
 			full_driver_name += ".dll";
 			handle = LoadLibraryExA(full_driver_name.c_str(), NULL, 0);
 			if (!handle) {
@@ -149,11 +151,11 @@ struct ManagedLibrary {
 			this->handle = handle;
 		}
 #else
-		const std::string kPlatformLibraryPrefix = "lib";
+		const string kPlatformLibraryPrefix = "lib";
 #if defined(__APPLE__)
-		const std::string kPlatformLibrarySuffix = ".dylib";
+		const string kPlatformLibrarySuffix = ".dylib";
 #else
-		static const std::string kPlatformLibrarySuffix = ".so";
+		static const string kPlatformLibrarySuffix = ".so";
 #endif // defined(__APPLE__)
 
 		void *handle = dlopen(library, RTLD_NOW | RTLD_LOCAL);
@@ -164,9 +166,9 @@ struct ManagedLibrary {
 			// If applicable, append the shared library prefix/extension and
 			// try again (this way you don't have to hardcode driver names by
 			// platform in the application)
-			const std::string driver_str = library;
+			const string driver_str = library;
 
-			std::string full_driver_name;
+			string full_driver_name;
 			if (driver_str.size() < kPlatformLibraryPrefix.size() ||
 			    driver_str.compare(0, kPlatformLibraryPrefix.size(), kPlatformLibraryPrefix) != 0) {
 				full_driver_name += kPlatformLibraryPrefix;
@@ -196,7 +198,7 @@ struct ManagedLibrary {
 #if defined(_WIN32)
 		void *load_handle = reinterpret_cast<void *>(GetProcAddress(handle, name));
 		if (!load_handle) {
-			std::string message = "GetProcAddress(";
+			string message = "GetProcAddress(";
 			message += name;
 			message += ") failed: ";
 			GetWinError(&message);
@@ -206,7 +208,7 @@ struct ManagedLibrary {
 #else
 		void *load_handle = dlsym(handle, name);
 		if (!load_handle) {
-			std::string message = "dlsym(";
+			string message = "dlsym(";
 			message += name;
 			message += ") failed: ";
 			message += dlerror();
@@ -449,21 +451,21 @@ AdbcStatusCode StatementSetOptionDouble(struct AdbcStatement *statement, const c
 
 /// Temporary state while the database is being configured.
 struct TempDatabase {
-	std::unordered_map<std::string, std::string> options;
-	std::unordered_map<std::string, std::string> bytes_options;
-	std::unordered_map<std::string, int64_t> int_options;
-	std::unordered_map<std::string, double> double_options;
-	std::string driver;
-	std::string entrypoint;
+	std::unordered_map<string, string> options;
+	std::unordered_map<string, string> bytes_options;
+	std::unordered_map<string, int64_t> int_options;
+	std::unordered_map<string, double> double_options;
+	string driver;
+	string entrypoint;
 	AdbcDriverInitFunc init_func = nullptr;
 };
 
 /// Temporary state while the database is being configured.
 struct TempConnection {
-	std::unordered_map<std::string, std::string> options;
-	std::unordered_map<std::string, std::string> bytes_options;
-	std::unordered_map<std::string, int64_t> int_options;
-	std::unordered_map<std::string, double> double_options;
+	std::unordered_map<string, string> options;
+	std::unordered_map<string, string> bytes_options;
+	std::unordered_map<string, int64_t> int_options;
+	std::unordered_map<string, double> double_options;
 };
 
 static const char kDefaultEntrypoint[] = "AdbcDriverInit";
@@ -471,17 +473,17 @@ static const char kDefaultEntrypoint[] = "AdbcDriverInit";
 // Other helpers (intentionally not in an anonymous namespace so they can be tested)
 
 ADBC_EXPORT
-std::string AdbcDriverManagerDefaultEntrypoint(const std::string &driver) {
+string AdbcDriverManagerDefaultEntrypoint(const string &driver) {
 	/// - libadbc_driver_sqlite.so.2.0.0 -> AdbcDriverSqliteInit
 	/// - adbc_driver_sqlite.dll -> AdbcDriverSqliteInit
 	/// - proprietary_driver.dll -> AdbcProprietaryDriverInit
 
 	// Potential path -> filename
 	// Treat both \ and / as directory separators on all platforms for simplicity
-	std::string filename;
+	string filename;
 	{
 		size_t pos = driver.find_last_of("/\\");
-		if (pos != std::string::npos) {
+		if (pos != string::npos) {
 			filename = driver.substr(pos + 1);
 		} else {
 			filename = driver;
@@ -491,7 +493,7 @@ std::string AdbcDriverManagerDefaultEntrypoint(const std::string &driver) {
 	// Remove all extensions
 	{
 		size_t pos = filename.find('.');
-		if (pos != std::string::npos) {
+		if (pos != string::npos) {
 			filename = filename.substr(0, pos);
 		}
 	}
@@ -504,20 +506,20 @@ std::string AdbcDriverManagerDefaultEntrypoint(const std::string &driver) {
 
 	// Split on underscores, hyphens
 	// Capitalize and join
-	std::string entrypoint;
+	string entrypoint;
 	entrypoint.reserve(filename.size());
 	size_t pos = 0;
 	while (pos < filename.size()) {
 		size_t prev = pos;
 		pos = filename.find_first_of("-_", pos);
 		// if pos == npos this is the entire filename
-		std::string token = filename.substr(prev, pos - prev);
+		string token = filename.substr(prev, pos - prev);
 		// capitalize first letter
 		token[0] = std::toupper(static_cast<unsigned char>(token[0]));
 
 		entrypoint += token;
 
-		if (pos != std::string::npos) {
+		if (pos != string::npos) {
 			pos++;
 		}
 	}
@@ -660,7 +662,7 @@ AdbcStatusCode AdbcDatabaseGetOption(struct AdbcDatabase *database, const char *
 		return database->private_driver->DatabaseGetOption(database, key, value, length, error);
 	}
 	const auto *args = reinterpret_cast<const TempDatabase *>(database->private_data);
-	const std::string *result = nullptr;
+	const string *result = nullptr;
 	if (std::strcmp(key, "driver") == 0) {
 		result = &args->driver;
 	} else if (std::strcmp(key, "entrypoint") == 0) {
@@ -692,7 +694,7 @@ AdbcStatusCode AdbcDatabaseGetOptionBytes(struct AdbcDatabase *database, const c
 	if (it == args->options.end()) {
 		return ADBC_STATUS_NOT_FOUND;
 	}
-	const std::string &result = it->second;
+	const string &result = it->second;
 
 	if (*length <= result.size()) {
 		// Enough space
@@ -758,7 +760,7 @@ AdbcStatusCode AdbcDatabaseSetOptionBytes(struct AdbcDatabase *database, const c
 	}
 
 	TempDatabase *args = reinterpret_cast<TempDatabase *>(database->private_data);
-	args->bytes_options[key] = std::string(reinterpret_cast<const char *>(value), length);
+	args->bytes_options[key] = string(reinterpret_cast<const char *>(value), length);
 	return ADBC_STATUS_OK;
 }
 
@@ -1088,10 +1090,10 @@ AdbcStatusCode AdbcConnectionInit(struct AdbcConnection *connection, struct Adbc
 	}
 	TempConnection *args = reinterpret_cast<TempConnection *>(connection->private_data);
 	connection->private_data = nullptr;
-	std::unordered_map<std::string, std::string> options = std::move(args->options);
-	std::unordered_map<std::string, std::string> bytes_options = std::move(args->bytes_options);
-	std::unordered_map<std::string, int64_t> int_options = std::move(args->int_options);
-	std::unordered_map<std::string, double> double_options = std::move(args->double_options);
+	std::unordered_map<string, string> options = std::move(args->options);
+	std::unordered_map<string, string> bytes_options = std::move(args->bytes_options);
+	std::unordered_map<string, int64_t> int_options = std::move(args->int_options);
+	std::unordered_map<string, double> double_options = std::move(args->double_options);
 	delete args;
 
 	auto status = database->private_driver->ConnectionNew(connection, error);
@@ -1198,7 +1200,7 @@ AdbcStatusCode AdbcConnectionSetOptionBytes(struct AdbcConnection *connection, c
 	if (!connection->private_driver) {
 		// Init not yet called, save the option
 		TempConnection *args = reinterpret_cast<TempConnection *>(connection->private_data);
-		args->bytes_options[key] = std::string(reinterpret_cast<const char *>(value), length);
+		args->bytes_options[key] = string(reinterpret_cast<const char *>(value), length);
 		return ADBC_STATUS_OK;
 	}
 	INIT_ERROR(error, connection);
@@ -1449,7 +1451,7 @@ const char *AdbcStatusCodeMessage(AdbcStatusCode code) {
 AdbcStatusCode AdbcLoadDriver(const char *driver_name, const char *entrypoint, int version, void *raw_driver,
                               struct AdbcError *error) {
 	AdbcDriverInitFunc init_func;
-	std::string error_message;
+	string error_message;
 
 	switch (version) {
 	case ADBC_VERSION_1_0_0:

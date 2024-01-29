@@ -142,7 +142,7 @@ vector<string> VirtualFileSystem::ListSubSystems() {
 	return names;
 }
 
-std::string VirtualFileSystem::GetName() const {
+string VirtualFileSystem::GetName() const {
 	return "VirtualFileSystem";
 }
 

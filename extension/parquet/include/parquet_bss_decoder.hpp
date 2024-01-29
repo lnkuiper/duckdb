@@ -7,6 +7,8 @@
 //===----------------------------------------------------------------------===//
 
 #pragma once
+
+#include "duckdb/common/stringstream.hpp"
 #include "parquet_types.h"
 #include "resizable_buffer.hpp"
 
@@ -23,10 +25,10 @@ public:
 	template <typename T>
 	void GetBatch(data_ptr_t values_target_ptr, uint32_t batch_size) {
 		if (buffer_.len % sizeof(T) != 0) {
-			std::stringstream error;
+			stringstream error;
 			error << "Data buffer size for the BYTE_STREAM_SPLIT encoding (" << buffer_.len
 			      << ") should be a multiple of the type size (" << sizeof(T) << ")";
-			throw std::runtime_error(error.str());
+			throw std::runtime_error(error.str().c_str());
 		}
 		uint32_t num_buffer_values = buffer_.len / sizeof(T);
 

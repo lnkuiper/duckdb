@@ -200,7 +200,7 @@ void SqlsmithExtension::Load(DuckDB &db) {
 	ExtensionUtil::RegisterFunction(db_instance, reduce_sql_function);
 }
 
-std::string SqlsmithExtension::Name() {
+string SqlsmithExtension::Name() {
 	return "sqlsmith";
 }
 

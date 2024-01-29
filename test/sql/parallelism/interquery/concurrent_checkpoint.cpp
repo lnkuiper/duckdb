@@ -1,7 +1,8 @@
 #include "catch.hpp"
+#include "duckdb/common/to_string.hpp"
 #include "duckdb/common/value_operations/value_operations.hpp"
-#include "test_helpers.hpp"
 #include "duckdb/main/appender.hpp"
+#include "test_helpers.hpp"
 
 #include <atomic>
 #include <random>
@@ -57,19 +58,23 @@ public:
 			if (con.Query("BEGIN TRANSACTION")->HasError()) {
 				correct[nr] = false;
 			}
-			if (con.Query("UPDATE accounts SET money = money + " + to_string(i * 2) + " WHERE id = " + to_string(nr))
+			if (con.Query("UPDATE accounts SET money = money + " + duckdb::to_string(i * 2) +
+			              " WHERE id = " + duckdb::to_string(nr))
 			        ->HasError()) {
 				correct[nr] = false;
 			}
-			if (con.Query("UPDATE accounts SET money = money - " + to_string(i) + " WHERE id = " + to_string(nr))
+			if (con.Query("UPDATE accounts SET money = money - " + duckdb::to_string(i) +
+			              " WHERE id = " + duckdb::to_string(nr))
 			        ->HasError()) {
 				correct[nr] = false;
 			}
-			if (con.Query("UPDATE accounts SET money = money - " + to_string(i * 2) + " WHERE id = " + to_string(nr))
+			if (con.Query("UPDATE accounts SET money = money - " + duckdb::to_string(i * 2) +
+			              " WHERE id = " + duckdb::to_string(nr))
 			        ->HasError()) {
 				correct[nr] = false;
 			}
-			if (con.Query("UPDATE accounts SET money = money + " + to_string(i) + " WHERE id = " + to_string(nr))
+			if (con.Query("UPDATE accounts SET money = money + " + duckdb::to_string(i) +
+			              " WHERE id = " + duckdb::to_string(nr))
 			        ->HasError()) {
 				correct[nr] = false;
 			}
@@ -132,8 +137,8 @@ TEST_CASE("Concurrent checkpoint with single updater", "[interquery][.]") {
 	con.Query("BEGIN TRANSACTION");
 	con.Query("CREATE TABLE accounts(id INTEGER, money INTEGER)");
 	for (size_t i = 0; i < ConcurrentCheckpoint::CONCURRENT_UPDATE_TOTAL_ACCOUNTS; i++) {
-		con.Query("INSERT INTO accounts VALUES (" + to_string(i) + ", " +
-		          to_string(ConcurrentCheckpoint::CONCURRENT_UPDATE_MONEY_PER_ACCOUNT) + ");");
+		con.Query("INSERT INTO accounts VALUES (" + duckdb::to_string(i) + ", " +
+		          duckdb::to_string(ConcurrentCheckpoint::CONCURRENT_UPDATE_MONEY_PER_ACCOUNT) + ");");
 	}
 	con.Query("COMMIT");
 
@@ -151,19 +156,19 @@ TEST_CASE("Concurrent checkpoint with single updater", "[interquery][.]") {
 		int amount = random_amount();
 
 		REQUIRE_NO_FAIL(con.Query("BEGIN TRANSACTION"));
-		result = con.Query("SELECT money FROM accounts WHERE id=" + to_string(from));
+		result = con.Query("SELECT money FROM accounts WHERE id=" + duckdb::to_string(from));
 		Value money_from = result->GetValue(0, 0);
-		result = con.Query("SELECT money FROM accounts WHERE id=" + to_string(to));
+		result = con.Query("SELECT money FROM accounts WHERE id=" + duckdb::to_string(to));
 		Value money_to = result->GetValue(0, 0);
 
-		REQUIRE_NO_FAIL(
-		    con.Query("UPDATE accounts SET money = money - " + to_string(amount) + " WHERE id = " + to_string(from)));
-		REQUIRE_NO_FAIL(
-		    con.Query("UPDATE accounts SET money = money + " + to_string(amount) + " WHERE id = " + to_string(to)));
+		REQUIRE_NO_FAIL(con.Query("UPDATE accounts SET money = money - " + duckdb::to_string(amount) +
+		                          " WHERE id = " + duckdb::to_string(from)));
+		REQUIRE_NO_FAIL(con.Query("UPDATE accounts SET money = money + " + duckdb::to_string(amount) +
+		                          " WHERE id = " + duckdb::to_string(to)));
 
-		result = con.Query("SELECT money FROM accounts WHERE id=" + to_string(from));
+		result = con.Query("SELECT money FROM accounts WHERE id=" + duckdb::to_string(from));
 		Value new_money_from = result->GetValue(0, 0);
-		result = con.Query("SELECT money FROM accounts WHERE id=" + to_string(to));
+		result = con.Query("SELECT money FROM accounts WHERE id=" + duckdb::to_string(to));
 		Value new_money_to = result->GetValue(0, 0);
 
 		Value expected_money_from, expected_money_to;
@@ -201,8 +206,8 @@ TEST_CASE("Concurrent checkpoint with multiple updaters", "[interquery][.]") {
 	con.Query("BEGIN TRANSACTION");
 	con.Query("CREATE TABLE accounts(id INTEGER, money INTEGER)");
 	for (size_t i = 0; i < ConcurrentCheckpoint::CONCURRENT_UPDATE_TOTAL_ACCOUNTS; i++) {
-		con.Query("INSERT INTO accounts VALUES (" + to_string(i) + ", " +
-		          to_string(ConcurrentCheckpoint::CONCURRENT_UPDATE_MONEY_PER_ACCOUNT) + ");");
+		con.Query("INSERT INTO accounts VALUES (" + duckdb::to_string(i) + ", " +
+		          duckdb::to_string(ConcurrentCheckpoint::CONCURRENT_UPDATE_MONEY_PER_ACCOUNT) + ");");
 	}
 	con.Query("COMMIT");
 
@@ -241,8 +246,8 @@ TEST_CASE("Force concurrent checkpoint with single updater", "[interquery][.]") 
 	con.Query("BEGIN TRANSACTION");
 	con.Query("CREATE TABLE accounts(id INTEGER, money INTEGER)");
 	for (size_t i = 0; i < ConcurrentCheckpoint::CONCURRENT_UPDATE_TOTAL_ACCOUNTS; i++) {
-		con.Query("INSERT INTO accounts VALUES (" + to_string(i) + ", " +
-		          to_string(ConcurrentCheckpoint::CONCURRENT_UPDATE_MONEY_PER_ACCOUNT) + ");");
+		con.Query("INSERT INTO accounts VALUES (" + duckdb::to_string(i) + ", " +
+		          duckdb::to_string(ConcurrentCheckpoint::CONCURRENT_UPDATE_MONEY_PER_ACCOUNT) + ");");
 	}
 	con.Query("COMMIT");
 

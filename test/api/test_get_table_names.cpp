@@ -12,7 +12,7 @@ using namespace std;
 TEST_CASE("Test GetTableNames", "[api]") {
 	DuckDB db(nullptr);
 	Connection con(db);
-	unordered_set<string> table_names;
+	unordered_set<duckdb::string> table_names;
 
 	// standard
 	table_names = con.GetTableNames("SELECT * FROM my_table");

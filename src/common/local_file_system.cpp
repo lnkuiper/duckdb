@@ -584,7 +584,7 @@ void LocalFileSystem::MoveFile(const string &source, const string &target) {
 	}
 }
 
-std::string LocalFileSystem::GetLastErrorAsString() {
+string LocalFileSystem::GetLastErrorAsString() {
 	return string();
 }
 
@@ -593,18 +593,18 @@ std::string LocalFileSystem::GetLastErrorAsString() {
 constexpr char PIPE_PREFIX[] = "\\\\.\\pipe\\";
 
 // Returns the last Win32 error, in string format. Returns an empty string if there is no error.
-std::string LocalFileSystem::GetLastErrorAsString() {
+string LocalFileSystem::GetLastErrorAsString() {
 	// Get the error message, if any.
 	DWORD errorMessageID = GetLastError();
 	if (errorMessageID == 0)
-		return std::string(); // No error message has been recorded
+		return string(); // No error message has been recorded
 
 	LPSTR messageBuffer = nullptr;
 	idx_t size =
 	    FormatMessageA(FORMAT_MESSAGE_ALLOCATE_BUFFER | FORMAT_MESSAGE_FROM_SYSTEM | FORMAT_MESSAGE_IGNORE_INSERTS,
 	                   NULL, errorMessageID, MAKELANGID(LANG_NEUTRAL, SUBLANG_DEFAULT), (LPSTR)&messageBuffer, 0, NULL);
 
-	std::string message(messageBuffer, size);
+	string message(messageBuffer, size);
 
 	// Free the buffer.
 	LocalFree(messageBuffer);
@@ -1081,7 +1081,7 @@ vector<string> LocalFileSystem::FetchFileWithoutGlob(const string &path, FileOpe
 		Value value;
 		if (opener && opener->TryGetCurrentSetting("file_search_path", value)) {
 			auto search_paths_str = value.ToString();
-			vector<std::string> search_paths = StringUtil::Split(search_paths_str, ',');
+			vector<string> search_paths = StringUtil::Split(search_paths_str, ',');
 			for (const auto &search_path : search_paths) {
 				auto joined_path = JoinPath(search_path, path);
 				if (FileExists(joined_path) || IsPipe(joined_path)) {
@@ -1150,7 +1150,7 @@ vector<string> LocalFileSystem::Glob(const string &path, FileOpener *opener) {
 		Value value;
 		if (opener && opener->TryGetCurrentSetting("file_search_path", value)) {
 			auto search_paths_str = value.ToString();
-			vector<std::string> search_paths = StringUtil::Split(search_paths_str, ',');
+			vector<string> search_paths = StringUtil::Split(search_paths_str, ',');
 			for (const auto &search_path : search_paths) {
 				previous_directories.push_back(search_path);
 			}

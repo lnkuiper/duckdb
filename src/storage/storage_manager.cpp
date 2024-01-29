@@ -70,7 +70,7 @@ string StorageManager::GetWALPath() {
 
 	std::size_t question_mark_pos = path.find('?');
 	auto wal_path = path;
-	if (question_mark_pos != std::string::npos) {
+	if (question_mark_pos != string::npos) {
 		wal_path.insert(question_mark_pos, ".wal");
 	} else {
 		wal_path += ".wal";

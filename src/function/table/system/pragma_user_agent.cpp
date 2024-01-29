@@ -7,7 +7,7 @@ struct PragmaUserAgentData : public GlobalTableFunctionState {
 	PragmaUserAgentData() : finished(false) {
 	}
 
-	std::string user_agent;
+	string user_agent;
 	bool finished;
 };
 

@@ -23,13 +23,13 @@ TEST_CASE("Test storing a big string that exceeds buffer manager size", "[storag
 		// create a database and insert the big string
 		DuckDB db(storage_database, config.get());
 		Connection con(db);
-		string big_string = string(string_length, 'a');
+		duckdb::string big_string = duckdb::string(string_length, 'a');
 		REQUIRE_NO_FAIL(con.Query("CREATE TABLE test (a VARCHAR, j BIGINT);"));
 		REQUIRE_NO_FAIL(con.Query("INSERT INTO test VALUES ('" + big_string + "', 1)"));
 		while (string_length < desired_size) {
-			REQUIRE_NO_FAIL(con.Query("INSERT INTO test SELECT a||a||a||a||a||a||a||a||a||a, " + to_string(iteration) +
-			                          " FROM test"));
-			REQUIRE_NO_FAIL(con.Query("DELETE FROM test WHERE j=" + to_string(iteration - 1)));
+			REQUIRE_NO_FAIL(con.Query("INSERT INTO test SELECT a||a||a||a||a||a||a||a||a||a, " +
+			                          duckdb::to_string(iteration) + " FROM test"));
+			REQUIRE_NO_FAIL(con.Query("DELETE FROM test WHERE j=" + duckdb::to_string(iteration - 1)));
 			iteration++;
 			string_length *= 10;
 		}
@@ -170,13 +170,13 @@ TEST_CASE("Modifying the buffer manager limit at runtime for an in-memory databa
 	uint64_t desired_size = 10000000; // desired size is 10MB
 	uint64_t iteration = 2;
 
-	string big_string = string(string_length, 'a');
+	duckdb::string big_string = duckdb::string(string_length, 'a');
 	REQUIRE_NO_FAIL(con.Query("CREATE TABLE test (a VARCHAR, j BIGINT);"));
 	REQUIRE_NO_FAIL(con.Query("INSERT INTO test VALUES ('" + big_string + "', 1)"));
 	while (string_length < desired_size) {
-		REQUIRE_NO_FAIL(
-		    con.Query("INSERT INTO test SELECT a||a||a||a||a||a||a||a||a||a, " + to_string(iteration) + " FROM test"));
-		REQUIRE_NO_FAIL(con.Query("DELETE FROM test WHERE j=" + to_string(iteration - 1)));
+		REQUIRE_NO_FAIL(con.Query("INSERT INTO test SELECT a||a||a||a||a||a||a||a||a||a, " +
+		                          duckdb::to_string(iteration) + " FROM test"));
+		REQUIRE_NO_FAIL(con.Query("DELETE FROM test WHERE j=" + duckdb::to_string(iteration - 1)));
 		iteration++;
 		string_length *= 10;
 	}

@@ -5,6 +5,7 @@
 #include "duckdb/common/limits.hpp"
 #include "duckdb/common/printer.hpp"
 #include "duckdb/common/string_util.hpp"
+#include "duckdb/common/stringstream.hpp"
 #include "duckdb/common/to_string.hpp"
 #include "duckdb/common/tree_renderer.hpp"
 #include "duckdb/execution/expression_executor.hpp"
@@ -358,7 +359,7 @@ static string RenderTiming(double timing) {
 }
 
 string QueryProfiler::QueryTreeToString() const {
-	std::stringstream str;
+	stringstream str;
 	QueryTreeToStream(str);
 	return str.str();
 }
@@ -387,10 +388,10 @@ void QueryProfiler::QueryTreeToStream(std::ostream &ss) const {
 		    "in: " + StringUtil::BytesToHumanReadableString(context.client_data->http_state->total_bytes_received);
 		string written =
 		    "out: " + StringUtil::BytesToHumanReadableString(context.client_data->http_state->total_bytes_sent);
-		string head = "#HEAD: " + to_string(context.client_data->http_state->head_count);
-		string get = "#GET: " + to_string(context.client_data->http_state->get_count);
-		string put = "#PUT: " + to_string(context.client_data->http_state->put_count);
-		string post = "#POST: " + to_string(context.client_data->http_state->post_count);
+		string head = "#HEAD: " + duckdb::to_string(context.client_data->http_state->head_count);
+		string get = "#GET: " + duckdb::to_string(context.client_data->http_state->get_count);
+		string put = "#PUT: " + duckdb::to_string(context.client_data->http_state->put_count);
+		string post = "#POST: " + duckdb::to_string(context.client_data->http_state->post_count);
 
 		constexpr idx_t TOTAL_BOX_WIDTH = 39;
 		ss << "┌─────────────────────────────────────┐\n";
@@ -572,7 +573,7 @@ string QueryProfiler::ToJSON() const {
 	if (!root) {
 		return "{ \"result\": \"error\" }\n";
 	}
-	std::stringstream ss;
+	stringstream ss;
 	ss << "{\n";
 	ss << "   \"name\":  \"Query\", \n";
 	ss << "   \"result\": " + to_string(main_query.Elapsed()) + ",\n";

@@ -172,7 +172,7 @@ TEST_CASE("Test appender statements in C API", "[capi]") {
 	REQUIRE_NO_FAIL(*result);
 	REQUIRE(result->Fetch<int32_t>(0, 0) == 42);
 	REQUIRE(result->Fetch<double>(1, 0) == 4.2);
-	REQUIRE(result->Fetch<string>(2, 0) == "Hello, World");
+	REQUIRE(result->Fetch<duckdb::string>(2, 0) == "Hello, World");
 
 	status = duckdb_appender_destroy(&appender);
 	REQUIRE(status == DuckDBSuccess);
@@ -385,7 +385,7 @@ TEST_CASE("Test appender statements in C API", "[capi]") {
 	REQUIRE(result->Fetch<uint64_t>(7, 0) == 1);
 	REQUIRE(result->Fetch<float>(8, 0) == 0.5f);
 	REQUIRE(result->Fetch<double>(9, 0) == 0.5);
-	REQUIRE(result->Fetch<string>(10, 0) == "hello");
+	REQUIRE(result->Fetch<duckdb::string>(10, 0) == "hello");
 
 	auto blob = duckdb_value_blob(&result->InternalResult(), 11, 0);
 	REQUIRE(blob.size == blob_len);
@@ -452,7 +452,7 @@ TEST_CASE("Test appender statements in C API", "[capi]") {
 	REQUIRE(result->Fetch<uint64_t>(7, 1) == 0);
 	REQUIRE(result->Fetch<float>(8, 1) == 0);
 	REQUIRE(result->Fetch<double>(9, 1) == 0);
-	REQUIRE(result->Fetch<string>(10, 1).empty());
+	REQUIRE(result->Fetch<duckdb::string>(10, 1).empty());
 
 	blob = duckdb_value_blob(&result->InternalResult(), 11, 1);
 	REQUIRE(blob.size == 0);
@@ -543,5 +543,5 @@ TEST_CASE("Test append timestamp in C API", "[capi]") {
 
 	result = tester.Query("SELECT * FROM test");
 	REQUIRE_NO_FAIL(*result);
-	REQUIRE(result->Fetch<string>(0, 0) == "2022-04-09 15:56:37.544");
+	REQUIRE(result->Fetch<duckdb::string>(0, 0) == "2022-04-09 15:56:37.544");
 }

@@ -5,12 +5,11 @@
 #define EXPR_HH
 
 #include "prod.hh"
-#include <string>
+#include "duckdb/common/string.hpp"
 #include "duckdb/common/vector.hpp"
 
 using duckdb::vector;
 using std::shared_ptr;
-using std::string;
 
 struct value_expr : prod {
 	sqltype *type;
@@ -56,7 +55,7 @@ struct atomic_subselect : value_expr {
 };
 
 struct const_expr : value_expr {
-	std::string expr;
+	duckdb::string expr;
 	const_expr(prod *p, sqltype *type_constraint = 0);
 	virtual void out(std::ostream &out) {
 		out << expr;
@@ -70,7 +69,7 @@ struct column_reference : value_expr {
 	virtual void out(std::ostream &out) {
 		out << reference;
 	}
-	std::string reference;
+	duckdb::string reference;
 	virtual ~column_reference() {
 	}
 };

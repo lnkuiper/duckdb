@@ -1,11 +1,10 @@
 #include "duckdb/storage/table/update_segment.hpp"
 
+#include "duckdb/common/printer.hpp"
 #include "duckdb/storage/statistics/distinct_statistics.hpp"
-
 #include "duckdb/storage/table/column_data.hpp"
 #include "duckdb/transaction/duck_transaction.hpp"
 #include "duckdb/transaction/update_info.hpp"
-#include "duckdb/common/printer.hpp"
 
 #include <algorithm>
 
@@ -63,7 +62,7 @@ void UpdateInfo::Print() {
 string UpdateInfo::ToString() {
 	auto &type = segment->column_data.type;
 	string result = "Update Info [" + type.ToString() + ", Count: " + to_string(N) +
-	                ", Transaction Id: " + to_string(version_number) + "]\n";
+	                ", Transaction Id: " + duckdb::to_string(version_number) + "]\n";
 	for (idx_t i = 0; i < N; i++) {
 		result += to_string(tuples[i]) + ": " + GetValue(i).ToString() + "\n";
 	}

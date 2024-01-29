@@ -6,7 +6,7 @@
 
 #include <stddef.h>
 #include <stdint.h>
-#include <string>
+#include "duckdb/common/string.hpp"
 #include <vector>
 
 #include "util/util.h"
@@ -19,8 +19,8 @@
 
 namespace duckdb_re2 {
 
-typedef std::set<std::string>::iterator SSIter;
-typedef std::set<std::string>::const_iterator ConstSSIter;
+typedef std::set<duckdb::string>::iterator SSIter;
+typedef std::set<duckdb::string>::const_iterator ConstSSIter;
 
 // Initializes a Prefilter, allocating subs_ as necessary.
 Prefilter::Prefilter(Op op) {
@@ -138,7 +138,7 @@ Prefilter* Prefilter::Or(Prefilter* a, Prefilter* b) {
   return AndOr(OR, a, b);
 }
 
-static void SimplifyStringSet(std::set<std::string> *ss) {
+static void SimplifyStringSet(std::set<duckdb::string> *ss) {
   // Now make sure that the strings aren't redundant.  For example, if
   // we know "ab" is a required string, then it doesn't help at all to
   // know that "abc" is also a required string, so delete "abc". This
@@ -153,13 +153,13 @@ static void SimplifyStringSet(std::set<std::string> *ss) {
       // Increment j early so that we can erase the element it points to.
       SSIter old_j = j;
       ++j;
-      if (old_j->find(*i) != std::string::npos)
+      if (old_j->find(*i) != duckdb::string::npos)
         ss->erase(old_j);
     }
   }
 }
 
-Prefilter* Prefilter::OrStrings(std::set<std::string>* ss) {
+Prefilter* Prefilter::OrStrings(std::set<duckdb::string>* ss) {
   SimplifyStringSet(ss);
   Prefilter* or_prefilter = NULL;
   if (!ss->empty()) {
@@ -189,7 +189,7 @@ static Rune ToLowerRuneLatin1(Rune r) {
   return r;
 }
 
-Prefilter* Prefilter::FromString(const std::string& str) {
+Prefilter* Prefilter::FromString(const duckdb::string& str) {
   Prefilter* m = new Prefilter(Prefilter::ATOM);
   m->atom_ = str;
   return m;
@@ -219,19 +219,19 @@ class Prefilter::Info {
   static Info* AnyMatch();
 
   // Format Info as a string.
-  std::string ToString();
+  duckdb::string ToString();
 
   // Caller takes ownership of the Prefilter.
   Prefilter* TakeMatch();
 
-  std::set<std::string>& exact() { return exact_; }
+  std::set<duckdb::string>& exact() { return exact_; }
 
   bool is_exact() const { return is_exact_; }
 
   class Walker;
 
  private:
-  std::set<std::string> exact_;
+  std::set<duckdb::string> exact_;
 
   // When is_exact_ is true, the strings that match
   // are placed in exact_. When it is no longer an exact
@@ -266,10 +266,10 @@ Prefilter* Prefilter::Info::TakeMatch() {
 }
 
 // Format a Info in string form.
-std::string Prefilter::Info::ToString() {
+duckdb::string Prefilter::Info::ToString() {
   if (is_exact_) {
     int n = 0;
-    std::string s;
+    duckdb::string s;
     for (SSIter i = exact_.begin(); i != exact_.end(); ++i) {
       if (n++ > 0)
         s += ",";
@@ -285,17 +285,17 @@ std::string Prefilter::Info::ToString() {
 }
 
 // Add the strings from src to dst.
-static void CopyIn(const std::set<std::string>& src,
-                   std::set<std::string>* dst) {
+static void CopyIn(const std::set<duckdb::string>& src,
+                   std::set<duckdb::string>* dst) {
   for (ConstSSIter i = src.begin(); i != src.end(); ++i)
     dst->insert(*i);
 }
 
 // Add the cross-product of a and b to dst.
 // (For each string i in a and j in b, add i+j.)
-static void CrossProduct(const std::set<std::string>& a,
-                         const std::set<std::string>& b,
-                         std::set<std::string>* dst) {
+static void CrossProduct(const std::set<duckdb::string>& a,
+                         const std::set<duckdb::string>& b,
+                         std::set<duckdb::string>* dst) {
   for (ConstSSIter i = a.begin(); i != a.end(); ++i)
     for (ConstSSIter j = b.begin(); j != b.end(); ++j)
       dst->insert(*i + *j);
@@ -386,15 +386,15 @@ Prefilter::Info* Prefilter::Info::Plus(Info *a) {
   return ab;
 }
 
-static std::string RuneToString(Rune r) {
+static duckdb::string RuneToString(Rune r) {
   char buf[UTFmax];
   int n = runetochar(buf, &r);
-  return std::string(buf, n);
+  return duckdb::string(buf, n);
 }
 
-static std::string RuneToStringLatin1(Rune r) {
+static duckdb::string RuneToStringLatin1(Rune r) {
   char c = r & 0xff;
-  return std::string(&c, 1);
+  return duckdb::string(&c, 1);
 }
 
 // Constructs Info for literal rune.
@@ -642,7 +642,7 @@ Prefilter* Prefilter::FromRegexp(Regexp* re) {
   return m;
 }
 
-std::string Prefilter::DebugString() const {
+duckdb::string Prefilter::DebugString() const {
   switch (op_) {
     default:
       LOG(DFATAL) << "Bad op in Prefilter::DebugString: " << op_;
@@ -654,7 +654,7 @@ std::string Prefilter::DebugString() const {
     case ALL:
       return "";
     case AND: {
-      std::string s = "";
+      duckdb::string s = "";
       for (size_t i = 0; i < subs_->size(); i++) {
         if (i > 0)
           s += " ";
@@ -664,7 +664,7 @@ std::string Prefilter::DebugString() const {
       return s;
     }
     case OR: {
-      std::string s = "(";
+      duckdb::string s = "(";
       for (size_t i = 0; i < subs_->size(); i++) {
         if (i > 0)
           s += "|";

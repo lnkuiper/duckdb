@@ -42,7 +42,7 @@ using duckdb_apache::thrift::transport::TTransport;
  */
 class TProtocolDefaults : public TProtocol {
 public:
-  uint32_t readMessageBegin(std::string& name, TMessageType& messageType, int32_t& seqid) {
+  uint32_t readMessageBegin(duckdb::string& name, TMessageType& messageType, int32_t& seqid) {
     (void)name;
     (void)messageType;
     (void)seqid;
@@ -55,7 +55,7 @@ public:
                              "this protocol does not support reading (yet).");
   }
 
-  uint32_t readStructBegin(std::string& name) {
+  uint32_t readStructBegin(duckdb::string& name) {
     (void)name;
     throw TProtocolException(TProtocolException::NOT_IMPLEMENTED,
                              "this protocol does not support reading (yet).");
@@ -66,7 +66,7 @@ public:
                              "this protocol does not support reading (yet).");
   }
 
-  uint32_t readFieldBegin(std::string& name, TType& fieldType, int16_t& fieldId) {
+  uint32_t readFieldBegin(duckdb::string& name, TType& fieldType, int16_t& fieldId) {
     (void)name;
     (void)fieldType;
     (void)fieldId;
@@ -158,19 +158,19 @@ public:
                              "this protocol does not support reading (yet).");
   }
 
-  uint32_t readString(std::string& str) {
+  uint32_t readString(duckdb::string& str) {
     (void)str;
     throw TProtocolException(TProtocolException::NOT_IMPLEMENTED,
                              "this protocol does not support reading (yet).");
   }
 
-  uint32_t readBinary(std::string& str) {
+  uint32_t readBinary(duckdb::string& str) {
     (void)str;
     throw TProtocolException(TProtocolException::NOT_IMPLEMENTED,
                              "this protocol does not support reading (yet).");
   }
 
-  uint32_t writeMessageBegin(const std::string& name,
+  uint32_t writeMessageBegin(const duckdb::string& name,
                              const TMessageType messageType,
                              const int32_t seqid) {
     (void)name;
@@ -287,13 +287,13 @@ public:
                              "this protocol does not support writing (yet).");
   }
 
-  uint32_t writeString(const std::string& str) {
+  uint32_t writeString(const duckdb::string& str) {
     (void)str;
     throw TProtocolException(TProtocolException::NOT_IMPLEMENTED,
                              "this protocol does not support writing (yet).");
   }
 
-  uint32_t writeBinary(const std::string& str) {
+  uint32_t writeBinary(const duckdb::string& str) {
     (void)str;
     throw TProtocolException(TProtocolException::NOT_IMPLEMENTED,
                              "this protocol does not support writing (yet).");
@@ -316,7 +316,7 @@ public:
    * Writing functions.
    */
 
-  uint32_t writeMessageBegin_virt(const std::string& name,
+  uint32_t writeMessageBegin_virt(const duckdb::string& name,
                                           const TMessageType messageType,
                                           const int32_t seqid) override {
     return static_cast<Protocol_*>(this)->writeMessageBegin(name, messageType, seqid);
@@ -386,11 +386,11 @@ public:
     return static_cast<Protocol_*>(this)->writeDouble(dub);
   }
 
-  uint32_t writeString_virt(const std::string& str) override {
+  uint32_t writeString_virt(const duckdb::string& str) override {
     return static_cast<Protocol_*>(this)->writeString(str);
   }
 
-  uint32_t writeBinary_virt(const std::string& str) override {
+  uint32_t writeBinary_virt(const duckdb::string& str) override {
     return static_cast<Protocol_*>(this)->writeBinary(str);
   }
 
@@ -398,7 +398,7 @@ public:
    * Reading functions
    */
 
-  uint32_t readMessageBegin_virt(std::string& name,
+  uint32_t readMessageBegin_virt(duckdb::string& name,
                                          TMessageType& messageType,
                                          int32_t& seqid) override {
     return static_cast<Protocol_*>(this)->readMessageBegin(name, messageType, seqid);
@@ -406,13 +406,13 @@ public:
 
   uint32_t readMessageEnd_virt() override { return static_cast<Protocol_*>(this)->readMessageEnd(); }
 
-  uint32_t readStructBegin_virt(std::string& name) override {
+  uint32_t readStructBegin_virt(duckdb::string& name) override {
     return static_cast<Protocol_*>(this)->readStructBegin(name);
   }
 
   uint32_t readStructEnd_virt() override { return static_cast<Protocol_*>(this)->readStructEnd(); }
 
-  uint32_t readFieldBegin_virt(std::string& name, TType& fieldType, int16_t& fieldId) override {
+  uint32_t readFieldBegin_virt(duckdb::string& name, TType& fieldType, int16_t& fieldId) override {
     return static_cast<Protocol_*>(this)->readFieldBegin(name, fieldType, fieldId);
   }
 
@@ -464,11 +464,11 @@ public:
     return static_cast<Protocol_*>(this)->readDouble(dub);
   }
 
-  uint32_t readString_virt(std::string& str) override {
+  uint32_t readString_virt(duckdb::string& str) override {
     return static_cast<Protocol_*>(this)->readString(str);
   }
 
-  uint32_t readBinary_virt(std::string& str) override {
+  uint32_t readBinary_virt(duckdb::string& str) override {
     return static_cast<Protocol_*>(this)->readBinary(str);
   }
 

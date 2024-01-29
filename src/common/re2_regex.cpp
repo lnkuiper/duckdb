@@ -1,12 +1,13 @@
-#include "duckdb/common/vector.hpp"
-#include <memory>
-
 #include "duckdb/common/re2_regex.hpp"
+
+#include "duckdb/common/vector.hpp"
 #include "re2/re2.h"
+
+#include <memory>
 
 namespace duckdb_re2 {
 
-Regex::Regex(const std::string &pattern, RegexOptions options) {
+Regex::Regex(const duckdb::string &pattern, RegexOptions options) {
 	RE2::Options o;
 	o.set_case_sensitive(options == RegexOptions::CASE_INSENSITIVE);
 	regex = std::make_shared<duckdb_re2::RE2>(StringPiece(pattern), o);
@@ -31,11 +32,11 @@ bool RegexSearchInternal(const char *input, Match &match, const Regex &r, RE2::A
 	return true;
 }
 
-bool RegexSearch(const std::string &input, Match &match, const Regex &regex) {
+bool RegexSearch(const duckdb::string &input, Match &match, const Regex &regex) {
 	return RegexSearchInternal(input.c_str(), match, regex, RE2::UNANCHORED, 0, input.size());
 }
 
-bool RegexMatch(const std::string &input, Match &match, const Regex &regex) {
+bool RegexMatch(const duckdb::string &input, Match &match, const Regex &regex) {
 	return RegexSearchInternal(input.c_str(), match, regex, RE2::ANCHOR_BOTH, 0, input.size());
 }
 
@@ -43,12 +44,12 @@ bool RegexMatch(const char *start, const char *end, Match &match, const Regex &r
 	return RegexSearchInternal(start, match, regex, RE2::ANCHOR_BOTH, 0, end - start);
 }
 
-bool RegexMatch(const std::string &input, const Regex &regex) {
+bool RegexMatch(const duckdb::string &input, const Regex &regex) {
 	Match nop_match;
 	return RegexSearchInternal(input.c_str(), nop_match, regex, RE2::ANCHOR_BOTH, 0, input.size());
 }
 
-duckdb::vector<Match> RegexFindAll(const std::string &input, const Regex &regex) {
+duckdb::vector<Match> RegexFindAll(const duckdb::string &input, const Regex &regex) {
 	duckdb::vector<Match> matches;
 	size_t position = 0;
 	Match match;

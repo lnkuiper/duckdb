@@ -2,14 +2,14 @@
 
 #include "duckdb/catalog/catalog.hpp"
 #include "duckdb/catalog/catalog_entry/schema_catalog_entry.hpp"
-#include "duckdb/common/exception.hpp"
-#include "duckdb/parser/parsed_data/create_sequence_info.hpp"
 #include "duckdb/catalog/dependency_manager.hpp"
+#include "duckdb/common/exception.hpp"
 #include "duckdb/common/operator/add.hpp"
+#include "duckdb/common/stringstream.hpp"
+#include "duckdb/parser/parsed_data/create_sequence_info.hpp"
 #include "duckdb/transaction/duck_transaction.hpp"
 
 #include <algorithm>
-#include <sstream>
 
 namespace duckdb {
 
@@ -93,7 +93,7 @@ unique_ptr<CreateInfo> SequenceCatalogEntry::GetInfo() const {
 string SequenceCatalogEntry::ToSQL() const {
 	auto seq_data = GetData();
 
-	std::stringstream ss;
+	stringstream ss;
 	ss << "CREATE SEQUENCE ";
 	ss << name;
 	ss << " INCREMENT BY " << seq_data.increment;

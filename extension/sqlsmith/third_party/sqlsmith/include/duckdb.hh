@@ -21,13 +21,13 @@ struct sqlsmith_duckdb_connection {
 
 struct schema_duckdb : schema, sqlsmith_duckdb_connection {
 	schema_duckdb(duckdb::DatabaseInstance &database, bool no_catalog, bool verbose_output);
-	virtual std::string quote_name(const std::string &id) {
+	virtual duckdb::string quote_name(const duckdb::string &id) {
 		return id;
 	}
 };
 
 struct dut_duckdb : dut_base, sqlsmith_duckdb_connection {
-	virtual void test(const std::string &stmt);
+	virtual void test(const duckdb::string &stmt);
 	dut_duckdb(duckdb::DatabaseInstance &database);
 };
 #endif

@@ -12,10 +12,10 @@
 #include "duckdb/common/helper.hpp"
 #include "duckdb/common/pair.hpp"
 #include "duckdb/common/printer.hpp"
+#include "duckdb/common/stringstream.hpp"
 #include "duckdb/common/typedefs.hpp"
 #include "duckdb/common/vector.hpp"
 #include "duckdb/common/vector_operations/aggregate_executor.hpp"
-#include <iomanip>
 
 namespace duckdb {
 
@@ -203,7 +203,7 @@ protected:
 	}
 
 	void Print() const {
-		std::ostringstream out;
+		ostringstream out;
 		const char *separator = "    ";
 		const char *group_separator = " || ";
 		idx_t level_width = 1;

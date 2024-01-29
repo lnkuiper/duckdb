@@ -139,7 +139,7 @@ idx_t DBConfig::GetOptionCount() {
 	return count;
 }
 
-vector<std::string> DBConfig::GetOptionNames() {
+vector<string> DBConfig::GetOptionNames() {
 	vector<string> names;
 	for (idx_t i = 0, option_count = DBConfig::GetOptionCount(); i < option_count; i++) {
 		names.emplace_back(DBConfig::GetOptionByIndex(i)->name);
@@ -445,7 +445,7 @@ OrderByNullType DBConfig::ResolveNullOrder(OrderType order_type, OrderByNullType
 	}
 }
 
-const std::string DBConfig::UserAgent() const {
+const string DBConfig::UserAgent() const {
 	auto user_agent = GetDefaultUserAgent();
 
 	if (!options.duckdb_api.empty()) {

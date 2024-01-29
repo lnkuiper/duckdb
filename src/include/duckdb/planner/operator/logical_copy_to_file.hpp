@@ -29,7 +29,7 @@ public:
 	unique_ptr<FunctionData> bind_data;
 	unique_ptr<CopyInfo> copy_info;
 
-	std::string file_path;
+	string file_path;
 	bool use_tmp_file;
 	FilenamePattern filename_pattern;
 	string file_extension;

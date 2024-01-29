@@ -52,9 +52,9 @@ public:
 
   TApplicationException(TApplicationExceptionType type) : TException(), type_(type) {}
 
-  TApplicationException(const std::string& message) : TException(message), type_(UNKNOWN) {}
+  TApplicationException(const duckdb::string& message) : TException(message), type_(UNKNOWN) {}
 
-  TApplicationException(TApplicationExceptionType type, const std::string& message)
+  TApplicationException(TApplicationExceptionType type, const duckdb::string& message)
     : TException(message), type_(type) {}
 
   ~TApplicationException() noexcept override = default;

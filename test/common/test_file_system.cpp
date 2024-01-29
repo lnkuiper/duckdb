@@ -8,8 +8,8 @@
 using namespace duckdb;
 using namespace std;
 
-static void create_dummy_file(string fname) {
-	ofstream outfile(fname);
+static void create_dummy_file(duckdb::string fname) {
+	ofstream outfile(fname.c_str());
 	outfile << "I_AM_A_DUMMY" << endl;
 	outfile.close();
 }
@@ -17,8 +17,8 @@ static void create_dummy_file(string fname) {
 TEST_CASE("Make sure file system operators work as advertised", "[file_system]") {
 	duckdb::unique_ptr<FileSystem> fs = FileSystem::CreateLocal();
 	auto dname = TestCreatePath("TEST_DIR");
-	string fname = "TEST_FILE";
-	string fname2 = "TEST_FILE_TWO";
+	duckdb::string fname = "TEST_FILE";
+	duckdb::string fname2 = "TEST_FILE_TWO";
 
 	if (fs->DirectoryExists(dname)) {
 		fs->RemoveDirectory(dname);
@@ -39,7 +39,7 @@ TEST_CASE("Make sure file system operators work as advertised", "[file_system]")
 	REQUIRE(!fs->DirectoryExists(fname_in_dir));
 
 	size_t n_files = 0;
-	REQUIRE(fs->ListFiles(dname, [&n_files](const string &path, bool) { n_files++; }));
+	REQUIRE(fs->ListFiles(dname, [&n_files](const duckdb::string &path, bool) { n_files++; }));
 
 	REQUIRE(n_files == 1);
 

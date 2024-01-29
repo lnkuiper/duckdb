@@ -14,7 +14,7 @@ using namespace std;
 
 atomic<bool> finished;
 
-static void RunQueryUntilSuccess(Connection &con, string query) {
+static void RunQueryUntilSuccess(Connection &con, duckdb::string query) {
 	while (true) {
 		auto result = con.Query(query);
 		if (!result->HasError()) {
@@ -108,8 +108,8 @@ static void create_drop_schema(DuckDB *db) {
 static void create_use_table_view(DuckDB *db, int threadnr) {
 	Connection con(*db);
 	duckdb::unique_ptr<QueryResult> result;
-	string tname = "integers" + to_string(threadnr);
-	string vname = "v" + to_string(threadnr);
+	duckdb::string tname = "integers" + duckdb::to_string(threadnr);
+	duckdb::string vname = "v" + duckdb::to_string(threadnr);
 
 	for (int i = 0; i < CONCURRENT_DEPENDENCIES_REPETITIONS; i++) {
 		RunQueryUntilSuccess(con, "CREATE TABLE s1." + tname + "(i INTEGER)");

@@ -98,7 +98,7 @@ string ExceptionFormatValue::Format(const string &msg, const vector<ExceptionFor
 		if (StringUtil::Contains(ex.what(), "fuzz mode")) {
 			throw Exception(msg);
 		}
-		throw InternalException(std::string("Primary exception: ") + msg +
+		throw InternalException(string("Primary exception: ") + msg +
 		                        "\nSecondary exception in ExceptionFormatValue: " + ex.what());
 	} // LCOV_EXCL_STOP
 }

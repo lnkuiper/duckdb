@@ -44,7 +44,7 @@ public:
 	DUCKDB_API void SetError(PreservedError error);
 	DUCKDB_API bool HasError() const;
 	DUCKDB_API const ExceptionType &GetErrorType() const;
-	DUCKDB_API const std::string &GetError();
+	DUCKDB_API const string &GetError();
 	DUCKDB_API PreservedError &GetErrorObject();
 	DUCKDB_API idx_t ColumnCount();
 

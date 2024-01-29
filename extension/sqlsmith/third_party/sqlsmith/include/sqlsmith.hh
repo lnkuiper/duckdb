@@ -16,8 +16,8 @@ struct SQLSmithOptions {
 	bool dump_all_queries = false;
 	bool dump_all_graphs = false;
 	bool verbose_output = false;
-	std::string complete_log;
-	std::string log;
+	duckdb::string complete_log;
+	duckdb::string log;
 };
 
 int32_t run_sqlsmith(duckdb::DatabaseInstance &database, SQLSmithOptions options);

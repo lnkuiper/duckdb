@@ -8,8 +8,8 @@
 
 #pragma once
 
-#include <string>
 #include "duckdb.hpp"
+#include "duckdb/common/string.hpp"
 #include "duckdb/main/extension_entries.hpp"
 
 namespace duckdb {
@@ -39,7 +39,7 @@ class ExtensionHelper {
 public:
 	static void LoadAllExtensions(DuckDB &db);
 
-	static ExtensionLoadResult LoadExtension(DuckDB &db, const std::string &extension);
+	static ExtensionLoadResult LoadExtension(DuckDB &db, const string &extension);
 
 	static void InstallExtension(ClientContext &context, const string &extension, bool force_install,
 	                             const string &respository = "");
@@ -132,7 +132,7 @@ private:
 	static bool CreateSuggestions(const string &extension_name, string &message);
 
 private:
-	static ExtensionLoadResult LoadExtensionInternal(DuckDB &db, const std::string &extension, bool initial_load);
+	static ExtensionLoadResult LoadExtensionInternal(DuckDB &db, const string &extension, bool initial_load);
 };
 
 } // namespace duckdb

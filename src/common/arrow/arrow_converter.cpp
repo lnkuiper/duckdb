@@ -231,7 +231,7 @@ void SetArrowFormat(DuckDBArrowSchemaHolder &root_holder, ArrowSchema &child, co
 		break;
 	}
 	case LogicalTypeId::UNION: {
-		std::string format = "+us:";
+		string format = "+us:";
 
 		auto &child_types = UnionType::CopyMemberTypes(type);
 		child.n_children = child_types.size();

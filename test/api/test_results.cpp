@@ -45,12 +45,12 @@ TEST_CASE("Test iterating over results", "[api]") {
 	REQUIRE_NO_FAIL(con.Query("INSERT INTO data VALUES (1, 'hello'), (2, 'test')"));
 
 	duckdb::vector<int> i_values = {1, 2};
-	duckdb::vector<string> j_values = {"hello", "test"};
+	duckdb::vector<duckdb::string> j_values = {"hello", "test"};
 	idx_t row_count = 0;
 	auto result = con.Query("SELECT * FROM data;");
 	for (auto &row : *result) {
 		REQUIRE(row.GetValue<int>(0) == i_values[row.row]);
-		REQUIRE(row.GetValue<string>(1) == j_values[row.row]);
+		REQUIRE(row.GetValue<duckdb::string>(1) == j_values[row.row]);
 		row_count++;
 	}
 	REQUIRE(row_count == 2);
@@ -70,12 +70,12 @@ TEST_CASE("Test different result types", "[api]") {
 		REQUIRE(row.GetValue<int>(0) == 23);
 		REQUIRE(row.GetValue<int64_t>(0) == 23);
 		REQUIRE(row.GetValue<double>(0) == 23);
-		REQUIRE(row.GetValue<string>(0) == "23");
+		REQUIRE(row.GetValue<duckdb::string>(0) == "23");
 
 		REQUIRE(row.GetValue<int>(1) == 17);
 		REQUIRE(row.GetValue<int64_t>(1) == 17);
 		REQUIRE(row.GetValue<double>(1) == 17.1);
-		REQUIRE(row.GetValue<string>(1) == "17.1");
+		REQUIRE(row.GetValue<duckdb::string>(1) == "17.1");
 
 		REQUIRE(row.GetValue<int>(2) == 94289);
 		REQUIRE(row.GetValue<int64_t>(2) == 94289);
@@ -88,7 +88,7 @@ TEST_CASE("Test different result types", "[api]") {
 		REQUIRE(row.GetValue<int>(4) == 4982412);
 		REQUIRE(row.GetValue<int64_t>(4) == 4982412);
 		REQUIRE(row.GetValue<double>(4) == 4982412);
-		REQUIRE(row.GetValue<string>(4) == "4982412");
+		REQUIRE(row.GetValue<duckdb::string>(4) == "4982412");
 
 		REQUIRE(row.GetValue<int>(5) == 17);
 		REQUIRE(row.GetValue<int64_t>(5) == 17);
@@ -151,7 +151,7 @@ TEST_CASE("Error in streaming result after initial query", "[api][.]") {
 	// create a big table with strings that are numbers
 	REQUIRE_NO_FAIL(con.Query("CREATE TABLE strings(v VARCHAR)"));
 	for (size_t i = 0; i < STANDARD_VECTOR_SIZE * 2 - 1; i++) {
-		REQUIRE_NO_FAIL(con.Query("INSERT INTO strings VALUES ('" + to_string(i) + "')"));
+		REQUIRE_NO_FAIL(con.Query("INSERT INTO strings VALUES ('" + duckdb::to_string(i) + "')"));
 	}
 	// now insert one non-numeric value
 	REQUIRE_NO_FAIL(con.Query("INSERT INTO strings VALUES ('hello')"));
@@ -184,7 +184,7 @@ TEST_CASE("Test UUID", "[api][uuid]") {
 	idx_t row_count = 0;
 	auto result = con.Query("SELECT * FROM uuids");
 	for (auto &row : *result) {
-		auto uuid = row.GetValue<string>(0);
+		auto uuid = row.GetValue<duckdb::string>(0);
 		REQUIRE(uuid == "a0eebc99-9c0b-4ef8-bb6d-6bb9bd380a11");
 		row_count++;
 	}

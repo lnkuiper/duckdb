@@ -33,7 +33,7 @@
 #include <algorithm>
 #include <iosfwd>
 #include <iterator>
-#include <string>
+#include "duckdb/common/string.hpp"
 #if __has_include(<string_view>) && __cplusplus >= 201703L
 #include <string_view>
 #endif
@@ -62,10 +62,10 @@ class StringPiece {
   StringPiece()
       : data_(NULL), size_(0) {}
 #if __has_include(<string_view>) && __cplusplus >= 201703L
-  StringPiece(const std::string_view& str)
+  StringPiece(const duckdb::string_view& str)
       : data_(str.data()), size_(str.size()) {}
 #endif
-  StringPiece(const std::string& str)
+  StringPiece(const duckdb::string& str)
       : data_(str.data()), size_(str.size()) {}
   StringPiece(const char* str)
       : data_(str), size_(str == NULL ? 0 : strlen(str)) {}
@@ -114,8 +114,8 @@ class StringPiece {
     return std::basic_string<char, traits_type, A>(data_, size_);
   }
 
-  std::string as_string() const {
-    return std::string(data_, size_);
+  duckdb::string as_string() const {
+    return duckdb::string(data_, size_);
   }
 
   // We also define ToString() here, since many other string-like
@@ -123,15 +123,15 @@ class StringPiece {
   // "ToString", and it's confusing to have the method that does that
   // for a StringPiece be called "as_string()".  We also leave the
   // "as_string()" method defined here for existing code.
-  std::string ToString() const {
-    return std::string(data_, size_);
+  duckdb::string ToString() const {
+    return duckdb::string(data_, size_);
   }
 
-  void CopyToString(std::string* target) const {
+  void CopyToString(duckdb::string* target) const {
     target->assign(data_, size_);
   }
 
-  void AppendToString(std::string* target) const {
+  void AppendToString(duckdb::string* target) const {
     target->append(data_, size_);
   }
 

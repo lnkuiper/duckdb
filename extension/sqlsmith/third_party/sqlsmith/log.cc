@@ -1,16 +1,14 @@
-#include <iostream>
-#include <sstream>
-
-#include <regex>
-
-#include <string>
-
 #include "log.hh"
-#include "schema.hh"
+
+#include "duckdb/common/string.hpp"
+#include "duckdb/common/vector.hpp"
 #include "impedance.hh"
 #include "random.hh"
+#include "schema.hh"
 
-#include "duckdb/common/vector.hpp"
+#include <iostream>
+#include <regex>
+#include <sstream>
 
 using namespace std;
 
@@ -31,9 +29,10 @@ struct stats_visitor : prod_visitor {
 		duckdb::vector<pair<const char *, long>> report;
 		for (auto p : production_stats)
 			report.push_back(p);
-		stable_sort(
-		    report.begin(), report.end(),
-		    [](const pair<std::string, long> &a, const pair<std::string, long> &b) { return a.second > b.second; });
+		stable_sort(report.begin(), report.end(),
+		            [](const pair<duckdb::string, long> &a, const pair<duckdb::string, long> &b) {
+			            return a.second > b.second;
+		            });
 		for (auto p : report) {
 			cerr << p.second << "\t" << p.first << endl;
 		}
@@ -57,12 +56,13 @@ void cerr_logger::report() {
 	// 	 << 1000.0*query_count/query_time.count() << " exec/s)" << endl;
 	cerr << "AST stats (avg): height = " << sum_height / queries << " nodes = " << sum_nodes / queries << endl;
 
-	duckdb::vector<pair<std::string, long>> report;
+	duckdb::vector<pair<duckdb::string, long>> report;
 	for (auto e : errors) {
 		report.push_back(e);
 	}
-	stable_sort(report.begin(), report.end(),
-	            [](const pair<std::string, long> &a, const pair<std::string, long> &b) { return a.second > b.second; });
+	stable_sort(
+	    report.begin(), report.end(),
+	    [](const pair<duckdb::string, long> &a, const pair<duckdb::string, long> &b) { return a.second > b.second; });
 	long err_count = 0;
 	for (auto e : report) {
 		err_count += e.second;
@@ -89,7 +89,7 @@ void cerr_logger::executed(prod &query) {
 void cerr_logger::error(prod &query, const dut::failure &e) {
 	(void)query;
 	istringstream err(e.what());
-	string line;
+	duckdb::string line;
 
 	if (columns - 1 == (queries % columns)) {
 		cerr << endl;

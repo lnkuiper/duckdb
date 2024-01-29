@@ -12,11 +12,11 @@
 
 namespace duckdb {
 
-static std::string GetNumberFormatString(std::string &format, double num_value) {
+static string GetNumberFormatString(string &format, double num_value) {
 	duckdb_excel::LocaleData locale_data;
 	duckdb_excel::ImpSvNumberInputScan input_scan(&locale_data);
 	uint16_t nCheckPos;
-	std::string out_str;
+	string out_str;
 
 	duckdb_excel::SvNumberformat num_format(format, &locale_data, &input_scan, nCheckPos);
 
@@ -70,7 +70,7 @@ void ExcelExtension::Load(DuckDB &db) {
 	ExtensionUtil::RegisterFunction(db_instance, excel_text_func);
 }
 
-std::string ExcelExtension::Name() {
+string ExcelExtension::Name() {
 	return "excel";
 }
 

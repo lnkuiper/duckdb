@@ -1,19 +1,21 @@
 #define DUCKDB_EXTENSION_MAIN
-#include "duckdb.hpp"
 #include "visualizer_extension.hpp"
-#include "duckdb/parser/parsed_data/create_pragma_function_info.hpp"
+
+#include "duckdb.hpp"
 #include "duckdb/catalog/catalog.hpp"
 #include "duckdb/common/fstream.hpp"
-#include "duckdb/main/extension_util.hpp"
-#include "duckdb/main/query_profiler.hpp"
+#include "duckdb/common/stringstream.hpp"
 #include "duckdb/main/client_context.hpp"
 #include "duckdb/main/client_data.hpp"
+#include "duckdb/main/extension_util.hpp"
+#include "duckdb/main/query_profiler.hpp"
+#include "duckdb/parser/parsed_data/create_pragma_function_info.hpp"
 #include "visualizer_constants.hpp"
 
 namespace duckdb {
 
 static string ToHTML(ClientContext &context, const string &first_json_path, const string &second_json_path) {
-	std::stringstream ss;
+	stringstream ss;
 	ss << "<!DOCTYPE <html>\n";
 	ss << "<style>\n";
 	ss << css;
@@ -32,7 +34,7 @@ static string ToHTML(ClientContext &context, const string &first_json_path, cons
 	if (first_json_path.empty() && !prevProfilers.empty()) {
 		ss << prevProfilers.back().second->ToJSON();
 	} else if (!first_json_path.empty()) {
-		ifstream data_json(first_json_path);
+		ifstream data_json(first_json_path.c_str());
 		ss << data_json.rdbuf();
 		// throw an IO exception if it fails to read the json_file
 		if (data_json.fail()) {
@@ -45,7 +47,7 @@ static string ToHTML(ClientContext &context, const string &first_json_path, cons
 	if (second_json_path.empty()) {
 		ss << "null;";
 	} else if (!second_json_path.empty()) {
-		ifstream data_json(second_json_path);
+		ifstream data_json(second_json_path.c_str());
 		ss << data_json.rdbuf();
 		// throw an IO exception if it fails to read the json_file
 		if (data_json.fail()) {
@@ -63,7 +65,7 @@ static string ToHTML(ClientContext &context, const string &first_json_path, cons
 }
 
 static void WriteToFile(string &path, string info) {
-	ofstream out(path);
+	ofstream out(path.c_str());
 	out << info;
 	out.close();
 	// throw an IO exception if it fails to write to the file
@@ -125,7 +127,7 @@ void VisualizerExtension::Load(DuckDB &db) {
 	                                             {LogicalType::VARCHAR, LogicalType::VARCHAR, LogicalType::VARCHAR}));
 }
 
-std::string VisualizerExtension::Name() {
+string VisualizerExtension::Name() {
 	return "visualizer";
 }
 } // namespace duckdb

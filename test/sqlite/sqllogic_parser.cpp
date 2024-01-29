@@ -9,7 +9,7 @@ namespace duckdb {
 bool SQLLogicParser::OpenFile(const string &path) {
 	this->file_name = path;
 
-	std::ifstream infile(file_name);
+	std::ifstream infile(file_name.c_str());
 	if (infile.bad() || infile.fail()) {
 		return false;
 	}

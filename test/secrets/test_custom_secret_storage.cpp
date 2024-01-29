@@ -1,24 +1,25 @@
 #include "catch.hpp"
-#include "test_helpers.hpp"
 #include "duckdb.hpp"
 #include "duckdb/main/database.hpp"
+#include "duckdb/main/secret/secret.hpp"
 #include "duckdb/main/secret/secret_manager.hpp"
 #include "duckdb/main/secret/secret_storage.hpp"
-#include "duckdb/main/secret/secret.hpp"
+#include "test_helpers.hpp"
 
 using namespace duckdb;
 using namespace std;
 
 struct TestSecretLog {
 	duckdb::mutex lock;
-	duckdb::vector<string> remove_secret_requests;
-	duckdb::vector<string> write_secret_requests;
+	duckdb::vector<duckdb::string> remove_secret_requests;
+	duckdb::vector<duckdb::string> write_secret_requests;
 };
 
 // Demo pluggable secret storage
 class TestSecretStorage : public CatalogSetSecretStorage {
 public:
-	TestSecretStorage(const string &name_p, DatabaseInstance &db, TestSecretLog &logger_p, int64_t tie_break_offset_p)
+	TestSecretStorage(const duckdb::string &name_p, DatabaseInstance &db, TestSecretLog &logger_p,
+	                  int64_t tie_break_offset_p)
 	    : CatalogSetSecretStorage(name_p), tie_break_offset(tie_break_offset_p), logger(logger_p) {
 		secrets = make_uniq<CatalogSet>(Catalog::GetSystemCatalog(db));
 		persistent = true;
@@ -40,7 +41,7 @@ protected:
 		duckdb::lock_guard<duckdb::mutex> lock(logger.lock);
 		logger.write_secret_requests.push_back(secret.GetName());
 	};
-	virtual void RemoveSecret(CatalogTransaction transaction, const string &secret) override {
+	virtual void RemoveSecret(CatalogTransaction transaction, const duckdb::string &secret) override {
 		duckdb::lock_guard<duckdb::mutex> lock(logger.lock);
 		logger.remove_secret_requests.push_back(secret);
 	};

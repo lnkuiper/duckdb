@@ -25,61 +25,61 @@
 #include <map>
 #include <set>
 #include <sstream>
-#include <string>
+#include "duckdb/common/stringstream.hpp"
 #include "duckdb/common/vector.hpp"
 
 namespace duckdb_apache {
 namespace thrift {
 
 template <typename T>
-std::string to_string(const T& t) {
-  std::ostringstream o;
+duckdb::string to_string(const T& t) {
+  duckdb::ostringstream o;
   o << t;
   return o.str();
 }
 
 // TODO: replace the computations below with std::numeric_limits::max_digits10 once C++11
 // is enabled.
-inline std::string to_string(const float& t) {
-  std::ostringstream o;
+inline duckdb::string to_string(const float& t) {
+	duckdb::ostringstream o;
   o.precision(static_cast<std::streamsize>(std::ceil(static_cast<double>(std::numeric_limits<float>::digits * std::log10(2.0f) + 1))));
   o << t;
   return o.str();
 }
 
-inline std::string to_string(const double& t) {
-  std::ostringstream o;
+inline duckdb::string to_string(const double& t) {
+  duckdb::ostringstream o;
   o.precision(static_cast<std::streamsize>(std::ceil(static_cast<double>(std::numeric_limits<double>::digits * std::log10(2.0f) + 1))));
   o << t;
   return o.str();
 }
 
-inline std::string to_string(const long double& t) {
-  std::ostringstream o;
+inline duckdb::string to_string(const long double& t) {
+  duckdb::ostringstream o;
   o.precision(static_cast<std::streamsize>(std::ceil(static_cast<double>(std::numeric_limits<long double>::digits * std::log10(2.0f) + 1))));
   o << t;
   return o.str();
 }
 
 template <typename K, typename V>
-std::string to_string(const std::map<K, V>& m);
+duckdb::string to_string(const std::map<K, V>& m);
 
 template <typename T>
-std::string to_string(const std::set<T>& s);
+duckdb::string to_string(const std::set<T>& s);
 
 template <typename T>
-std::string to_string(const duckdb::vector<T>& t);
+duckdb::string to_string(const duckdb::vector<T>& t);
 
 template <typename K, typename V>
-std::string to_string(const typename std::pair<K, V>& v) {
-  std::ostringstream o;
+duckdb::string to_string(const typename std::pair<K, V>& v) {
+  duckdb::ostringstream o;
   o << to_string(v.first) << ": " << to_string(v.second);
   return o.str();
 }
 
 template <typename T>
-std::string to_string(const T& beg, const T& end) {
-  std::ostringstream o;
+duckdb::string to_string(const T& beg, const T& end) {
+  duckdb::ostringstream o;
   for (T it = beg; it != end; ++it) {
     if (it != beg)
       o << ", ";
@@ -89,22 +89,22 @@ std::string to_string(const T& beg, const T& end) {
 }
 
 template <typename T>
-std::string to_string(const duckdb::vector<T>& t) {
-  std::ostringstream o;
+duckdb::string to_string(const duckdb::vector<T>& t) {
+  duckdb::ostringstream o;
   o << "[" << to_string(t.begin(), t.end()) << "]";
   return o.str();
 }
 
 template <typename K, typename V>
-std::string to_string(const std::map<K, V>& m) {
-  std::ostringstream o;
+duckdb::string to_string(const std::map<K, V>& m) {
+  duckdb::ostringstream o;
   o << "{" << to_string(m.begin(), m.end()) << "}";
   return o.str();
 }
 
 template <typename T>
-std::string to_string(const std::set<T>& s) {
-  std::ostringstream o;
+duckdb::string to_string(const std::set<T>& s) {
+  duckdb::ostringstream o;
   o << "{" << to_string(s.begin(), s.end()) << "}";
   return o.str();
 }

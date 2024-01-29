@@ -23,10 +23,10 @@ namespace skip_list {
 void _throw_exceeds_size(size_t index) {
     std::ostringstream oss;
     oss << "Index out of range 0 <= index < " << index;
-    std::string err_msg = oss.str();
+    duckdb::string err_msg = oss.str();
 #else
 void _throw_exceeds_size(size_t /* index */) {
-    std::string err_msg = "Index out of range.";
+    duckdb::string err_msg = "Index out of range.";
 #endif
     throw IndexError(err_msg);
 }

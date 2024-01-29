@@ -61,13 +61,13 @@ static void ICUTimeZoneFunction(ClientContext &context, TableFunctionInput &data
 		}
 
 		//	The LONG name is the one we looked up
-		std::string utf8;
+		string utf8;
 		long_id->toUTF8String(utf8);
 		output.SetValue(0, index, Value(utf8));
 
 		//	We don't have the zone tree for determining abbreviated names,
 		//	so the SHORT name is the shortest, lexicographically first equivalent TZ without a slash.
-		std::string short_id;
+		string short_id;
 		long_id->toUTF8String(short_id);
 		const auto nIDs = icu::TimeZone::countEquivalentIDs(*long_id);
 		for (int32_t idx = 0; idx < nIDs; ++idx) {

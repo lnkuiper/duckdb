@@ -368,7 +368,7 @@ idx_t DatabaseInstance::NumberOfThreads() {
 	return scheduler->NumberOfThreads();
 }
 
-const unordered_set<std::string> &DatabaseInstance::LoadedExtensions() {
+const unordered_set<string> &DatabaseInstance::LoadedExtensions() {
 	return loaded_extensions;
 }
 
@@ -376,16 +376,16 @@ idx_t DuckDB::NumberOfThreads() {
 	return instance->NumberOfThreads();
 }
 
-bool DatabaseInstance::ExtensionIsLoaded(const std::string &name) {
+bool DatabaseInstance::ExtensionIsLoaded(const string &name) {
 	auto extension_name = ExtensionHelper::GetExtensionName(name);
 	return loaded_extensions.find(extension_name) != loaded_extensions.end();
 }
 
-bool DuckDB::ExtensionIsLoaded(const std::string &name) {
+bool DuckDB::ExtensionIsLoaded(const string &name) {
 	return instance->ExtensionIsLoaded(name);
 }
 
-void DatabaseInstance::SetExtensionLoaded(const std::string &name) {
+void DatabaseInstance::SetExtensionLoaded(const string &name) {
 	auto extension_name = ExtensionHelper::GetExtensionName(name);
 	loaded_extensions.insert(extension_name);
 
@@ -395,7 +395,7 @@ void DatabaseInstance::SetExtensionLoaded(const std::string &name) {
 	}
 }
 
-bool DatabaseInstance::TryGetCurrentSetting(const std::string &key, Value &result) {
+bool DatabaseInstance::TryGetCurrentSetting(const string &key, Value &result) {
 	// check the session values
 	auto &db_config = DBConfig::GetConfig(*this);
 	const auto &global_config_map = db_config.options.set_variables;

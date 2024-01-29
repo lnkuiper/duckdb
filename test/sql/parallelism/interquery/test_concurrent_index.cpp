@@ -3,9 +3,9 @@
 #include "test_helpers.hpp"
 
 #include <atomic>
+#include <random>
 #include <thread>
 #include <vector>
-#include <random>
 
 using namespace duckdb;
 using namespace std;
@@ -20,10 +20,10 @@ static void CreateIntegerTable(Connection *con, int64_t count) {
 	REQUIRE_NO_FAIL(con->Query("CREATE TABLE integers AS SELECT range AS i FROM range ($1)", count));
 }
 
-static void CheckConstraintViolation(const string &result_str) {
-	auto constraint_violation = result_str.find("constraint violation") != string::npos ||
-	                            result_str.find("constraint violated") != string::npos ||
-	                            result_str.find("Conflict on tuple deletion") != string::npos;
+static void CheckConstraintViolation(const duckdb::string &result_str) {
+	auto constraint_violation = result_str.find("constraint violation") != duckdb::string::npos ||
+	                            result_str.find("constraint violated") != duckdb::string::npos ||
+	                            result_str.find("Conflict on tuple deletion") != duckdb::string::npos;
 	if (!constraint_violation) {
 		FAIL(result_str);
 	}
@@ -34,7 +34,7 @@ static void ReadFromIntegers(DuckDB *db, idx_t thread_idx) {
 	Connection con(*db);
 	while (!concurrent_index_finished) {
 
-		auto expected_value = to_string(thread_idx * 10000);
+		auto expected_value = duckdb::to_string(thread_idx * 10000);
 		auto result = con.Query("SELECT i FROM integers WHERE i = " + expected_value);
 		REQUIRE_NO_FAIL(*result);
 		REQUIRE(CHECK_COLUMN(result, 0, {Value::INTEGER(thread_idx * 10000)}));
@@ -214,8 +214,8 @@ static void MixUpdatePK(DuckDB *db, idx_t thread_idx) {
 		idx_t old_value = distribution(gen);
 		idx_t new_value = 100 + distribution(gen);
 
-		auto result =
-		    con.Query("UPDATE integers SET i =" + to_string(new_value) + " WHERE i = " + to_string(old_value));
+		auto result = con.Query("UPDATE integers SET i =" + duckdb::to_string(new_value) +
+		                        " WHERE i = " + duckdb::to_string(old_value));
 		if (result->HasError()) {
 			CheckConstraintViolation(result->ToString());
 		}

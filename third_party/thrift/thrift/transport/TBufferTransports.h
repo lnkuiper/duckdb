@@ -305,17 +305,17 @@ public:
     *sz = static_cast<uint32_t>(wBase_ - rBase_);
   }
 
-  std::string getBufferAsString() {
+  duckdb::string getBufferAsString() {
     if (buffer_ == nullptr) {
       return "";
     }
     uint8_t* buf;
     uint32_t sz;
     getBuffer(&buf, &sz);
-    return std::string((char*)buf, (std::string::size_type)sz);
+    return duckdb::string((char*)buf, (duckdb::string::size_type)sz);
   }
 
-  void appendBufferToString(std::string& str) {
+  void appendBufferToString(duckdb::string& str) {
     if (buffer_ == nullptr) {
       return;
     }
@@ -366,13 +366,13 @@ public:
     // Our old self gets destroyed.
   }
 
-  std::string readAsString(uint32_t len) {
-    std::string str;
+  duckdb::string readAsString(uint32_t len) {
+    duckdb::string str;
     (void)readAppendToString(str, len);
     return str;
   }
 
-  uint32_t readAppendToString(std::string& str, uint32_t len);
+  uint32_t readAppendToString(duckdb::string& str, uint32_t len);
 
   // return number of bytes read
   uint32_t readEnd() override {

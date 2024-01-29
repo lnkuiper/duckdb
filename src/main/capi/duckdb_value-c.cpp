@@ -22,7 +22,7 @@ void duckdb_destroy_value(duckdb_value *value) {
 }
 
 duckdb_value duckdb_create_varchar_length(const char *text, idx_t length) {
-	return reinterpret_cast<duckdb_value>(new duckdb::Value(std::string(text, length)));
+	return reinterpret_cast<duckdb_value>(new duckdb::Value(duckdb::string(text, length)));
 }
 
 duckdb_value duckdb_create_varchar(const char *text) {

@@ -593,7 +593,7 @@ void HTTPFileHandle::Initialize(FileOpener *opener) {
 				}
 				auto range_find = range_res->headers["Content-Range"].find("/");
 
-				if (range_find == std::string::npos || range_res->headers["Content-Range"].size() < range_find + 1) {
+				if (range_find == string::npos || range_res->headers["Content-Range"].size() < range_find + 1) {
 					throw IOException("Unknown Content-Range Header \"The value of Content-Range Header\":  (%s)",
 					                  range_res->headers["Content-Range"]);
 				}
@@ -622,9 +622,9 @@ void HTTPFileHandle::Initialize(FileOpener *opener) {
 	} else {
 		try {
 			if (res->headers.find("Content-Range") == res->headers.end() || res->headers["Content-Range"].empty()) {
-				length = std::stoll(res->headers["Content-Length"]);
+				length = stoll(res->headers["Content-Length"]);
 			} else {
-				length = std::stoll(range_length);
+				length = stoll(range_length);
 			}
 		} catch (std::invalid_argument &e) {
 			throw IOException("Invalid Content-Length header received: %s", res->headers["Content-Length"]);

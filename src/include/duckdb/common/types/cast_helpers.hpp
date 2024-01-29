@@ -75,8 +75,8 @@ public:
 	}
 
 	template <class T>
-	static std::string ToString(T value) {
-		return std::to_string(value);
+	static string ToString(T value) {
+		return to_string(value);
 	}
 };
 
@@ -90,10 +90,10 @@ template <>
 int NumericHelper::UnsignedLength(uint64_t value);
 
 template <>
-std::string NumericHelper::ToString(hugeint_t value);
+string NumericHelper::ToString(hugeint_t value);
 
 template <>
-std::string NumericHelper::ToString(uhugeint_t value);
+string NumericHelper::ToString(uhugeint_t value);
 
 struct DecimalToString {
 	template <class SIGNED, class UNSIGNED>
@@ -351,7 +351,7 @@ struct HugeintToStringCast {
 
 struct UhugeintToStringCast {
 	static string_t Format(uhugeint_t value, Vector &vector) {
-		std::string str = value.ToString();
+		string str = value.ToString();
 		string_t result = StringVector::EmptyString(vector, str.length());
 		auto data = result.GetDataWriteable();
 

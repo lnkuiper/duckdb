@@ -20,8 +20,8 @@
 #ifndef _DUCKDB_THRIFT_TRANSPORT_TTRANSPORTEXCEPTION_H_
 #define _DUCKDB_THRIFT_TRANSPORT_TTRANSPORTEXCEPTION_H_ 1
 
-#include <string>
 #include "thrift/Thrift.h"
+#include "duckdb/common/string.hpp"
 
 namespace duckdb_apache {
 namespace thrift {
@@ -55,13 +55,13 @@ public:
 
   TTransportException(TTransportExceptionType type) : duckdb_apache::thrift::TException(), type_(type) {}
 
-  TTransportException(const std::string& message)
+  TTransportException(const duckdb::string& message)
     : duckdb_apache::thrift::TException(message), type_(UNKNOWN) {}
 
-  TTransportException(TTransportExceptionType type, const std::string& message)
+  TTransportException(TTransportExceptionType type, const duckdb::string& message)
     : duckdb_apache::thrift::TException(message), type_(type) {}
 
-  TTransportException(TTransportExceptionType type, const std::string& message, int errno_copy)
+  TTransportException(TTransportExceptionType type, const duckdb::string& message, int errno_copy)
     : duckdb_apache::thrift::TException(message), type_(type) {}
 
   ~TTransportException() noexcept override = default;
@@ -78,7 +78,7 @@ public:
 
 protected:
   /** Just like strerror_r but returns a C++ string object. */
-  std::string strerror_s(int errno_copy);
+  duckdb::string strerror_s(int errno_copy);
 
   /** Error code */
   TTransportExceptionType type_;

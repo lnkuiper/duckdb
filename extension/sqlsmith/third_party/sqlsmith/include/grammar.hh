@@ -76,7 +76,7 @@ struct join_cond : prod {
 };
 
 struct simple_join_cond : join_cond {
-	std::string condition;
+	duckdb::string condition;
 	simple_join_cond(prod *p, table_ref &lhs, table_ref &rhs);
 	virtual ~simple_join_cond() {
 	}
@@ -99,9 +99,9 @@ struct expr_join_cond : join_cond {
 struct joined_table : table_ref {
 	virtual void out(std::ostream &out);
 	joined_table(prod *p);
-	std::string type;
-	std::string alias;
-	virtual std::string ident() {
+	duckdb::string type;
+	duckdb::string alias;
+	virtual duckdb::string ident() {
 		return alias;
 	}
 	shared_ptr<table_ref> lhs;
@@ -146,11 +146,11 @@ struct select_list : prod {
 };
 
 struct query_spec : prod {
-	std::string set_quantifier;
+	duckdb::string set_quantifier;
 	shared_ptr<struct from_clause> from_clause;
 	shared_ptr<struct select_list> select_list;
 	shared_ptr<bool_expr> search;
-	std::string limit_clause;
+	duckdb::string limit_clause;
 	struct scope myscope;
 	virtual void out(std::ostream &out);
 	query_spec(prod *p, struct scope *s, bool lateral = 0);

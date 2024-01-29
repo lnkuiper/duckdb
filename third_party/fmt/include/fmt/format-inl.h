@@ -159,7 +159,7 @@ FMT_FUNC void report_error(format_func func, int error_code,
 }  // namespace internal
 
 template <typename Char>
-FMT_FUNC std::string internal::grouping_impl(locale_ref) {
+FMT_FUNC duckdb::string internal::grouping_impl(locale_ref) {
   return "\03";
 }
 template <typename Char>
@@ -1172,7 +1172,7 @@ template <> struct formatter<internal::bigint> {
   }
 };
 
-FMT_FUNC void internal::error_handler::on_error(std::string message) {
+FMT_FUNC void internal::error_handler::on_error(duckdb::string message) {
   FMT_THROW(duckdb::Exception(message));
 }
 

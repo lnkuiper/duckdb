@@ -77,10 +77,10 @@ WHERE NOT(has_side_effects)
     )");
 
 	for (auto &row : *query_result) {
-		auto function_name = row.GetValue<string>(0);
+		auto function_name = row.GetValue<duckdb::string>(0);
 		auto parameter_types = row.GetValue<Value>(1);
-		auto return_type = row.GetValue<string>(2);
-		auto function_type = row.GetValue<string>(3);
+		auto return_type = row.GetValue<duckdb::string>(2);
+		auto function_type = row.GetValue<duckdb::string>(3);
 		auto &params = ListValue::GetChildren(parameter_types);
 		if (function_type == "scalar") {
 			// check if this is an operator or a function
@@ -153,7 +153,7 @@ void sleep_thread(Connection *connection) {
 	}
 }
 
-void dut_duckdb::test(const std::string &stmt) {
+void dut_duckdb::test(const duckdb::string &stmt) {
 	is_active = true;
 	thread interrupt_thread(sleep_thread, connection.get());
 	auto result = connection->Query(stmt);

@@ -137,7 +137,7 @@ int32_t run_sqlsmith(duckdb::DatabaseInstance &database, SQLSmithOptions opt) {
 		bool has_log = !opt.log.empty();
 		ofstream complete_log;
 		if (has_complete_log) {
-			complete_log.open(opt.complete_log);
+			complete_log.open(opt.complete_log.c_str());
 		}
 		while (1) /* Loop to recover connection loss */
 		{
@@ -156,7 +156,7 @@ int32_t run_sqlsmith(duckdb::DatabaseInstance &database, SQLSmithOptions opt) {
 					l->generated(*gen);
 
 				/* Generate SQL from AST */
-				ostringstream s;
+				duckdb::ostringstream s;
 				gen->out(s);
 
 				// write the query to the complete log that has all the
@@ -169,7 +169,7 @@ int32_t run_sqlsmith(duckdb::DatabaseInstance &database, SQLSmithOptions opt) {
 				// write the last-executed query to a separate log file
 				if (has_log) {
 					ofstream out_file;
-					out_file.open(opt.log);
+					out_file.open(opt.log.c_str());
 					out_file << s.str() << ";" << endl;
 					out_file.close();
 				}

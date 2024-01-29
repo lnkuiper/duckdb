@@ -64,7 +64,7 @@ void JsonExtension::Load(DuckDB &db) {
 	}
 }
 
-std::string JsonExtension::Name() {
+string JsonExtension::Name() {
 	return "json";
 }
 

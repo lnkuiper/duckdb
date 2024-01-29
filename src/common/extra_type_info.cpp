@@ -155,7 +155,7 @@ PhysicalType EnumTypeInfo::DictType(idx_t size) {
 	} else if (size <= NumericLimits<uint32_t>::Maximum()) {
 		return PhysicalType::UINT32;
 	} else {
-		throw InternalException("Enum size must be lower than " + std::to_string(NumericLimits<uint32_t>::Maximum()));
+		throw InternalException("Enum size must be lower than " + to_string(NumericLimits<uint32_t>::Maximum()));
 	}
 }
 

@@ -65,7 +65,7 @@ void Prog::Inst::InitFail() {
   set_opcode(kInstFail);
 }
 
-std::string Prog::Inst::Dump() {
+duckdb::string Prog::Inst::Dump() {
   switch (opcode()) {
     default:
       return StringPrintf("opcode %d", static_cast<int>(opcode()));
@@ -129,8 +129,8 @@ static inline void AddToQueue(Workq* q, int id) {
     q->insert(id);
 }
 
-static std::string ProgToString(Prog* prog, Workq* q) {
-  std::string s;
+static duckdb::string ProgToString(Prog* prog, Workq* q) {
+  duckdb::string s;
   for (Workq::iterator i = q->begin(); i != q->end(); ++i) {
     int id = *i;
     Prog::Inst* ip = prog->inst(id);
@@ -142,8 +142,8 @@ static std::string ProgToString(Prog* prog, Workq* q) {
   return s;
 }
 
-static std::string FlattenedProgToString(Prog* prog, int start) {
-  std::string s;
+static duckdb::string FlattenedProgToString(Prog* prog, int start) {
+  duckdb::string s;
   for (int id = start; id < prog->size(); id++) {
     Prog::Inst* ip = prog->inst(id);
     if (ip->last())
@@ -154,7 +154,7 @@ static std::string FlattenedProgToString(Prog* prog, int start) {
   return s;
 }
 
-std::string Prog::Dump() {
+duckdb::string Prog::Dump() {
   if (did_flatten_)
     return FlattenedProgToString(this, start_);
 
@@ -163,7 +163,7 @@ std::string Prog::Dump() {
   return ProgToString(this, &q);
 }
 
-std::string Prog::DumpUnanchored() {
+duckdb::string Prog::DumpUnanchored() {
   if (did_flatten_)
     return FlattenedProgToString(this, start_unanchored_);
 
@@ -172,8 +172,8 @@ std::string Prog::DumpUnanchored() {
   return ProgToString(this, &q);
 }
 
-std::string Prog::DumpByteMap() {
-  std::string map;
+duckdb::string Prog::DumpByteMap() {
+  duckdb::string map;
   for (int c = 0; c < 256; c++) {
     int b = bytemap_[c];
     int lo = c;

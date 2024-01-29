@@ -1,5 +1,6 @@
 #include "catch.hpp"
 #include "duckdb.hpp"
+#include "duckdb/common/string.hpp"
 #include "duckdb/common/string_util.hpp"
 #include "duckdb/main/extension/generated_extension_loader.hpp"
 #include "duckdb/parser/parser.hpp"
@@ -7,7 +8,6 @@
 #include "test_helpers.hpp"
 
 #include <functional>
-#include <string>
 #include <vector>
 
 using namespace duckdb;
@@ -15,9 +15,9 @@ using namespace std;
 
 // code below traverses the test directory and makes individual test cases out
 // of each script
-static void listFiles(FileSystem &fs, const string &path, std::function<void(const string &)> cb) {
-	fs.ListFiles(path, [&](string fname, bool is_dir) {
-		string full_path = fs.JoinPath(path, fname);
+static void listFiles(FileSystem &fs, const duckdb::string &path, std::function<void(const duckdb::string &)> cb) {
+	fs.ListFiles(path, [&](duckdb::string fname, bool is_dir) {
+		duckdb::string full_path = fs.JoinPath(path, fname);
 		if (is_dir) {
 			// recurse into directory
 			listFiles(fs, full_path, cb);
@@ -27,7 +27,7 @@ static void listFiles(FileSystem &fs, const string &path, std::function<void(con
 	});
 }
 
-static bool endsWith(const string &mainStr, const string &toMatch) {
+static bool endsWith(const duckdb::string &mainStr, const duckdb::string &toMatch) {
 	return (mainStr.size() >= toMatch.size() &&
 	        mainStr.compare(mainStr.size() - toMatch.size(), toMatch.size(), toMatch) == 0);
 }
@@ -36,9 +36,9 @@ template <bool VERIFICATION, bool AUTO_SWITCH_TEST_DIR = false>
 static void testRunner() {
 	// this is an ugly hack that uses the test case name to pass the script file
 	// name if someone has a better idea...
-	auto name = Catch::getResultCapture().getCurrentTestName();
+	duckdb::string name = Catch::getResultCapture().getCurrentTestName().c_str();
 	// fprintf(stderr, "%s\n", name.c_str());
-	string initial_dbpath;
+	duckdb::string initial_dbpath;
 	if (TestForceStorage()) {
 		auto storage_name = StringUtil::Replace(name, "/", "_");
 		storage_name = StringUtil::Replace(storage_name, ".", "_");
@@ -49,7 +49,7 @@ static void testRunner() {
 	runner.output_sql = Catch::getCurrentContext().getConfig()->outputSQL();
 	runner.enable_verification = VERIFICATION;
 
-	string prev_directory;
+	duckdb::string prev_directory;
 
 	// We assume the test working dir for extensions to be one dir above the test/sql. Note that this is very hacky.
 	// however for now it suffices: we use it to run tests from out-of-tree extensions that are based on the extension
@@ -65,18 +65,18 @@ static void testRunner() {
 		auto test_working_dir = name.substr(0, found);
 
 		// Parse the test dir automatically
-		TestChangeDirectory(test_working_dir);
+		TestChangeDirectory(test_working_dir.c_str());
 	}
 
-	runner.ExecuteFile(name);
+	runner.ExecuteFile(name.c_str());
 
 	if (AUTO_SWITCH_TEST_DIR) {
 		TestChangeDirectory(prev_directory);
 	}
 }
 
-static string ParseGroupFromPath(string file) {
-	string extension = "";
+static duckdb::string ParseGroupFromPath(duckdb::string file) {
+	duckdb::string extension = "";
 	if (file.find(".test_slow") != std::string::npos) {
 		// "slow" in the name indicates a slow test (i.e. only run as part of allunit)
 		extension = "[.]";
@@ -189,16 +189,17 @@ void RegisterSqllogictests() {
 				}
 			}
 			if (enable_verification) {
-				REGISTER_TEST_CASE(testRunner<true>, StringUtil::Replace(path, "\\", "/"), "[sqlitelogic][.]");
+				REGISTER_TEST_CASE(testRunner<true>, StringUtil::Replace(path, "\\", "/").c_str(), "[sqlitelogic][.]");
 			} else {
-				REGISTER_TEST_CASE(testRunner<false>, StringUtil::Replace(path, "\\", "/"), "[sqlitelogic][.]");
+				REGISTER_TEST_CASE(testRunner<false>, StringUtil::Replace(path, "\\", "/").c_str(), "[sqlitelogic][.]");
 			}
 		}
 	});
 	listFiles(*fs, "test", [&](const string &path) {
 		if (endsWith(path, ".test") || endsWith(path, ".test_slow") || endsWith(path, ".test_coverage")) {
 			// parse the name / group from the test
-			REGISTER_TEST_CASE(testRunner<false>, StringUtil::Replace(path, "\\", "/"), ParseGroupFromPath(path));
+			REGISTER_TEST_CASE(testRunner<false>, StringUtil::Replace(path, "\\", "/").c_str(),
+			                   ParseGroupFromPath(path).c_str());
 		}
 	});
 
@@ -207,7 +208,7 @@ void RegisterSqllogictests() {
 		listFiles(*fs, extension_test_path, [&](const string &path) {
 			if (endsWith(path, ".test") || endsWith(path, ".test_slow") || endsWith(path, ".test_coverage")) {
 				auto fun = testRunner<false, true>;
-				REGISTER_TEST_CASE(fun, StringUtil::Replace(path, "\\", "/"), ParseGroupFromPath(path));
+				REGISTER_TEST_CASE(fun, StringUtil::Replace(path, "\\", "/").c_str(), ParseGroupFromPath(path).c_str());
 			}
 		});
 	}

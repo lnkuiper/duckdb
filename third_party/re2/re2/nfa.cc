@@ -27,7 +27,7 @@
 #include <stdio.h>
 #include <string.h>
 #include <algorithm>
-#include <string>
+#include "duckdb/common/string.hpp"
 #include <utility>
 #include <vector>
 
@@ -103,7 +103,7 @@ class NFA {
            const char* p);
 
   // Returns text version of capture information, for debugging.
-  std::string FormatCapture(const char** capture);
+  duckdb::string FormatCapture(const char** capture);
 
   inline void CopyCapture(const char** dst, const char** src);
 
@@ -415,8 +415,8 @@ int NFA::Step(Threadq* runq, Threadq* nextq, int c, const StringPiece& context,
   return 0;
 }
 
-std::string NFA::FormatCapture(const char** capture) {
-  std::string s;
+duckdb::string NFA::FormatCapture(const char** capture) {
+  duckdb::string s;
   for (int i = 0; i < ncapture_; i+=2) {
     if (capture[i] == NULL)
       StringAppendF(&s, "(?,?)");

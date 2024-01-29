@@ -29,7 +29,7 @@ struct OptionValueSet {
 	OptionValueSet(Value input, Value output) {
 		pairs.emplace_back(std::move(input), std::move(output));
 	}
-	OptionValueSet(duckdb::vector<std::string> pairs_p) {
+	OptionValueSet(duckdb::vector<duckdb::string> pairs_p) {
 		for (auto &pair : pairs_p) {
 			pairs.emplace_back(pair);
 		}
@@ -43,8 +43,8 @@ struct OptionValueSet {
 void RequireValueEqual(ConfigurationOption *op, const Value &left, const Value &right, int line);
 #define REQUIRE_VALUE_EQUAL(op, lhs, rhs) RequireValueEqual(op, lhs, rhs, __LINE__)
 
-OptionValueSet &GetValueForOption(const string &name) {
-	static duckdb::unordered_map<string, OptionValueSet> value_map = {
+OptionValueSet &GetValueForOption(const duckdb::string &name) {
+	static duckdb::unordered_map<duckdb::string, OptionValueSet> value_map = {
 	    {"threads", {Value::BIGINT(42), Value::BIGINT(42)}},
 	    {"checkpoint_threshold", {"4.0 GiB"}},
 	    {"debug_checkpoint_abort", {{"none", "before_truncate", "before_header", "after_free_list_write"}}},
@@ -113,8 +113,8 @@ OptionValueSet &GetValueForOption(const string &name) {
 	return value_map[name];
 }
 
-bool OptionIsExcludedFromTest(const string &name) {
-	static unordered_set<string> excluded_options = {
+bool OptionIsExcludedFromTest(const duckdb::string &name) {
+	static unordered_set<duckdb::string> excluded_options = {
 	    "access_mode",
 	    "schema",
 	    "search_path",
@@ -177,7 +177,7 @@ TEST_CASE("Test RESET statement for ClientConfig options", "[api]") {
 		auto &value_set = GetValueForOption(option.name);
 		// verify that at least one value is different
 		bool any_different = false;
-		string options;
+		duckdb::string options;
 		for (auto &value_pair : value_set.pairs) {
 			if (!ValueEqual(original_value, value_pair.output)) {
 				any_different = true;

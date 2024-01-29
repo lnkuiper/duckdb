@@ -32,7 +32,7 @@ string FilenamePattern::CreateFilename(FileSystem &fs, const string &path, const
 	if (_uuid) {
 		replacement = UUID::ToString(UUID::GenerateRandomUUID());
 	} else {
-		replacement = std::to_string(offset);
+		replacement = to_string(offset);
 	}
 	result.insert(_pos, replacement);
 	return fs.JoinPath(path, result + "." + extension);

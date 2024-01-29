@@ -59,13 +59,13 @@ duckdb::string_t StringCast::Operation(uint64_t input, Vector &vector) {
 
 template <>
 string_t StringCast::Operation(float input, Vector &vector) {
-	std::string s = duckdb_fmt::format("{}", input);
+	string s = duckdb_fmt::format("{}", input);
 	return StringVector::AddString(vector, s);
 }
 
 template <>
 string_t StringCast::Operation(double input, Vector &vector) {
-	std::string s = duckdb_fmt::format("{}", input);
+	string s = duckdb_fmt::format("{}", input);
 	return StringVector::AddString(vector, s);
 }
 

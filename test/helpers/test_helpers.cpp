@@ -168,13 +168,13 @@ string GetCSVPath() {
 }
 
 void WriteCSV(string path, const char *csv) {
-	ofstream csv_writer(path);
+	ofstream csv_writer(path.c_str());
 	csv_writer << csv;
 	csv_writer.close();
 }
 
 void WriteBinary(string path, const uint8_t *data, uint64_t length) {
-	ofstream binary_writer(path, ios::binary);
+	ofstream binary_writer(path.c_str(), ios::binary);
 	binary_writer.write((const char *)data, length);
 	binary_writer.close();
 }
@@ -313,7 +313,7 @@ bool compare_result(string csv, ColumnDataCollection &collection, vector<Logical
 
 	// create the csv on disk
 	auto csv_path = TestCreatePath("__test_csv_path.csv");
-	ofstream f(csv_path);
+	ofstream f(csv_path.c_str());
 	f << csv;
 	f.close();
 

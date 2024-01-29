@@ -1,16 +1,14 @@
 #define DUCKDB_EXTENSION_MAIN
 
+#include "inet_extension.hpp"
+
 #include "duckdb.hpp"
 #include "duckdb/common/exception.hpp"
-#include "duckdb/common/string_util.hpp"
 #include "duckdb/common/pair.hpp"
-#include "duckdb/main/extension_util.hpp"
 #include "duckdb/function/scalar_function.hpp"
-#include "duckdb/parser/parsed_data/create_type_info.hpp"
+#include "duckdb/main/extension_util.hpp"
 #include "duckdb/parser/parsed_data/create_scalar_function_info.hpp"
-#include "duckdb/catalog/catalog.hpp"
-#include "duckdb/main/config.hpp"
-#include "inet_extension.hpp"
+#include "duckdb/parser/parsed_data/create_type_info.hpp"
 #include "inet_functions.hpp"
 
 namespace duckdb {
@@ -42,7 +40,7 @@ void InetExtension::Load(DuckDB &db) {
 	ExtensionUtil::AddFunctionOverload(*db.instance, substract_fun);
 }
 
-std::string InetExtension::Name() {
+string InetExtension::Name() {
 	return "inet";
 }
 

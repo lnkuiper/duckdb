@@ -9,8 +9,7 @@
 #pragma once
 
 #include "duckdb/common/adbc/adbc.h"
-
-#include <string>
+#include "duckdb/common/string.hpp"
 
 namespace duckdb_adbc {
 
@@ -89,5 +88,5 @@ void InitializeADBCError(AdbcError *error);
 } // namespace duckdb_adbc
 
 //! This method should only be called when the string is guaranteed to not be NULL
-void SetError(struct AdbcError *error, const std::string &message);
+void SetError(struct AdbcError *error, const duckdb::string &message);
 // void SetError(struct AdbcError *error, const char *message);

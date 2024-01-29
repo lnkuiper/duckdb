@@ -21,7 +21,7 @@
 // indices of strings that were found in the text to get the actual
 // regexp matches.
 
-#include <string>
+#include "duckdb/common/string.hpp"
 #include <vector>
 
 #include "re2/re2.h"
@@ -49,7 +49,7 @@ class FilteredRE2 {
   // the search text should be lowercased first to find matching
   // strings from the set of strings returned by Compile.  Call after
   // all Add calls are done.
-  void Compile(std::vector<std::string>* strings_to_match);
+  void Compile(std::vector<duckdb::string>* strings_to_match);
 
   // Returns the index of the first matching regexp.
   // Returns -1 on no match. Can be called prior to Compile.

@@ -2,13 +2,13 @@
 
 #include "append_info-c.hpp"
 #include "dsdgen_helpers.hpp"
+#include "dsdgen_schema.hpp"
 #include "duckdb/common/exception.hpp"
 #include "duckdb/common/types/data_chunk.hpp"
 #include "duckdb/main/client_context.hpp"
+#include "duckdb/parser/constraints/unique_constraint.hpp"
 #include "duckdb/storage/data_table.hpp"
 #include "tpcds_constants.hpp"
-#include "dsdgen_schema.hpp"
-#include "duckdb/parser/constraints/unique_constraint.hpp"
 
 #include <cassert>
 
@@ -18,8 +18,8 @@ using namespace std;
 namespace tpcds {
 
 template <class T>
-static void CreateTPCDSTable(ClientContext &context, string catalog_name, string schema, string suffix, bool keys,
-                             bool overwrite) {
+static void CreateTPCDSTable(ClientContext &context, duckdb::string catalog_name, duckdb::string schema,
+                             duckdb::string suffix, bool keys, bool overwrite) {
 	auto info = make_uniq<CreateTableInfo>();
 	info->catalog = catalog_name;
 	info->schema = schema;
@@ -30,7 +30,7 @@ static void CreateTPCDSTable(ClientContext &context, string catalog_name, string
 		info->columns.AddColumn(ColumnDefinition(T::Columns[i], T::Types[i]));
 	}
 	if (keys) {
-		duckdb::vector<string> pk_columns;
+		duckdb::vector<duckdb::string> pk_columns;
 		for (idx_t i = 0; i < T::PrimaryKeyCount; i++) {
 			pk_columns.push_back(T::PrimaryKeyColumns[i]);
 		}
@@ -40,8 +40,8 @@ static void CreateTPCDSTable(ClientContext &context, string catalog_name, string
 	catalog.CreateTable(context, std::move(info));
 }
 
-void DSDGenWrapper::CreateTPCDSSchema(ClientContext &context, string catalog, string schema, string suffix, bool keys,
-                                      bool overwrite) {
+void DSDGenWrapper::CreateTPCDSSchema(ClientContext &context, duckdb::string catalog, duckdb::string schema,
+                                      duckdb::string suffix, bool keys, bool overwrite) {
 	CreateTPCDSTable<CallCenterInfo>(context, catalog, schema, suffix, keys, overwrite);
 	CreateTPCDSTable<CatalogPageInfo>(context, catalog, schema, suffix, keys, overwrite);
 	CreateTPCDSTable<CatalogReturnsInfo>(context, catalog, schema, suffix, keys, overwrite);
@@ -68,7 +68,8 @@ void DSDGenWrapper::CreateTPCDSSchema(ClientContext &context, string catalog, st
 	CreateTPCDSTable<WebSiteInfo>(context, catalog, schema, suffix, keys, overwrite);
 }
 
-void DSDGenWrapper::DSDGen(double scale, ClientContext &context, string catalog_name, string schema, string suffix) {
+void DSDGenWrapper::DSDGen(double scale, ClientContext &context, duckdb::string catalog_name, duckdb::string schema,
+                           duckdb::string suffix) {
 	if (scale <= 0) {
 		// schema only
 		return;
@@ -136,14 +137,14 @@ uint32_t DSDGenWrapper::QueriesCount() {
 	return TPCDS_QUERIES_COUNT;
 }
 
-string DSDGenWrapper::GetQuery(int query) {
+duckdb::string DSDGenWrapper::GetQuery(int query) {
 	if (query <= 0 || query > TPCDS_QUERIES_COUNT) {
 		throw SyntaxException("Out of range TPC-DS query number %d", query);
 	}
 	return TPCDS_QUERIES[query - 1];
 }
 
-string DSDGenWrapper::GetAnswer(double sf, int query) {
+duckdb::string DSDGenWrapper::GetAnswer(double sf, int query) {
 	if (query <= 0 || query > TPCDS_QUERIES_COUNT) {
 		throw SyntaxException("Out of range TPC-DS query number %d", query);
 	}

@@ -178,7 +178,7 @@ unique_ptr<QueryNode> Transformer::TransformPivotStatement(duckdb_libpgquery::PG
 		if (col.pivot_expressions.size() != 1) {
 			throw InternalException("PIVOT statement with multiple names in pivot entry!?");
 		}
-		auto enum_name = "__pivot_enum_" + std::to_string(pivot_idx) + "_" + std::to_string(c);
+		auto enum_name = "__pivot_enum_" + to_string(pivot_idx) + "_" + to_string(c);
 
 		auto new_select = make_uniq<SelectNode>();
 		ExtractCTEsRecursive(new_select->cte_map);

@@ -23,7 +23,7 @@ static unique_ptr<FunctionData> RepeatRowBind(ClientContext &context, TableFunct
 	auto &inputs = input.inputs;
 	for (idx_t input_idx = 0; input_idx < inputs.size(); input_idx++) {
 		return_types.push_back(inputs[input_idx].type());
-		names.push_back("column" + std::to_string(input_idx));
+		names.push_back("column" + to_string(input_idx));
 	}
 	auto entry = input.named_parameters.find("num_rows");
 	if (entry == input.named_parameters.end()) {

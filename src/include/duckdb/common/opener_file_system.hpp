@@ -114,7 +114,7 @@ public:
 		return GetFileSystem().Glob(path, GetOpener().get());
 	}
 
-	std::string GetName() const override {
+	string GetName() const override {
 		return "OpenerFileSystem - " + GetFileSystem().GetName();
 	}
 };

@@ -378,7 +378,7 @@ void SQLLogicTestRunner::ExecuteFile(string script) {
 				parser.Fail("hash-threshold requires a parameter");
 			}
 			try {
-				hash_threshold = std::stoi(token.parameters[0]);
+				hash_threshold = stoi(token.parameters[0]);
 			} catch (...) {
 				parser.Fail("hash-threshold must be a number");
 			}
@@ -524,7 +524,7 @@ void SQLLogicTestRunner::ExecuteFile(string script) {
 					parser.Fail("require vector_size requires a parameter");
 				}
 				// require a specific vector size
-				auto required_vector_size = std::stoi(token.parameters[1]);
+				auto required_vector_size = stoi(token.parameters[1]);
 				if (STANDARD_VECTOR_SIZE < required_vector_size) {
 					// vector size is too low for this test: skip it
 					return;

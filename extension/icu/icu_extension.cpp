@@ -200,7 +200,7 @@ static void ICUCalendarFunction(ClientContext &context, TableFunctionInput &data
 		}
 
 		//	The calendar name is all we have
-		std::string utf8;
+		string utf8;
 		calendar->toUTF8String(utf8);
 		output.SetValue(0, index, Value(utf8));
 
@@ -249,7 +249,7 @@ void IcuExtension::Load(DuckDB &ddb) {
 	auto &config = DBConfig::GetConfig(db);
 	duckdb::unique_ptr<icu::TimeZone> tz(icu::TimeZone::createDefault());
 	icu::UnicodeString tz_id;
-	std::string tz_string;
+	string tz_string;
 	tz->getID(tz_id).toUTF8String(tz_string);
 	config.AddExtensionOption("TimeZone", "The current time zone", LogicalType::VARCHAR, Value(tz_string),
 	                          SetICUTimeZone);
@@ -275,7 +275,7 @@ void IcuExtension::Load(DuckDB &ddb) {
 	ExtensionUtil::RegisterFunction(db, cal_names);
 }
 
-std::string IcuExtension::Name() {
+string IcuExtension::Name() {
 	return "icu";
 }
 

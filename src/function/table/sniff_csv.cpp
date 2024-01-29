@@ -1,13 +1,14 @@
-#include "duckdb/function/built_in_functions.hpp"
-#include "duckdb/execution/operator/csv_scanner/options/csv_reader_options.hpp"
+#include "duckdb/common/stringstream.hpp"
 #include "duckdb/common/types/data_chunk.hpp"
-#include "duckdb/execution/operator/csv_scanner/sniffer/csv_sniffer.hpp"
 #include "duckdb/execution/operator/csv_scanner/buffer_manager/csv_buffer_manager.hpp"
+#include "duckdb/execution/operator/csv_scanner/buffer_manager/csv_file_handle.hpp"
+#include "duckdb/execution/operator/csv_scanner/options/csv_reader_options.hpp"
+#include "duckdb/execution/operator/csv_scanner/sniffer/csv_sniffer.hpp"
+#include "duckdb/function/built_in_functions.hpp"
+#include "duckdb/function/table/range.hpp"
+#include "duckdb/function/table/read_csv.hpp"
 #include "duckdb/function/table_function.hpp"
 #include "duckdb/main/client_context.hpp"
-#include "duckdb/function/table/range.hpp"
-#include "duckdb/execution/operator/csv_scanner/buffer_manager/csv_file_handle.hpp"
-#include "duckdb/function/table/read_csv.hpp"
 
 namespace duckdb {
 
@@ -147,7 +148,7 @@ static void CSVSniffFunction(ClientContext &context, TableFunctionInput &data_p,
 	auto has_header = Value::BOOLEAN(sniffer_options.dialect_options.header.GetValue()).ToString();
 	output.SetValue(5, 0, has_header);
 	// 7. List<Struct<Column-Name:Types>> {'col1': 'INTEGER', 'col2': 'VARCHAR'}
-	std::ostringstream columns;
+	ostringstream columns;
 	columns << "{";
 	for (idx_t i = 0; i < sniffer_result.return_types.size(); i++) {
 		columns << "'" << sniffer_result.names[i] << "': '" << sniffer_result.return_types[i].ToString() << "'";
@@ -191,7 +192,7 @@ static void CSVSniffFunction(ClientContext &context, TableFunctionInput &data_p,
 	}
 
 	// 11. csv_read string
-	std::ostringstream csv_read;
+	ostringstream csv_read;
 
 	// Base, Path and auto_detect=false
 	csv_read << "FROM read_csv('" << data.path << "'" << separator << "auto_detect=false" << separator;

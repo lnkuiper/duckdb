@@ -7,9 +7,9 @@
 #include "duckdb/common/types/date.hpp"
 #include "duckdb/common/types/vector_buffer.hpp"
 #include "duckdb/function/table/arrow.hpp"
+#include "duckdb/function/table/arrow/arrow_duck_schema.hpp"
 #include "duckdb/function/table_function.hpp"
 #include "duckdb/parser/parsed_data/create_table_function_info.hpp"
-#include "duckdb/function/table/arrow/arrow_duck_schema.hpp"
 #include "utf8proc_wrapper.hpp"
 
 namespace duckdb {
@@ -41,9 +41,9 @@ static unique_ptr<ArrowType> GetArrowLogicalTypeNoDictionary(ArrowSchema &schema
 	} else if (format == "g") {
 		return make_uniq<ArrowType>(LogicalType::DOUBLE);
 	} else if (format[0] == 'd') { //! this can be either decimal128 or decimal 256 (e.g., d:38,0)
-		std::string parameters = format.substr(format.find(':'));
-		uint8_t width = std::stoi(parameters.substr(1, parameters.find(',')));
-		uint8_t scale = std::stoi(parameters.substr(parameters.find(',') + 1));
+		string parameters = format.substr(format.find(':'));
+		uint8_t width = stoi(parameters.substr(1, parameters.find(',')));
+		uint8_t scale = stoi(parameters.substr(parameters.find(',') + 1));
 		if (width > 38) {
 			throw NotImplementedException("Unsupported Internal Arrow Type for Decimal %s", format);
 		}
@@ -99,8 +99,8 @@ static unique_ptr<ArrowType> GetArrowLogicalTypeNoDictionary(ArrowSchema &schema
 		list_type->AddChild(std::move(child_type));
 		return list_type;
 	} else if (format[0] == '+' && format[1] == 'w') {
-		std::string parameters = format.substr(format.find(':') + 1);
-		idx_t fixed_size = std::stoi(parameters);
+		string parameters = format.substr(format.find(':') + 1);
+		idx_t fixed_size = stoi(parameters);
 		auto child_type = ArrowTableFunction::GetArrowLogicalType(*schema.children[0]);
 		auto list_type = make_uniq<ArrowType>(LogicalType::LIST(child_type->GetDuckType()), fixed_size);
 		list_type->AddChild(std::move(child_type));
@@ -121,7 +121,7 @@ static unique_ptr<ArrowType> GetArrowLogicalTypeNoDictionary(ArrowSchema &schema
 		}
 		D_ASSERT(format[3] == ':');
 
-		std::string prefix = "+us:";
+		string prefix = "+us:";
 		// TODO: what are these type ids actually for?
 		auto type_ids = StringUtil::Split(format.substr(prefix.size()), ',');
 
@@ -162,8 +162,8 @@ static unique_ptr<ArrowType> GetArrowLogicalTypeNoDictionary(ArrowSchema &schema
 	} else if (format == "Z") {
 		return make_uniq<ArrowType>(LogicalType::BLOB, ArrowVariableSizeType::SUPER_SIZE);
 	} else if (format[0] == 'w') {
-		std::string parameters = format.substr(format.find(':') + 1);
-		idx_t fixed_size = std::stoi(parameters);
+		string parameters = format.substr(format.find(':') + 1);
+		idx_t fixed_size = stoi(parameters);
 		return make_uniq<ArrowType>(LogicalType::BLOB, fixed_size);
 	} else if (format[0] == 't' && format[1] == 's') {
 		// Timestamp with Timezone
@@ -203,12 +203,12 @@ void ArrowTableFunction::RenameArrowColumns(vector<string> &names) {
 			name_map[low_column_name]++;
 		} else {
 			// Name already exists, we add _x where x is the repetition number
-			string new_column_name = column_name + "_" + std::to_string(name_map[low_column_name]);
+			string new_column_name = column_name + "_" + to_string(name_map[low_column_name]);
 			auto new_column_name_low = StringUtil::Lower(new_column_name);
 			while (name_map.find(new_column_name_low) != name_map.end()) {
 				// This name is already here due to a previous definition
 				name_map[low_column_name]++;
-				new_column_name = column_name + "_" + std::to_string(name_map[low_column_name]);
+				new_column_name = column_name + "_" + to_string(name_map[low_column_name]);
 				new_column_name_low = StringUtil::Lower(new_column_name);
 			}
 			column_name = new_column_name;

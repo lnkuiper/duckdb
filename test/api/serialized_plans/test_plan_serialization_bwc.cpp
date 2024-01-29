@@ -14,26 +14,26 @@
 using namespace duckdb;
 using namespace std;
 
-string get_full_file_name(const string &file_name) {
-	auto my_name = string("test_plan_serialization_bwc.cpp");
-	auto path = string(__FILE__);
+duckdb::string get_full_file_name(const duckdb::string &file_name) {
+	auto my_name = duckdb::string("test_plan_serialization_bwc.cpp");
+	auto path = duckdb::string(__FILE__);
 	return path.replace(path.rfind(my_name), my_name.length(), file_name);
 }
 
 void load_db(Connection &con) {
-	std::ifstream queries(get_full_file_name("db_load.sql"));
-	string query;
+	std::ifstream queries(get_full_file_name("db_load.sql").c_str());
+	duckdb::string query;
 	while (std::getline(queries, query)) {
 		REQUIRE_NO_FAIL(con.Query(query));
 	}
 }
 
-void test_deserialization(const string &file_location);
+void test_deserialization(const duckdb::string &file_location);
 
 const char *PERSISTENT_FILE_NAME = "serialized_plans.binary";
 
 TEST_CASE("Generate serialized plans file", "[.][serialization]") {
-	string file_location;
+	duckdb::string file_location;
 	if (std::getenv("GEN_PLAN_STORAGE") != nullptr) {
 		// there is no way in catch2 to only run a test if explicitly requested. Hidden tests will
 		// run when "*" is used - which we do to run slow tests. To avoid re-generating the bin file
@@ -49,8 +49,8 @@ TEST_CASE("Generate serialized plans file", "[.][serialization]") {
 	Connection con(db);
 	load_db(con);
 	BufferedFileWriter target(db.GetFileSystem(), file_location);
-	std::ifstream queries(get_full_file_name("queries.sql"));
-	string query;
+	std::ifstream queries(get_full_file_name("queries.sql").c_str());
+	duckdb::string query;
 	while (std::getline(queries, query)) {
 		con.BeginTransaction();
 		Parser p;
@@ -78,14 +78,14 @@ TEST_CASE("Test deserialized plans from file", "[.][serialization]") {
 	test_deserialization(get_full_file_name(PERSISTENT_FILE_NAME));
 }
 
-void test_deserialization(const string &file_location) {
+void test_deserialization(const duckdb::string &file_location) {
 	DuckDB db;
 	Connection con(db);
 	load_db(con);
 	BufferedFileReader file_source(db.GetFileSystem(), file_location.c_str());
 
-	std::ifstream queries(get_full_file_name("queries.sql"));
-	string query;
+	std::ifstream queries(get_full_file_name("queries.sql").c_str());
+	duckdb::string query;
 	while (std::getline(queries, query)) {
 		INFO("evaluating " << query)
 		con.BeginTransaction();

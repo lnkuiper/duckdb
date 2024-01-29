@@ -10,7 +10,7 @@ TEST_CASE("Test query profiler", "[api]") {
 	duckdb::unique_ptr<QueryResult> result;
 	DuckDB db(nullptr);
 	Connection con(db);
-	string output;
+	duckdb::string output;
 
 	con.EnableQueryVerification();
 	con.EnableProfiling();

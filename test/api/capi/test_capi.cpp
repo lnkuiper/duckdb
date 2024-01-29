@@ -65,7 +65,7 @@ TEST_CASE("Basic test of C API", "[capi]") {
 	REQUIRE_NO_FAIL(*result);
 	REQUIRE(result->ColumnCount() == 1);
 	REQUIRE(result->row_count() == 1);
-	REQUIRE(result->Fetch<string>(0, 0) == "hello");
+	REQUIRE(result->Fetch<duckdb::string>(0, 0) == "hello");
 	REQUIRE(!result->IsNull(0, 0));
 
 	result = tester.Query("SELECT 1=1");
@@ -139,8 +139,8 @@ TEST_CASE("Test different types of C API", "[capi]") {
 	REQUIRE_NO_FAIL(tester.Query("SET default_null_order='nulls_first'"));
 
 	// integer columns
-	duckdb::vector<string> types = {"TINYINT",  "SMALLINT",  "INTEGER",  "BIGINT",  "HUGEINT",
-	                                "UTINYINT", "USMALLINT", "UINTEGER", "UBIGINT", "UHUGEINT"};
+	duckdb::vector<duckdb::string> types = {"TINYINT",  "SMALLINT",  "INTEGER",  "BIGINT",  "HUGEINT",
+	                                        "UTINYINT", "USMALLINT", "UINTEGER", "UBIGINT", "UHUGEINT"};
 	for (auto &type : types) {
 		// create the table and insert values
 		REQUIRE_NO_FAIL(tester.Query("BEGIN TRANSACTION"));
@@ -160,7 +160,7 @@ TEST_CASE("Test different types of C API", "[capi]") {
 		REQUIRE(result->Fetch<uint64_t>(0, 0) == 0);
 		REQUIRE(duckdb_uhugeint_to_double(result->Fetch<duckdb_uhugeint>(0, 0)) == 0);
 		REQUIRE(duckdb_hugeint_to_double(result->Fetch<duckdb_hugeint>(0, 0)) == 0);
-		REQUIRE(result->Fetch<string>(0, 0) == "");
+		REQUIRE(result->Fetch<duckdb::string>(0, 0) == "");
 		REQUIRE(ApproxEqual(result->Fetch<float>(0, 0), 0.0f));
 		REQUIRE(ApproxEqual(result->Fetch<double>(0, 0), 0.0));
 
@@ -177,7 +177,7 @@ TEST_CASE("Test different types of C API", "[capi]") {
 		REQUIRE(duckdb_hugeint_to_double(result->Fetch<duckdb_hugeint>(0, 1)) == 1);
 		REQUIRE(ApproxEqual(result->Fetch<float>(0, 1), 1.0f));
 		REQUIRE(ApproxEqual(result->Fetch<double>(0, 1), 1.0));
-		REQUIRE(result->Fetch<string>(0, 1) == "1");
+		REQUIRE(result->Fetch<duckdb::string>(0, 1) == "1");
 
 		REQUIRE_NO_FAIL(tester.Query("ROLLBACK"));
 	}
@@ -196,7 +196,7 @@ TEST_CASE("Test different types of C API", "[capi]") {
 		REQUIRE(result->Fetch<int16_t>(0, 0) == 0);
 		REQUIRE(result->Fetch<int32_t>(0, 0) == 0);
 		REQUIRE(result->Fetch<int64_t>(0, 0) == 0);
-		REQUIRE(result->Fetch<string>(0, 0) == "");
+		REQUIRE(result->Fetch<duckdb::string>(0, 0) == "");
 		REQUIRE(ApproxEqual(result->Fetch<float>(0, 0), 0.0f));
 		REQUIRE(ApproxEqual(result->Fetch<double>(0, 0), 0.0));
 
@@ -221,12 +221,12 @@ TEST_CASE("Test different types of C API", "[capi]") {
 	REQUIRE(date.year == 1992);
 	REQUIRE(date.month == 9);
 	REQUIRE(date.day == 20);
-	REQUIRE(result->Fetch<string>(0, 1) == Value::DATE(1992, 9, 20).ToString());
+	REQUIRE(result->Fetch<duckdb::string>(0, 1) == Value::DATE(1992, 9, 20).ToString());
 	date = duckdb_from_date(result->Fetch<duckdb_date>(0, 2));
 	REQUIRE(date.year == 30000);
 	REQUIRE(date.month == 9);
 	REQUIRE(date.day == 20);
-	REQUIRE(result->Fetch<string>(0, 2) == Value::DATE(30000, 9, 20).ToString());
+	REQUIRE(result->Fetch<duckdb::string>(0, 2) == Value::DATE(30000, 9, 20).ToString());
 
 	// time columns
 	REQUIRE_NO_FAIL(tester.Query("CREATE TABLE times(d TIME)"));
@@ -240,13 +240,13 @@ TEST_CASE("Test different types of C API", "[capi]") {
 	REQUIRE(time_val.min == 30);
 	REQUIRE(time_val.sec == 1);
 	REQUIRE(time_val.micros == 0);
-	REQUIRE(result->Fetch<string>(0, 1) == Value::TIME(2, 30, 1, 0).ToString());
+	REQUIRE(result->Fetch<duckdb::string>(0, 1) == Value::TIME(2, 30, 1, 0).ToString());
 	time_val = duckdb_from_time(result->Fetch<duckdb_time>(0, 2));
 	REQUIRE(time_val.hour == 12);
 	REQUIRE(time_val.min == 0);
 	REQUIRE(time_val.sec == 30);
 	REQUIRE(time_val.micros == 123400);
-	REQUIRE(result->Fetch<string>(0, 2) == Value::TIME(12, 0, 30, 123400).ToString());
+	REQUIRE(result->Fetch<duckdb::string>(0, 2) == Value::TIME(12, 0, 30, 123400).ToString());
 
 	// blob columns
 	REQUIRE_NO_FAIL(tester.Query("CREATE TABLE blobs(b BLOB)"));
@@ -258,7 +258,7 @@ TEST_CASE("Test different types of C API", "[capi]") {
 	duckdb_blob blob = result->Fetch<duckdb_blob>(0, 0);
 	REQUIRE(blob.size == 11);
 	REQUIRE(memcmp(blob.data, "hello\012world", 11));
-	REQUIRE(result->Fetch<string>(0, 1) == "\\x00");
+	REQUIRE(result->Fetch<duckdb::string>(0, 1) == "\\x00");
 	REQUIRE(result->IsNull(0, 2));
 	blob = result->Fetch<duckdb_blob>(0, 2);
 	REQUIRE(blob.data == nullptr);
@@ -274,7 +274,7 @@ TEST_CASE("Test different types of C API", "[capi]") {
 	REQUIRE(!result->Fetch<bool>(0, 0));
 	REQUIRE(!result->Fetch<bool>(0, 1));
 	REQUIRE(result->Fetch<bool>(0, 2));
-	REQUIRE(result->Fetch<string>(0, 2) == "true");
+	REQUIRE(result->Fetch<duckdb::string>(0, 2) == "true");
 
 	// decimal columns
 	REQUIRE_NO_FAIL(tester.Query("CREATE TABLE decimals(dec DECIMAL(18, 4) NULL)"));
@@ -383,11 +383,11 @@ TEST_CASE("Test different types of C API", "[capi]") {
 	REQUIRE(result->Fetch<double>(3, 0) == 49082094824.904820482094);
 	REQUIRE(result->Fetch<double>(4, 0) == 0.0);
 
-	REQUIRE(result->Fetch<string>(0, 0) == "1.2");
-	REQUIRE(result->Fetch<string>(1, 0) == "100.3");
-	REQUIRE(result->Fetch<string>(2, 0) == "-320938.4298");
-	REQUIRE(result->Fetch<string>(3, 0) == "49082094824.904820482094");
-	REQUIRE(result->Fetch<string>(4, 0) == "");
+	REQUIRE(result->Fetch<duckdb::string>(0, 0) == "1.2");
+	REQUIRE(result->Fetch<duckdb::string>(1, 0) == "100.3");
+	REQUIRE(result->Fetch<duckdb::string>(2, 0) == "-320938.4298");
+	REQUIRE(result->Fetch<duckdb::string>(3, 0) == "49082094824.904820482094");
+	REQUIRE(result->Fetch<duckdb::string>(4, 0) == "");
 
 	result = tester.Query("SELECT -123.45::DECIMAL(5,2)");
 	REQUIRE_NO_FAIL(*result);
@@ -410,7 +410,7 @@ TEST_CASE("Test different types of C API", "[capi]") {
 
 	REQUIRE(result->Fetch<float>(0, 0) == -123.45f);
 	REQUIRE(result->Fetch<double>(0, 0) == -123.45);
-	REQUIRE(result->Fetch<string>(0, 0) == "-123.45");
+	REQUIRE(result->Fetch<duckdb::string>(0, 0) == "-123.45");
 }
 
 TEST_CASE("decompose timetz with duckdb_from_time_tz", "[capi]") {
@@ -643,7 +643,7 @@ TEST_CASE("Decimal -> Double casting issue", "[capi]") {
 	auto double_from_decimal = result->Fetch<double>(0, 0);
 	REQUIRE(double_from_decimal == (double)-0.5);
 
-	auto string_from_decimal = result->Fetch<string>(0, 0);
+	auto string_from_decimal = result->Fetch<duckdb::string>(0, 0);
 	REQUIRE(string_from_decimal == "-0.5");
 }
 
@@ -692,7 +692,7 @@ TEST_CASE("Test custom_user_agent config", "[capi]") {
 		REQUIRE(duckdb_row_count(&result_full_user_agent) == 1);
 
 		char *custom_user_agent_value = duckdb_value_varchar(&result_custom_user_agent, 0, 0);
-		REQUIRE(string(custom_user_agent_value) == "CUSTOM_STRING");
+		REQUIRE(duckdb::string(custom_user_agent_value) == "CUSTOM_STRING");
 
 		char *full_user_agent_value = duckdb_value_varchar(&result_full_user_agent, 0, 0);
 		REQUIRE_THAT(full_user_agent_value, Catch::Matchers::Matches("duckdb/.*(.*) capi CUSTOM_STRING"));

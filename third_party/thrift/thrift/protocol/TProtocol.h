@@ -34,7 +34,7 @@
 #include <netinet/in.h>
 #endif
 #include <sys/types.h>
-#include <string>
+#include "duckdb/common/string.hpp"
 #include <map>
 #include "duckdb/common/vector.hpp"
 #include <climits>
@@ -233,7 +233,7 @@ public:
    * Writing functions.
    */
 
-  virtual uint32_t writeMessageBegin_virt(const std::string& name,
+  virtual uint32_t writeMessageBegin_virt(const duckdb::string& name,
                                           const TMessageType messageType,
                                           const int32_t seqid) = 0;
 
@@ -276,11 +276,11 @@ public:
 
   virtual uint32_t writeDouble_virt(const double dub) = 0;
 
-  virtual uint32_t writeString_virt(const std::string& str) = 0;
+  virtual uint32_t writeString_virt(const duckdb::string& str) = 0;
 
-  virtual uint32_t writeBinary_virt(const std::string& str) = 0;
+  virtual uint32_t writeBinary_virt(const duckdb::string& str) = 0;
 
-  uint32_t writeMessageBegin(const std::string& name,
+  uint32_t writeMessageBegin(const duckdb::string& name,
                              const TMessageType messageType,
                              const int32_t seqid) {
     T_VIRTUAL_CALL();
@@ -377,12 +377,12 @@ public:
     return writeDouble_virt(dub);
   }
 
-  uint32_t writeString(const std::string& str) {
+  uint32_t writeString(const duckdb::string& str) {
     T_VIRTUAL_CALL();
     return writeString_virt(str);
   }
 
-  uint32_t writeBinary(const std::string& str) {
+  uint32_t writeBinary(const duckdb::string& str) {
     T_VIRTUAL_CALL();
     return writeBinary_virt(str);
   }
@@ -391,17 +391,17 @@ public:
    * Reading functions
    */
 
-  virtual uint32_t readMessageBegin_virt(std::string& name,
+  virtual uint32_t readMessageBegin_virt(duckdb::string& name,
                                          TMessageType& messageType,
                                          int32_t& seqid) = 0;
 
   virtual uint32_t readMessageEnd_virt() = 0;
 
-  virtual uint32_t readStructBegin_virt(std::string& name) = 0;
+  virtual uint32_t readStructBegin_virt(duckdb::string& name) = 0;
 
   virtual uint32_t readStructEnd_virt() = 0;
 
-  virtual uint32_t readFieldBegin_virt(std::string& name, TType& fieldType, int16_t& fieldId) = 0;
+  virtual uint32_t readFieldBegin_virt(duckdb::string& name, TType& fieldType, int16_t& fieldId) = 0;
 
   virtual uint32_t readFieldEnd_virt() = 0;
 
@@ -431,11 +431,11 @@ public:
 
   virtual uint32_t readDouble_virt(double& dub) = 0;
 
-  virtual uint32_t readString_virt(std::string& str) = 0;
+  virtual uint32_t readString_virt(duckdb::string& str) = 0;
 
-  virtual uint32_t readBinary_virt(std::string& str) = 0;
+  virtual uint32_t readBinary_virt(duckdb::string& str) = 0;
 
-  uint32_t readMessageBegin(std::string& name, TMessageType& messageType, int32_t& seqid) {
+  uint32_t readMessageBegin(duckdb::string& name, TMessageType& messageType, int32_t& seqid) {
     T_VIRTUAL_CALL();
     return readMessageBegin_virt(name, messageType, seqid);
   }
@@ -445,7 +445,7 @@ public:
     return readMessageEnd_virt();
   }
 
-  uint32_t readStructBegin(std::string& name) {
+  uint32_t readStructBegin(duckdb::string& name) {
     T_VIRTUAL_CALL();
     return readStructBegin_virt(name);
   }
@@ -455,7 +455,7 @@ public:
     return readStructEnd_virt();
   }
 
-  uint32_t readFieldBegin(std::string& name, TType& fieldType, int16_t& fieldId) {
+  uint32_t readFieldBegin(duckdb::string& name, TType& fieldType, int16_t& fieldId) {
     T_VIRTUAL_CALL();
     return readFieldBegin_virt(name, fieldType, fieldId);
   }
@@ -525,12 +525,12 @@ public:
     return readDouble_virt(dub);
   }
 
-  uint32_t readString(std::string& str) {
+  uint32_t readString(duckdb::string& str) {
     T_VIRTUAL_CALL();
     return readString_virt(str);
   }
 
-  uint32_t readBinary(std::string& str) {
+  uint32_t readBinary(duckdb::string& str) {
     T_VIRTUAL_CALL();
     return readBinary_virt(str);
   }
@@ -698,12 +698,12 @@ uint32_t skip(Protocol_& prot, TType type) {
     return prot.readDouble(dub);
   }
   case T_STRING: {
-    std::string str;
+    duckdb::string str;
     return prot.readBinary(str);
   }
   case T_STRUCT: {
     uint32_t result = 0;
-    std::string name;
+    duckdb::string name;
     int16_t fid;
     TType ftype;
     result += prot.readStructBegin(name);

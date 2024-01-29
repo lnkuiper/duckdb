@@ -6,7 +6,7 @@
 
 #include <exception>
 #include <map>
-#include <string>
+#include "duckdb/common/string.hpp"
 
 #include "dut.hh"
 #include "prod.hh"
@@ -44,7 +44,7 @@ struct stats_collecting_logger : logger {
 /// stderr logger
 struct cerr_logger : stats_collecting_logger {
 	const int columns = 80;
-	std::map<std::string, long> errors;
+	std::map<duckdb::string, long> errors;
 	virtual void report();
 	virtual void generated(prod &query);
 	virtual void executed(prod &query);

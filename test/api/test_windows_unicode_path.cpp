@@ -6,7 +6,7 @@
 using namespace duckdb;
 using namespace std;
 
-void TestConnectToDatabase(const string &path, bool create_table = false) {
+void TestConnectToDatabase(const duckdb::string &path, bool create_table = false) {
 	// connect to the database using the standard syntax
 	{
 		DuckDB db(path);
@@ -32,7 +32,7 @@ void TestConnectToDatabase(const string &path, bool create_table = false) {
 }
 
 TEST_CASE("Issue #6931 - test windows unicode path", "[windows]") {
-	string dirname = "Moseguí_i_González";
+	duckdb::string dirname = "Moseguí_i_González";
 	auto test_directory = TestDirectoryPath() + "/" + dirname;
 	auto current_directory = TestGetCurrentDirectory();
 	TestCreateDirectory(test_directory);

@@ -22,7 +22,7 @@
 #ifndef _NF_ZFORMAT_H
 #define _NF_ZFORMAT_H
 
-#include <string>
+#include "duckdb/common/string.hpp"
 #include "nf_calendar.h"
 #include "nf_localedata.h"
 
@@ -604,7 +604,7 @@ public:
                    bool bStand = false );
 
 	// Ascii version of constructor
-	SvNumberformat(std::string& rString,
+	SvNumberformat(duckdb::string& rString,
 		LocaleData* pFormatter,
 		ImpSvNumberInputScan* pISc,
 		uint16_t& nCheckPos,
@@ -652,7 +652,7 @@ public:
     bool GetOutputString( double fNumber, sal_uInt16 nCharCount, String& rOutString ) const;
 
     bool GetOutputString( double fNumber, String& OutString, Color** ppColor );
-	bool GetOutputString( double fNumber, std::string& OutString );
+	bool GetOutputString( double fNumber, duckdb::string& OutString );
 	bool GetOutputString( String& sString, String& OutString, Color** ppColor );
 
     // True if type text

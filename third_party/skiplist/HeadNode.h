@@ -40,6 +40,7 @@
 //    #include <mutex>
 //#endif
 #include "duckdb/common/vector.hpp"
+#include "duckdb/common/string.hpp"
 
 #ifdef INCLUDE_METHODS_THAT_USE_STREAMS
 #include <sstream>
@@ -543,9 +544,9 @@ void HeadNode<T, _Compare>::_throwValueErrorNotFound(const T &value) const {
 #ifdef INCLUDE_METHODS_THAT_USE_STREAMS
     std::ostringstream oss;
     oss << "Value " << value << " not found.";
-    std::string err_msg = oss.str();
+    duckdb::string err_msg = oss.str();
 #else
-    std::string err_msg = "Value not found.";
+    duckdb::string err_msg = "Value not found.";
 #endif
     throw ValueError(err_msg);
 }

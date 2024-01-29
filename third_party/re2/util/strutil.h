@@ -5,18 +5,18 @@
 #ifndef UTIL_STRUTIL_H_
 #define UTIL_STRUTIL_H_
 
-#include <string>
+#include "duckdb/common/string.hpp"
 
 #include "re2/stringpiece.h"
 #include "util/util.h"
 
 namespace duckdb_re2 {
 
-std::string CEscape(const StringPiece& src);
-void PrefixSuccessor(std::string* prefix);
-std::string StringPrintf(const char* format, ...);
-void SStringPrintf(std::string* dst, const char* format, ...);
-void StringAppendF(std::string* dst, const char* format, ...);
+duckdb::string CEscape(const StringPiece& src);
+void PrefixSuccessor(duckdb::string* prefix);
+duckdb::string StringPrintf(const char* format, ...);
+void SStringPrintf(duckdb::string* dst, const char* format, ...);
+void StringAppendF(duckdb::string* dst, const char* format, ...);
 
 }  // namespace duckdb_re2
 

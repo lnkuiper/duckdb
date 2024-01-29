@@ -153,7 +153,7 @@ static unique_ptr<SelectNode> PivotInitialAggregate(PivotBindState &bind_state, 
 	for (auto &expr : subquery_stage1->select_list) {
 		bind_state.group_names.push_back(expr->GetName());
 		if (expr->alias.empty()) {
-			expr->alias = "__internal_pivot_group" + std::to_string(++group_count);
+			expr->alias = "__internal_pivot_group" + to_string(++group_count);
 		}
 		bind_state.internal_group_names.push_back(expr->alias);
 	}
@@ -162,7 +162,7 @@ static unique_ptr<SelectNode> PivotInitialAggregate(PivotBindState &bind_state, 
 	for (auto &pivot_column : ref.pivots) {
 		for (auto &pivot_expr : pivot_column.pivot_expressions) {
 			if (pivot_expr->alias.empty()) {
-				pivot_expr->alias = "__internal_pivot_ref" + std::to_string(++pivot_count);
+				pivot_expr->alias = "__internal_pivot_ref" + to_string(++pivot_count);
 			}
 			auto pivot_alias = pivot_expr->alias;
 			subquery_stage1->groups.group_expressions.push_back(
@@ -174,7 +174,7 @@ static unique_ptr<SelectNode> PivotInitialAggregate(PivotBindState &bind_state, 
 	idx_t aggregate_count = 0;
 	// finally add the aggregates
 	for (auto &aggregate : ref.aggregates) {
-		auto aggregate_alias = "__internal_pivot_aggregate" + std::to_string(++aggregate_count);
+		auto aggregate_alias = "__internal_pivot_aggregate" + to_string(++aggregate_count);
 		bind_state.aggregate_names.push_back(aggregate->alias);
 		bind_state.internal_aggregate_names.push_back(aggregate_alias);
 		aggregate->alias = std::move(aggregate_alias);

@@ -31,7 +31,7 @@ TEST_CASE("Single thread update", "[interquery][.]") {
 	int sum = 0;
 	for (size_t i = 0; i < CONCURRENT_UPDATE_TOTAL_ACCOUNTS; i++) {
 		for (size_t j = 0; j < 10; j++) {
-			con.Query("INSERT INTO integers VALUES (" + to_string(j + 1) + ");");
+			con.Query("INSERT INTO integers VALUES (" + duckdb::to_string(j + 1) + ");");
 			sum += j + 1;
 		}
 	}
@@ -86,8 +86,8 @@ TEST_CASE("Concurrent update", "[interquery][.]") {
 	// initialize the database
 	con.Query("CREATE TABLE accounts(id INTEGER, money INTEGER)");
 	for (size_t i = 0; i < CONCURRENT_UPDATE_TOTAL_ACCOUNTS; i++) {
-		con.Query("INSERT INTO accounts VALUES (" + to_string(i) + ", " +
-		          to_string(CONCURRENT_UPDATE_MONEY_PER_ACCOUNT) + ");");
+		con.Query("INSERT INTO accounts VALUES (" + duckdb::to_string(i) + ", " +
+		          duckdb::to_string(CONCURRENT_UPDATE_MONEY_PER_ACCOUNT) + ");");
 	}
 
 	bool read_correct;
@@ -104,19 +104,19 @@ TEST_CASE("Concurrent update", "[interquery][.]") {
 		int amount = random_amount();
 
 		REQUIRE_NO_FAIL(con.Query("BEGIN TRANSACTION"));
-		result = con.Query("SELECT money FROM accounts WHERE id=" + to_string(from));
+		result = con.Query("SELECT money FROM accounts WHERE id=" + duckdb::to_string(from));
 		Value money_from = result->GetValue(0, 0);
-		result = con.Query("SELECT money FROM accounts WHERE id=" + to_string(to));
+		result = con.Query("SELECT money FROM accounts WHERE id=" + duckdb::to_string(to));
 		Value money_to = result->GetValue(0, 0);
 
-		REQUIRE_NO_FAIL(
-		    con.Query("UPDATE accounts SET money = money - " + to_string(amount) + " WHERE id = " + to_string(from)));
-		REQUIRE_NO_FAIL(
-		    con.Query("UPDATE accounts SET money = money + " + to_string(amount) + " WHERE id = " + to_string(to)));
+		REQUIRE_NO_FAIL(con.Query("UPDATE accounts SET money = money - " + duckdb::to_string(amount) +
+		                          " WHERE id = " + duckdb::to_string(from)));
+		REQUIRE_NO_FAIL(con.Query("UPDATE accounts SET money = money + " + duckdb::to_string(amount) +
+		                          " WHERE id = " + duckdb::to_string(to)));
 
-		result = con.Query("SELECT money FROM accounts WHERE id=" + to_string(from));
+		result = con.Query("SELECT money FROM accounts WHERE id=" + duckdb::to_string(from));
 		Value new_money_from = result->GetValue(0, 0);
-		result = con.Query("SELECT money FROM accounts WHERE id=" + to_string(to));
+		result = con.Query("SELECT money FROM accounts WHERE id=" + duckdb::to_string(to));
 		Value new_money_to = result->GetValue(0, 0);
 
 		Value expected_money_from, expected_money_to;
@@ -145,19 +145,23 @@ static void write_random_numbers_to_account(DuckDB *db, bool *correct, size_t nr
 		if (con.Query("BEGIN TRANSACTION")->HasError()) {
 			correct[nr] = false;
 		}
-		if (con.Query("UPDATE accounts SET money = money + " + to_string(i * 2) + " WHERE id = " + to_string(nr))
+		if (con.Query("UPDATE accounts SET money = money + " + duckdb::to_string(i * 2) +
+		              " WHERE id = " + duckdb::to_string(nr))
 		        ->HasError()) {
 			correct[nr] = false;
 		}
-		if (con.Query("UPDATE accounts SET money = money - " + to_string(i) + " WHERE id = " + to_string(nr))
+		if (con.Query("UPDATE accounts SET money = money - " + duckdb::to_string(i) +
+		              " WHERE id = " + duckdb::to_string(nr))
 		        ->HasError()) {
 			correct[nr] = false;
 		}
-		if (con.Query("UPDATE accounts SET money = money - " + to_string(i * 2) + " WHERE id = " + to_string(nr))
+		if (con.Query("UPDATE accounts SET money = money - " + duckdb::to_string(i * 2) +
+		              " WHERE id = " + duckdb::to_string(nr))
 		        ->HasError()) {
 			correct[nr] = false;
 		}
-		if (con.Query("UPDATE accounts SET money = money + " + to_string(i) + " WHERE id = " + to_string(nr))
+		if (con.Query("UPDATE accounts SET money = money + " + duckdb::to_string(i) +
+		              " WHERE id = " + duckdb::to_string(nr))
 		        ->HasError()) {
 			correct[nr] = false;
 		}
@@ -190,8 +194,8 @@ TEST_CASE("Multiple concurrent updaters", "[interquery][.]") {
 	// initialize the database
 	con.Query("CREATE TABLE accounts(id INTEGER, money INTEGER)");
 	for (size_t i = 0; i < CONCURRENT_UPDATE_TOTAL_ACCOUNTS; i++) {
-		con.Query("INSERT INTO accounts VALUES (" + to_string(i) + ", " +
-		          to_string(CONCURRENT_UPDATE_MONEY_PER_ACCOUNT) + ");");
+		con.Query("INSERT INTO accounts VALUES (" + duckdb::to_string(i) + ", " +
+		          duckdb::to_string(CONCURRENT_UPDATE_MONEY_PER_ACCOUNT) + ");");
 	}
 
 	bool correct[CONCURRENT_UPDATE_TOTAL_ACCOUNTS];

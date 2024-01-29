@@ -1,34 +1,33 @@
 #include "catch.hpp"
+#include "duckdb/common/stringstream.hpp"
 #include "duckdb/common/types/date.hpp"
 #include "duckdb/common/types/time.hpp"
 #include "duckdb/common/types/timestamp.hpp"
 #include "duckdb/execution/operator/csv_scanner/options/csv_reader_options.hpp"
 #include "duckdb/main/appender.hpp"
-#include "test_helpers.hpp"
 #include "duckdb/main/client_data.hpp"
+#include "test_helpers.hpp"
 
+#include <fstream>
 #include <iostream>
 #include <vector>
-#include <fstream>
-#include <sstream>
-#include <string>
 
 using namespace duckdb;
 using namespace std;
 
 //! CSV Files
-const string csv = "*.csv";
-const string tsv = "*.tsv";
-const string csv_gz = "csv.gz";
-const string csv_zst = "csv.zst";
-const string tbl_zst = "tbl.zst";
+const duckdb::string csv = "*.csv";
+const duckdb::string tsv = "*.tsv";
+const duckdb::string csv_gz = "csv.gz";
+const duckdb::string csv_zst = "csv.zst";
+const duckdb::string tbl_zst = "tbl.zst";
 
-const string csv_extensions[5] = {csv, tsv, csv_gz, csv_zst, tbl_zst};
+const duckdb::string csv_extensions[5] = {csv, tsv, csv_gz, csv_zst, tbl_zst};
 
 const char *run = std::getenv("DUCKDB_RUN_PARALLEL_CSV_TESTS");
 
-bool RunVariableBuffer(const string &path, idx_t buffer_size, bool set_temp_dir,
-                       ColumnDataCollection *ground_truth = nullptr, const string &add_parameters = "") {
+bool RunVariableBuffer(const duckdb::string &path, idx_t buffer_size, bool set_temp_dir,
+                       ColumnDataCollection *ground_truth = nullptr, const duckdb::string &add_parameters = "") {
 	DuckDB db(nullptr);
 	Connection multi_conn(db);
 	if (set_temp_dir) {
@@ -37,7 +36,7 @@ bool RunVariableBuffer(const string &path, idx_t buffer_size, bool set_temp_dir,
 	multi_conn.Query("SET preserve_insertion_order=false;");
 	duckdb::unique_ptr<MaterializedQueryResult> variable_buffer_size_result =
 	    multi_conn.Query("SELECT * FROM read_csv_auto('" + path + "'" + add_parameters +
-	                     ", buffer_size = " + to_string(buffer_size) + ") ORDER BY ALL");
+	                     ", buffer_size = " + duckdb::to_string(buffer_size) + ") ORDER BY ALL");
 	bool variable_buffer_size_passed;
 	ColumnDataCollection *result = nullptr;
 	if (variable_buffer_size_result->HasError()) {
@@ -57,24 +56,24 @@ bool RunVariableBuffer(const string &path, idx_t buffer_size, bool set_temp_dir,
 	}
 	if (!variable_buffer_size_passed) {
 		std::cout << path << " Variable Buffer failed" << '\n';
-		std::cout << path << " Buffer Size: " << to_string(buffer_size) << '\n';
+		std::cout << path << " Buffer Size: " << duckdb::to_string(buffer_size) << '\n';
 		std::cout << variable_buffer_size_result->GetError() << '\n';
 		return false;
 	}
 	// Results do not match
-	string error_message;
+	duckdb::string error_message;
 	if (!ColumnDataCollection::ResultEquals(*ground_truth, *result, error_message, false)) {
 		std::cout << "truth: " << ground_truth->Count() << std::endl;
 		std::cout << "resul: " << result->Count() << std::endl;
 
-		std::cout << path << " Buffer Size: " << to_string(buffer_size) << '\n';
+		std::cout << path << " Buffer Size: " << duckdb::to_string(buffer_size) << '\n';
 		std::cout << error_message << '\n';
 		return false;
 	}
 	return true;
 }
 
-bool RunFull(std::string &path, std::set<std::string> *skip = nullptr, const string &add_parameters = "",
+bool RunFull(duckdb::string &path, std::set<duckdb::string> *skip = nullptr, const duckdb::string &add_parameters = "",
              bool set_temp_dir = false) {
 	DuckDB db(nullptr);
 	Connection conn(db);
@@ -113,7 +112,8 @@ bool RunFull(std::string &path, std::set<std::string> *skip = nullptr, const str
 }
 
 // Collects All CSV-Like files from folder and execute Parallel Scans on it
-void RunTestOnFolder(const string &path, std::set<std::string> *skip = nullptr, const string &add_parameters = "") {
+void RunTestOnFolder(const duckdb::string &path, std::set<duckdb::string> *skip = nullptr,
+                     const duckdb::string &add_parameters = "") {
 	DuckDB db(nullptr);
 	Connection con(db);
 	bool all_tests_passed = true;
@@ -128,12 +128,12 @@ void RunTestOnFolder(const string &path, std::set<std::string> *skip = nullptr, 
 }
 
 TEST_CASE("Test File Full", "[parallel-csv][.]") {
-	string path = "test/sql/copy/csv/data/auto/test_single_column_rn.csv";
+	duckdb::string path = "test/sql/copy/csv/data/auto/test_single_column_rn.csv";
 	RunFull(path);
 }
 
 TEST_CASE("Test Parallel CSV All Files - test/sql/copy/csv/data", "[parallel-csv][.]") {
-	std::set<std::string> skip;
+	std::set<duckdb::string> skip;
 	// This file requires additional parameters, we test it on the following test.
 	skip.insert("test/sql/copy/csv/data/no_quote.csv");
 	RunTestOnFolder("test/sql/copy/csv/data/", &skip);
@@ -141,24 +141,24 @@ TEST_CASE("Test Parallel CSV All Files - test/sql/copy/csv/data", "[parallel-csv
 
 //! Test case with specific parameters that allow us to run the no_quote.tsv we were skipping
 TEST_CASE("Test Parallel CSV All Files - test/sql/copy/csv/data/no_quote.csv", "[parallel-csv][.]") {
-	string add_parameters = ",  header=1, quote=''";
-	string file = "test/sql/copy/csv/data/no_quote.csv";
+	duckdb::string add_parameters = ",  header=1, quote=''";
+	duckdb::string file = "test/sql/copy/csv/data/no_quote.csv";
 	REQUIRE(RunFull(file, nullptr, add_parameters));
 }
 
 TEST_CASE("Test Parallel CSV All Files - test/sql/copy/csv/data/auto", "[parallel-csv][.]") {
-	std::set<std::string> skip;
+	std::set<duckdb::string> skip;
 	// This file requires additional parameters, we test it on the following test.
 	skip.insert("test/sql/copy/csv/data/auto/titlebasicsdebug.tsv");
 	// This file mixes newline separators
-	skip.insert("test/sql/copy/csv/data/auto/multi_column_string_mix.csv");
+	skip.insert("test/sql/copy/csv/data/auto/multi_column_duckdb::string_mix.csv");
 	RunTestOnFolder("test/sql/copy/csv/data/auto/", &skip);
 }
 
 //! Test case with specific parameters that allow us to run the titlebasicsdebug.tsv we were skipping
 TEST_CASE("Test Parallel CSV All Files - test/sql/copy/csv/data/auto/titlebasicsdebug.tsv", "[parallel-csv][.]") {
-	string add_parameters = ", nullstr=\'\\N\', sample_size = -1";
-	string file = "test/sql/copy/csv/data/auto/titlebasicsdebug.tsv";
+	duckdb::string add_parameters = ", nullstr=\'\\N\', sample_size = -1";
+	duckdb::string file = "test/sql/copy/csv/data/auto/titlebasicsdebug.tsv";
 	REQUIRE(RunFull(file, nullptr, add_parameters));
 }
 
@@ -191,14 +191,14 @@ TEST_CASE("Test Parallel CSV All Files - test/sql/copy/csv/data/glob/i1", "[para
 }
 
 TEST_CASE("Test Parallel CSV All Files - test/sql/copy/csv/data/real", "[parallel-csv][.]") {
-	std::set<std::string> skip;
+	std::set<duckdb::string> skip;
 	// This file requires a temp_dir for offloading
 	skip.insert("test/sql/copy/csv/data/real/tmp2013-06-15.csv.gz");
 	RunTestOnFolder("test/sql/copy/csv/data/real/", &skip);
 }
 
 TEST_CASE("Test Parallel CSV All Files - test/sql/copy/csv/data/test", "[parallel-csv][.]") {
-	std::set<std::string> skip;
+	std::set<duckdb::string> skip;
 	// This file requires additional parameters, we test it on the following test.
 	skip.insert("test/sql/copy/csv/data/test/5438.csv");
 	// This file requires additional parameters, we test it on the following test.
@@ -210,15 +210,15 @@ TEST_CASE("Test Parallel CSV All Files - test/sql/copy/csv/data/test", "[paralle
 
 //! Test case with specific parameters that allow us to run the titlebasicsdebug.tsv we were skipping
 TEST_CASE("Test Parallel CSV All Files - test/sql/copy/csv/data/test/5438.csv", "[parallel-csv][.]") {
-	string add_parameters = ", delim=\'\', columns={\'j\': \'JSON\'}";
-	string file = "test/sql/copy/csv/data/test/5438.csv";
+	duckdb::string add_parameters = ", delim=\'\', columns={\'j\': \'JSON\'}";
+	duckdb::string file = "test/sql/copy/csv/data/test/5438.csv";
 	REQUIRE(RunFull(file, nullptr, add_parameters));
 }
 
 //! Test case with specific parameters that allow us to run the titlebasicsdebug.tsv we were skipping
 TEST_CASE("Test Parallel CSV All Files - test/sql/copy/csv/data/test/windows_newline_empty.csv", "[parallel-csv][.]") {
-	string add_parameters = "HEADER 0";
-	string file = "test/sql/copy/csv/data/test/windows_newline_empty.csv";
+	duckdb::string add_parameters = "HEADER 0";
+	duckdb::string file = "test/sql/copy/csv/data/test/windows_newline_empty.csv";
 	REQUIRE(RunFull(file, nullptr, add_parameters));
 }
 
@@ -227,7 +227,7 @@ TEST_CASE("Test Parallel CSV All Files - test/sql/copy/csv/data/zstd", "[paralle
 }
 
 TEST_CASE("Test Parallel CSV All Files - data/csv", "[parallel-csv][.]") {
-	std::set<std::string> skip;
+	std::set<duckdb::string> skip;
 	// This file is too big, executing on it is slow and unreliable
 	skip.insert("data/csv/sequences.csv.gz");
 	// This file requires specific parameters
@@ -239,11 +239,12 @@ TEST_CASE("Test Parallel CSV All Files - data/csv", "[parallel-csv][.]") {
 
 //! Test case with specific parameters that allow us to run the bug_7578.csv we were skipping
 TEST_CASE("Test Parallel CSV All Files - data/csv/bug_7578.csv", "[parallel-csv][.]") {
-	string add_parameters = ", delim=\'\\t\', header=true, quote = \'`\', columns={ \'transaction_id\': \'VARCHAR\', "
-	                        "\'team_id\': \'INT\', \'direction\': \'INT\', \'amount\':\'DOUBLE\', "
-	                        "\'account_id\':\'INT\', \'transaction_date\':\'DATE\', \'recorded_date\':\'DATE\', "
-	                        "\'tags.transaction_id\':\'VARCHAR\', \'tags.team_id\':\'INT\', \'tags\':\'varchar\'}";
-	string file = "data/csv/bug_7578.csv";
+	duckdb::string add_parameters =
+	    ", delim=\'\\t\', header=true, quote = \'`\', columns={ \'transaction_id\': \'VARCHAR\', "
+	    "\'team_id\': \'INT\', \'direction\': \'INT\', \'amount\':\'DOUBLE\', "
+	    "\'account_id\':\'INT\', \'transaction_date\':\'DATE\', \'recorded_date\':\'DATE\', "
+	    "\'tags.transaction_id\':\'VARCHAR\', \'tags.team_id\':\'INT\', \'tags\':\'varchar\'}";
+	duckdb::string file = "data/csv/bug_7578.csv";
 	REQUIRE(RunFull(file, nullptr, add_parameters));
 }
 
@@ -260,7 +261,7 @@ TEST_CASE("Test Parallel CSV All Files - test/sql/copy/csv/data/abac", "[paralle
 }
 
 TEST_CASE("Test Parallel CSV All Files - test/sqlserver/data", "[parallel-csv][.]") {
-	std::set<std::string> skip;
+	std::set<duckdb::string> skip;
 	// This file is too big, executing on it is slow and unreliable
 	skip.insert("test/sqlserver/data/Person.csv.gz");
 	RunTestOnFolder("test/sqlserver/data/", &skip);
@@ -268,14 +269,14 @@ TEST_CASE("Test Parallel CSV All Files - test/sqlserver/data", "[parallel-csv][.
 
 //! Test case with specific parameters that allow us to run the Person.tsv we were skipping
 TEST_CASE("Test Parallel CSV All Files - test/sqlserver/data/Person.csv.gz", "[parallel-csv][.]") {
-	string add_parameters = ", delim=\'|\', quote=\'*\'";
-	string file = "test/sqlserver/data/Person.csv.gz";
+	duckdb::string add_parameters = ", delim=\'|\', quote=\'*\'";
+	duckdb::string file = "test/sqlserver/data/Person.csv.gz";
 	REQUIRE(RunFull(file, nullptr, add_parameters));
 }
 
 //! Test case with specific files that require a temp_dir for offloading
 TEST_CASE("Test Parallel CSV All Files - Temp Dir for Offloading", "[parallel-csv][.]") {
-	string file = "test/sql/copy/csv/data/real/tmp2013-06-15.csv.gz";
+	duckdb::string file = "test/sql/copy/csv/data/real/tmp2013-06-15.csv.gz";
 	REQUIRE(RunFull(file, nullptr, "", true));
 
 	file = "data/csv/hebere.csv.gz";

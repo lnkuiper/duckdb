@@ -41,7 +41,7 @@ TEST_CASE("Test arrow in C API", "[capi][arrow]") {
 
 		state = duckdb_query_arrow_schema(arrow_result, reinterpret_cast<duckdb_arrow_schema *>(&arrow_schema_ptr));
 		REQUIRE(state == DuckDBSuccess);
-		REQUIRE(string(arrow_schema.name) == "duckdb_query_result");
+		REQUIRE(duckdb::string(arrow_schema.name) == "duckdb_query_result");
 		if (arrow_schema.release) {
 			arrow_schema.release(arrow_schema_ptr);
 		}
@@ -128,7 +128,7 @@ TEST_CASE("Test arrow in C API", "[capi][arrow]") {
 
 		state = duckdb_prepared_arrow_schema(stmt, reinterpret_cast<duckdb_arrow_schema *>(&prepared_schema_ptr));
 		REQUIRE(state == DuckDBSuccess);
-		REQUIRE(string(prepared_schema.format) == "+s");
+		REQUIRE(duckdb::string(prepared_schema.format) == "+s");
 		REQUIRE(duckdb_execute_prepared_arrow(stmt, nullptr) == DuckDBError);
 		REQUIRE(duckdb_execute_prepared_arrow(stmt, &arrow_result) == DuckDBSuccess);
 		REQUIRE(prepared_schema.release != nullptr);
@@ -141,7 +141,7 @@ TEST_CASE("Test arrow in C API", "[capi][arrow]") {
 
 		state = duckdb_query_arrow_schema(arrow_result, reinterpret_cast<duckdb_arrow_schema *>(&arrow_schema_ptr));
 		REQUIRE(state == DuckDBSuccess);
-		REQUIRE(string(arrow_schema.format) == "+s");
+		REQUIRE(duckdb::string(arrow_schema.format) == "+s");
 		REQUIRE(arrow_schema.release != nullptr);
 		arrow_schema.release(arrow_schema_ptr);
 
@@ -162,7 +162,7 @@ TEST_CASE("Test arrow in C API", "[capi][arrow]") {
 	SECTION("test scan") {
 
 		const auto logical_types = duckdb::vector<LogicalType> {LogicalType(LogicalTypeId::INTEGER)};
-		const auto column_names = duckdb::vector<string> {"value"};
+		const auto column_names = duckdb::vector<duckdb::string> {"value"};
 
 		// arrow schema, release after use
 		ArrowSchema arrow_schema;
@@ -179,7 +179,7 @@ TEST_CASE("Test arrow in C API", "[capi][arrow]") {
 		SECTION("empty array") {
 
 			// Create an empty view with a `value` column.
-			string view_name = "foo_empty_table";
+			duckdb::string view_name = "foo_empty_table";
 
 			// arrow array scan, destroy out_stream after use
 			ArrowArrayStream *arrow_array_stream;
@@ -232,7 +232,7 @@ TEST_CASE("Test arrow in C API", "[capi][arrow]") {
 			*arrow_array_ptr = appender.Finalize();
 
 			// Create the view.
-			string view_name = "foo_table";
+			duckdb::string view_name = "foo_table";
 
 			// arrow array scan, destroy out_stream after use
 			ArrowArrayStream *arrow_array_stream;
@@ -279,7 +279,7 @@ TEST_CASE("Test arrow in C API", "[capi][arrow]") {
 
 		SECTION("null schema") {
 			// Creating a view with a null schema should fail gracefully.
-			string view_name = "foo_empty_table_null_schema";
+			duckdb::string view_name = "foo_empty_table_null_schema";
 
 			// arrow array scan, destroy out_stream after use
 			ArrowArrayStream *arrow_array_stream;

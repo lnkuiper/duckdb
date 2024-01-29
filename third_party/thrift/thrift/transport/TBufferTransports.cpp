@@ -23,7 +23,7 @@
 
 #include "thrift/transport/TBufferTransports.h"
 
-using std::string;
+using duckdb::string;
 
 namespace duckdb_apache {
 namespace thrift {
@@ -57,7 +57,7 @@ uint32_t TMemoryBuffer::readSlow(uint8_t* buf, uint32_t len) {
   return give;
 }
 
-uint32_t TMemoryBuffer::readAppendToString(std::string& str, uint32_t len) {
+uint32_t TMemoryBuffer::readAppendToString(duckdb::string& str, uint32_t len) {
   // Don't get some stupid assertion failure.
   if (buffer_ == nullptr) {
     return 0;

@@ -33,7 +33,7 @@ public:
 	//! Additional info passed to the CreatePlan & Bind functions
 	shared_ptr<OperatorExtensionInfo> operator_info;
 
-	virtual std::string GetName() = 0;
+	virtual string GetName() = 0;
 	virtual unique_ptr<LogicalExtensionOperator> Deserialize(Deserializer &deserializer) = 0;
 
 	virtual ~OperatorExtension() {

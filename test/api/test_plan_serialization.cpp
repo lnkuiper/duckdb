@@ -2,9 +2,9 @@
 #include "duckdb/execution/physical_plan_generator.hpp"
 #include "duckdb/optimizer/optimizer.hpp"
 #include "duckdb/parallel/thread_context.hpp"
+#include "duckdb/parser/parser.hpp"
 #include "duckdb/planner/planner.hpp"
 #include "test_helpers.hpp"
-#include "duckdb/parser/parser.hpp"
 
 #include <map>
 #include <set>
@@ -12,7 +12,8 @@
 using namespace duckdb;
 using namespace std;
 
-static void test_helper(string sql, duckdb::vector<string> fixtures = duckdb::vector<string>()) {
+static void test_helper(duckdb::string sql,
+                        duckdb::vector<duckdb::string> fixtures = duckdb::vector<duckdb::string>()) {
 	DuckDB db;
 	Connection con(db);
 
@@ -26,7 +27,7 @@ static void test_helper(string sql, duckdb::vector<string> fixtures = duckdb::ve
 	for (auto &statement : p.statements) {
 		con.context->transaction.BeginTransaction();
 		// Should that be the default "ToString"?
-		string statement_sql(statement->query.c_str() + statement->stmt_location, statement->stmt_length);
+		duckdb::string statement_sql(statement->query.c_str() + statement->stmt_location, statement->stmt_length);
 		Planner planner(*con.context);
 		planner.CreatePlan(std::move(statement));
 		auto plan = std::move(planner.plan);
@@ -43,7 +44,8 @@ static void test_helper(string sql, duckdb::vector<string> fixtures = duckdb::ve
 	}
 }
 
-static void test_helper_multi_db(string sql, duckdb::vector<string> fixtures = duckdb::vector<string>()) {
+static void test_helper_multi_db(duckdb::string sql,
+                                 duckdb::vector<duckdb::string> fixtures = duckdb::vector<duckdb::string>()) {
 	DuckDB db;
 	Connection con(db);
 	REQUIRE_NO_FAIL(con.Query("ATTACH DATABASE ':memory:' AS new_db;"));
@@ -58,7 +60,7 @@ static void test_helper_multi_db(string sql, duckdb::vector<string> fixtures = d
 	for (auto &statement : p.statements) {
 		con.context->transaction.BeginTransaction();
 		// Should that be the default "ToString"?
-		string statement_sql(statement->query.c_str() + statement->stmt_location, statement->stmt_length);
+		duckdb::string statement_sql(statement->query.c_str() + statement->stmt_location, statement->stmt_length);
 		Planner planner(*con.context);
 		planner.CreatePlan(std::move(statement));
 		auto plan = std::move(planner.plan);

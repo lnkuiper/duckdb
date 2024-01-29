@@ -10,7 +10,7 @@
 // See filtered_re2.h
 
 #include <set>
-#include <string>
+#include "duckdb/common/string.hpp"
 #include <vector>
 
 #include "util/util.h"
@@ -37,7 +37,7 @@ class Prefilter {
   ~Prefilter();
 
   Op op() { return op_; }
-  const std::string& atom() const { return atom_; }
+  const duckdb::string& atom() const { return atom_; }
   void set_unique_id(int id) { unique_id_ = id; }
   int unique_id() const { return unique_id_; }
 
@@ -57,7 +57,7 @@ class Prefilter {
   static Prefilter* FromRE2(const RE2* re2);
 
   // Returns a readable debug string of the prefilter.
-  std::string DebugString() const;
+  duckdb::string DebugString() const;
 
  private:
   class Info;
@@ -75,9 +75,9 @@ class Prefilter {
 
   static Prefilter* FromRegexp(Regexp* a);
 
-  static Prefilter* FromString(const std::string& str);
+  static Prefilter* FromString(const duckdb::string& str);
 
-  static Prefilter* OrStrings(std::set<std::string>* ss);
+  static Prefilter* OrStrings(std::set<duckdb::string>* ss);
 
   static Info* BuildInfo(Regexp* re);
 
@@ -90,7 +90,7 @@ class Prefilter {
   std::vector<Prefilter*>* subs_;
 
   // Actual string to match in leaf node.
-  std::string atom_;
+  duckdb::string atom_;
 
   // If different prefilters have the same string atom, or if they are
   // structurally the same (e.g., OR of same atom strings) they are

@@ -1,6 +1,6 @@
-#include "duckdb/main/capi/capi_internal.hpp"
-#include "duckdb/common/types/timestamp.hpp"
 #include "duckdb/common/allocator.hpp"
+#include "duckdb/common/types/timestamp.hpp"
+#include "duckdb/main/capi/capi_internal.hpp"
 
 namespace duckdb {
 
@@ -253,8 +253,8 @@ duckdb_state deprecated_duckdb_translate_column(MaterializedQueryResult &result,
 			break;
 		}
 		default:
-			throw std::runtime_error("Unsupported physical type for Decimal" +
-			                         TypeIdToString(result.types[col].InternalType()));
+			throw std::runtime_error(
+			    ("Unsupported physical type for Decimal" + TypeIdToString(result.types[col].InternalType())).c_str());
 		}
 		break;
 	}

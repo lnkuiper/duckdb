@@ -253,12 +253,11 @@ void ExtensionHelper::LoadAllExtensions(DuckDB &db) {
 #endif
 }
 
-ExtensionLoadResult ExtensionHelper::LoadExtension(DuckDB &db, const std::string &extension) {
+ExtensionLoadResult ExtensionHelper::LoadExtension(DuckDB &db, const string &extension) {
 	return LoadExtensionInternal(db, extension, false);
 }
 
-ExtensionLoadResult ExtensionHelper::LoadExtensionInternal(DuckDB &db, const std::string &extension,
-                                                           bool initial_load) {
+ExtensionLoadResult ExtensionHelper::LoadExtensionInternal(DuckDB &db, const string &extension, bool initial_load) {
 #ifdef DUCKDB_TEST_REMOTE_INSTALL
 	if (!initial_load && StringUtil::Contains(DUCKDB_TEST_REMOTE_INSTALL, extension)) {
 		Connection con(db);
@@ -396,7 +395,7 @@ ExtensionLoadResult ExtensionHelper::LoadExtensionInternal(DuckDB &db, const std
 	return ExtensionLoadResult::LOADED_EXTENSION;
 }
 
-static vector<std::string> public_keys = {
+static vector<string> public_keys = {
     R"(
 -----BEGIN PUBLIC KEY-----
 MIIBIjANBgkqhkiG9w0BAQEFAAOCAQ8AMIIBCgKCAQEA6aZuHUa1cLR9YDDYaEfi

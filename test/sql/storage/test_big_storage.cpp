@@ -1,7 +1,7 @@
 #include "catch.hpp"
 #include "duckdb/common/file_system.hpp"
-#include "test_helpers.hpp"
 #include "duckdb/storage/storage_info.hpp"
+#include "test_helpers.hpp"
 
 using namespace duckdb;
 using namespace std;
@@ -173,14 +173,14 @@ TEST_CASE("Test storing big strings", "[storage]") {
 		// create a database and insert the big string
 		DuckDB db(storage_database, config.get());
 		Connection con(db);
-		string big_string = string(string_length, 'a');
+		duckdb::string big_string = duckdb::string(string_length, 'a');
 		REQUIRE_NO_FAIL(con.Query("CREATE TABLE test (a VARCHAR, j BIGINT);"));
 		REQUIRE_NO_FAIL(con.Query("INSERT INTO test VALUES ('" + big_string + "', 1)"));
 		uint64_t iteration = 2;
 		while (string_length < Storage::BLOCK_SIZE * 2) {
-			REQUIRE_NO_FAIL(con.Query("INSERT INTO test SELECT a||a||a||a||a||a||a||a||a||a, " + to_string(iteration) +
-			                          " FROM test"));
-			REQUIRE_NO_FAIL(con.Query("DELETE FROM test WHERE j=" + to_string(iteration - 1)));
+			REQUIRE_NO_FAIL(con.Query("INSERT INTO test SELECT a||a||a||a||a||a||a||a||a||a, " +
+			                          duckdb::to_string(iteration) + " FROM test"));
+			REQUIRE_NO_FAIL(con.Query("DELETE FROM test WHERE j=" + duckdb::to_string(iteration - 1)));
 			iteration++;
 			string_length *= 10;
 		}

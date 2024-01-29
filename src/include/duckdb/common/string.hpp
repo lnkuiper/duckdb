@@ -10,11 +10,25 @@
 
 #include "duckdb/common/container_allocator.hpp"
 
+#include <iomanip>
 #include <sstream>
 #include <string>
 
 namespace duckdb {
 
-typedef std::basic_string<char, std::char_traits<char>, container_allocator<char>> string;
+template <class _CharT = char, class _Traits = std::char_traits<_CharT>, class _Alloc = container_allocator<_CharT>>
+using basic_string = typename std::basic_string<_CharT, _Traits, _Alloc>;
+using string = basic_string<char>;
+
+using std::basic_string_view;
+
+int stoi(const string &__str);
+long stol(const string &__str);
+unsigned long stoul(const string &__str);
+long long stoll(const string &__str);
+unsigned long long stoull(const string &__str);
+float stof(const string &__str);
+double stod(const string &__str);
+long double stold(const string &__str);
 
 } // namespace duckdb

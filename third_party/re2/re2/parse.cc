@@ -22,7 +22,7 @@
 #include <string.h>
 #include <algorithm>
 #include <map>
-#include <string>
+#include "duckdb/common/string.hpp"
 #include <vector>
 
 #include "util/util.h"
@@ -611,7 +611,7 @@ bool Regexp::ParseState::DoLeftParen(const StringPiece& name) {
   Regexp* re = new Regexp(kLeftParen, flags_);
   re->capture_.cap_ = ++ncap_;
   if (name.data() != NULL)
-    re->capture_.name_ = new std::string(name);
+    re->capture_.name_ = new duckdb::string(name);
   return PushRegexp(re);
 }
 
@@ -1791,7 +1791,7 @@ ParseStatus ParseUnicodeGroup(StringPiece* s, Regexp::ParseFlags parse_flags,
   // Look up the group in the ICU Unicode data. Because ICU provides full
   // Unicode properties support, this could be more than a lookup by name.
   ::icu::UnicodeString ustr = ::icu::UnicodeString::fromUTF8(
-      std::string("\\p{") + std::string(name) + std::string("}"));
+      duckdb::string("\\p{") + duckdb::string(name) + duckdb::string("}"));
   UErrorCode uerr = U_ZERO_ERROR;
   ::icu::UnicodeSet uset(ustr, uerr);
   if (U_FAILURE(uerr)) {
@@ -2182,7 +2182,7 @@ BadPerlOp:
 // into UTF8 encoding in string.
 // Can't use EncodingUtils::EncodeLatin1AsUTF8 because it is
 // deprecated and because it rejects code points 0x80-0x9F.
-void ConvertLatin1ToUTF8(const StringPiece& latin1, std::string* utf) {
+void ConvertLatin1ToUTF8(const StringPiece& latin1, duckdb::string* utf) {
   char buf[UTFmax];
 
   utf->clear();
@@ -2209,7 +2209,7 @@ Regexp* Regexp::Parse(const StringPiece& s, ParseFlags global_flags,
 
   // Convert regexp to UTF-8 (easier on the rest of the parser).
   if (global_flags & Latin1) {
-    std::string* tmp = new std::string;
+    duckdb::string* tmp = new duckdb::string;
     ConvertLatin1ToUTF8(t, tmp);
     status->set_tmp(tmp);
     t = *tmp;

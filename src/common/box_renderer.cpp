@@ -1,11 +1,10 @@
 #include "duckdb/common/box_renderer.hpp"
 
 #include "duckdb/common/printer.hpp"
+#include "duckdb/common/stringstream.hpp"
 #include "duckdb/common/types/column/column_data_collection.hpp"
 #include "duckdb/common/vector_operations/vector_operations.hpp"
 #include "utf8proc_wrapper.hpp"
-
-#include <sstream>
 
 namespace duckdb {
 
@@ -15,7 +14,7 @@ BoxRenderer::BoxRenderer(BoxRendererConfig config_p) : config(std::move(config_p
 }
 
 string BoxRenderer::ToString(ClientContext &context, const vector<string> &names, const ColumnDataCollection &result) {
-	std::stringstream ss;
+	stringstream ss;
 	Render(context, names, result, ss);
 	return ss.str();
 }

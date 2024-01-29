@@ -87,7 +87,7 @@ const int8_t TTypeToCType[16] = {
 
 template <class Transport_>
 uint32_t TCompactProtocolT<Transport_>::writeMessageBegin(
-    const std::string& name,
+    const duckdb::string& name,
     const TMessageType messageType,
     const int32_t seqid) {
   uint32_t wsize = 0;
@@ -266,12 +266,12 @@ uint32_t TCompactProtocolT<Transport_>::writeDouble(const double dub) {
  * Write a string to the wire with a varint size preceding.
  */
 template <class Transport_>
-uint32_t TCompactProtocolT<Transport_>::writeString(const std::string& str) {
+uint32_t TCompactProtocolT<Transport_>::writeString(const duckdb::string& str) {
   return writeBinary(str);
 }
 
 template <class Transport_>
-uint32_t TCompactProtocolT<Transport_>::writeBinary(const std::string& str) {
+uint32_t TCompactProtocolT<Transport_>::writeBinary(const duckdb::string& str) {
   if(str.size() > (std::numeric_limits<uint32_t>::max)())
     throw TProtocolException(TProtocolException::SIZE_LIMIT);
   uint32_t ssize = static_cast<uint32_t>(str.size());
@@ -416,7 +416,7 @@ int8_t TCompactProtocolT<Transport_>::getCompactType(const TType ttype) {
  */
 template <class Transport_>
 uint32_t TCompactProtocolT<Transport_>::readMessageBegin(
-    std::string& name,
+    duckdb::string& name,
     TMessageType& messageType,
     int32_t& seqid) {
   uint32_t rsize = 0;
@@ -447,7 +447,7 @@ uint32_t TCompactProtocolT<Transport_>::readMessageBegin(
  * opportunity to push a new struct begin marker on the field stack.
  */
 template <class Transport_>
-uint32_t TCompactProtocolT<Transport_>::readStructBegin(std::string& name) {
+uint32_t TCompactProtocolT<Transport_>::readStructBegin(duckdb::string& name) {
   name = "";
   lastField_.push(lastFieldId_);
   lastFieldId_ = 0;
@@ -469,7 +469,7 @@ uint32_t TCompactProtocolT<Transport_>::readStructEnd() {
  * Read a field header off the wire.
  */
 template <class Transport_>
-uint32_t TCompactProtocolT<Transport_>::readFieldBegin(std::string& name,
+uint32_t TCompactProtocolT<Transport_>::readFieldBegin(duckdb::string& name,
                                                        TType& fieldType,
                                                        int16_t& fieldId) {
   (void) name;
@@ -667,7 +667,7 @@ uint32_t TCompactProtocolT<Transport_>::readDouble(double& dub) {
 }
 
 template <class Transport_>
-uint32_t TCompactProtocolT<Transport_>::readString(std::string& str) {
+uint32_t TCompactProtocolT<Transport_>::readString(duckdb::string& str) {
   return readBinary(str);
 }
 
@@ -675,7 +675,7 @@ uint32_t TCompactProtocolT<Transport_>::readString(std::string& str) {
  * Read a byte[] from the wire.
  */
 template <class Transport_>
-uint32_t TCompactProtocolT<Transport_>::readBinary(std::string& str) {
+uint32_t TCompactProtocolT<Transport_>::readBinary(duckdb::string& str) {
   int32_t rsize = 0;
   int32_t size;
 
@@ -817,7 +817,7 @@ TType TCompactProtocolT<Transport_>::getTType(int8_t type) {
     case detail::compact::CT_STRUCT:
       return T_STRUCT;
     default:
-      throw TException(std::string("don't know what type: ") + (char)type);
+      throw TException(duckdb::string("don't know what type: ") + (char)type);
   }
 }
 

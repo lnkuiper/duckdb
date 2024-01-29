@@ -153,7 +153,7 @@ TEST_CASE("Test prepared statements in C API", "[capi]") {
 	status = duckdb_execute_prepared(stmt, &res);
 	REQUIRE(status == DuckDBSuccess);
 	auto value = duckdb_value_varchar(&res, 0, 0);
-	REQUIRE(string(value) == "hello");
+	REQUIRE(duckdb::string(value) == "hello");
 	REQUIRE(duckdb_value_int8(&res, 0, 0) == 0);
 	duckdb_free(value);
 	duckdb_destroy_result(&res);
@@ -162,7 +162,7 @@ TEST_CASE("Test prepared statements in C API", "[capi]") {
 	status = duckdb_execute_prepared(stmt, &res);
 	REQUIRE(status == DuckDBSuccess);
 	value = duckdb_value_varchar(&res, 0, 0);
-	REQUIRE(string(value) == "hello\\x00world");
+	REQUIRE(duckdb::string(value) == "hello\\x00world");
 	REQUIRE(duckdb_value_int8(&res, 0, 0) == 0);
 	duckdb_free(value);
 	duckdb_destroy_result(&res);
@@ -176,7 +176,7 @@ TEST_CASE("Test prepared statements in C API", "[capi]") {
 	status = duckdb_execute_prepared(stmt, &res);
 	REQUIRE(status == DuckDBSuccess);
 	value = duckdb_value_varchar(&res, 0, 0);
-	REQUIRE(string(value) == "1992-09-03");
+	REQUIRE(duckdb::string(value) == "1992-09-03");
 	duckdb_free(value);
 	duckdb_destroy_result(&res);
 
@@ -190,7 +190,7 @@ TEST_CASE("Test prepared statements in C API", "[capi]") {
 	status = duckdb_execute_prepared(stmt, &res);
 	REQUIRE(status == DuckDBSuccess);
 	value = duckdb_value_varchar(&res, 0, 0);
-	REQUIRE(string(value) == "12:22:33.1234");
+	REQUIRE(duckdb::string(value) == "12:22:33.1234");
 	duckdb_free(value);
 	duckdb_destroy_result(&res);
 
@@ -202,7 +202,7 @@ TEST_CASE("Test prepared statements in C API", "[capi]") {
 	status = duckdb_execute_prepared(stmt, &res);
 	REQUIRE(status == DuckDBSuccess);
 	value = duckdb_value_varchar(&res, 0, 0);
-	REQUIRE(string(value) == "1992-09-03 12:22:33.1234");
+	REQUIRE(duckdb::string(value) == "1992-09-03 12:22:33.1234");
 	duckdb_free(value);
 	duckdb_destroy_result(&res);
 
@@ -215,7 +215,7 @@ TEST_CASE("Test prepared statements in C API", "[capi]") {
 	status = duckdb_execute_prepared(stmt, &res);
 	REQUIRE(status == DuckDBSuccess);
 	value = duckdb_value_varchar(&res, 0, 0);
-	REQUIRE(string(value) == "3 months");
+	REQUIRE(duckdb::string(value) == "3 months");
 	duckdb_free(value);
 	duckdb_destroy_result(&res);
 
@@ -274,7 +274,7 @@ TEST_CASE("Test prepared statements in C API", "[capi]") {
 	// test duckdb_malloc explicitly
 	auto malloced_data = duckdb_malloc(100);
 	memcpy(malloced_data, "hello\0", 6);
-	REQUIRE(string((char *)malloced_data) == "hello");
+	REQUIRE(duckdb::string((char *)malloced_data) == "hello");
 	duckdb_free(malloced_data);
 
 	status = duckdb_prepare(tester.connection, "SELECT sum(i) FROM a WHERE i > ?", &stmt);
@@ -334,17 +334,17 @@ TEST_CASE("Test prepared statements with named parameters in C API", "[capi]") {
 	REQUIRE(status == DuckDBSuccess);
 
 	idx_t param_count = duckdb_nparams(stmt);
-	duckdb::vector<string> names;
+	duckdb::vector<duckdb::string> names;
 	for (idx_t i = 0; i < param_count; i++) {
 		auto name = duckdb_parameter_name(stmt, i + 1);
-		names.push_back(std::string(name));
+		names.push_back(duckdb::string(name));
 		duckdb_free((void *)name);
 	}
 
 	REQUIRE(duckdb_parameter_name(stmt, 0) == (const char *)NULL);
 	REQUIRE(duckdb_parameter_name(stmt, 2) == (const char *)NULL);
 
-	duckdb::vector<string> expected_names = {"my_val"};
+	duckdb::vector<duckdb::string> expected_names = {"my_val"};
 	REQUIRE(names.size() == expected_names.size());
 	for (idx_t i = 0; i < expected_names.size(); i++) {
 		auto &name = names[i];

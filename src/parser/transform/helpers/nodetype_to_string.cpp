@@ -2,7 +2,7 @@
 
 namespace duckdb {
 
-std::string Transformer::NodetypeToString(duckdb_libpgquery::PGNodeTag type) { // LCOV_EXCL_START
+string Transformer::NodetypeToString(duckdb_libpgquery::PGNodeTag type) { // LCOV_EXCL_START
 	switch (type) {
 	case duckdb_libpgquery::T_PGInvalid:
 		return "T_Invalid";

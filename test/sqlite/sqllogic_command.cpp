@@ -299,7 +299,7 @@ void ModeCommand::ExecuteInternal(ExecuteContext &context) const {
 	} else if (parameter == "debug") {
 		runner.debug_mode = true;
 	} else {
-		throw std::runtime_error("unrecognized mode: " + parameter);
+		throw std::runtime_error(("unrecognized mode: " + parameter).c_str());
 	}
 }
 

@@ -12,9 +12,14 @@
 
 namespace duckdb {
 
-template <class T>
-string to_string(const T &val) {
-	return string(std::to_string(val));
-}
+string to_string(int __val);
+string to_string(unsigned __val);
+string to_string(long __val);
+string to_string(unsigned long __val);
+string to_string(long long __val);
+string to_string(unsigned long long __val);
+string to_string(float __val);
+string to_string(double __val);
+string to_string(long double __val);
 
 } // namespace duckdb

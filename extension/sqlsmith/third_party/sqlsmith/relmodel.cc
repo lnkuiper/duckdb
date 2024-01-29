@@ -1,7 +1,7 @@
 #include "relmodel.hh"
 #include <algorithm>
 #include <cctype>
-#include <string>
+#include "duckdb/common/string.hpp"
 
 map<string, sqltype *> sqltype::typemap;
 

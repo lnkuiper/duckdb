@@ -34,13 +34,13 @@ inline void *dlsym(void *handle, const char *name) {
 	return (void *)GetProcAddress((HINSTANCE)handle, name);
 }
 
-inline std::string GetDLError(void) {
+inline string GetDLError(void) {
 	return LocalFileSystem::GetLastErrorAsString();
 }
 
 #else
 
-inline std::string GetDLError(void) {
+inline string GetDLError(void) {
 	return dlerror();
 }
 

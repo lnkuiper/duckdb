@@ -1,5 +1,6 @@
 #include "duckdb/execution/operator/csv_scanner/util/csv_error.hpp"
-#include <sstream>
+
+#include "duckdb/common/stringstream.hpp"
 
 namespace duckdb {
 
@@ -23,7 +24,7 @@ void CSVErrorHandler::Error(LinesPerBoundary &error_info, CSVError &csv_error, b
 		errors.push_back({error_info, csv_error});
 		return;
 	}
-	std::ostringstream error;
+	ostringstream error;
 	if (PrintLineNumber(csv_error)) {
 		error << "CSV Error on Line: " << GetLine(error_info) << std::endl;
 	}
@@ -84,7 +85,7 @@ CSVError CSVError::ColumnTypesError(case_insensitive_map_t<idx_t> sql_types_per_
 
 CSVError CSVError::CastError(const CSVReaderOptions &options, DataChunk &parse_chunk, idx_t chunk_row,
                              string &column_name, string &cast_error, idx_t &column_idx, vector<Value> &row) {
-	std::ostringstream error;
+	ostringstream error;
 	// Which column
 	error << "Error when converting column \"" << column_name << "\"." << std::endl;
 	// What was the cast error
@@ -105,7 +106,7 @@ CSVError CSVError::CastError(const CSVReaderOptions &options, DataChunk &parse_c
 }
 
 CSVError CSVError::LineSizeError(const CSVReaderOptions &options, idx_t actual_size) {
-	std::ostringstream error;
+	ostringstream error;
 	error << "Maximum line size of " << options.maximum_line_size << " bytes exceeded. ";
 	error << "Actual Size:" << actual_size << " bytes." << std::endl;
 	error << options.ToString();
@@ -113,7 +114,7 @@ CSVError CSVError::LineSizeError(const CSVReaderOptions &options, idx_t actual_s
 }
 
 CSVError CSVError::SniffingError(string &file_path) {
-	std::ostringstream error;
+	ostringstream error;
 	// Which column
 	error << "Error when sniffing file \"" << file_path << "\"." << std::endl;
 	error << "CSV options could not be auto-detected. Consider setting parser options manually." << std::endl;
@@ -121,7 +122,7 @@ CSVError CSVError::SniffingError(string &file_path) {
 }
 
 CSVError CSVError::NullPaddingFail(const CSVReaderOptions &options) {
-	std::ostringstream error;
+	ostringstream error;
 	error << " The parallel scanner does not support null_padding in conjunction with quoted new lines. Please "
 	         "disable the parallel csv reader with parallel=false"
 	      << std::endl;
@@ -132,7 +133,7 @@ CSVError CSVError::NullPaddingFail(const CSVReaderOptions &options) {
 
 CSVError CSVError::UnterminatedQuotesError(const CSVReaderOptions &options, string_t *vector_ptr,
                                            idx_t vector_line_start, idx_t current_column) {
-	std::ostringstream error;
+	ostringstream error;
 	// What is the problematic CSV Line
 	error << "Value with unterminated quote found." << std::endl;
 	error << "Problematic CSV Line (Up to unquoted value):" << std::endl;
@@ -151,7 +152,7 @@ CSVError CSVError::UnterminatedQuotesError(const CSVReaderOptions &options, stri
 
 CSVError CSVError::IncorrectColumnAmountError(const CSVReaderOptions &options, string_t *vector_ptr,
                                               idx_t vector_line_start, idx_t actual_columns) {
-	std::ostringstream error;
+	ostringstream error;
 	// How many columns were expected and how many were found
 	error << "Expected Number of Columns: " << options.dialect_options.num_cols << " Found: " << actual_columns
 	      << std::endl;

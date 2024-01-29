@@ -52,7 +52,7 @@ void PreparedStatementVerifier::ConvertConstants(unique_ptr<ParsedExpression> &c
 		child->alias = string();
 		// check if the value already exists
 		idx_t index = values.size();
-		auto identifier = std::to_string(index + 1);
+		auto identifier = to_string(index + 1);
 		const auto predicate = [&](const std::pair<const string, unique_ptr<ParsedExpression>> &pair) {
 			return pair.second->Equals(*child.get());
 		};

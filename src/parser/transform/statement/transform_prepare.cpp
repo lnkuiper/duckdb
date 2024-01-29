@@ -45,7 +45,7 @@ unique_ptr<ExecuteStatement> Transformer::TransformExecute(duckdb_libpgquery::PG
 		}
 		auto param_name = expr->alias;
 		if (expr->alias.empty()) {
-			param_name = std::to_string(param_idx + 1);
+			param_name = to_string(param_idx + 1);
 			if (param_idx != i) {
 				throw NotImplementedException("Mixing named parameters and positional parameters is not supported yet");
 			}

@@ -5579,7 +5579,7 @@ SvNumberformat::SvNumberformat(String& rString,
 	InitFormat(rString, pFormatterP, pISc, nCheckPos, eLan, bStan);
 }
 
-SvNumberformat::SvNumberformat(std::string& rString,
+SvNumberformat::SvNumberformat(duckdb::string& rString,
 	LocaleData* pFormatterP,
 	ImpSvNumberInputScan* pISc,
 	uint16_t& nCheckPos,
@@ -6224,7 +6224,7 @@ String SvNumberformat::StripNewCurrencyDelimiters( const String& rStr,
     uint16_t nStartPos, nPos, nLen;
     nLen = rStr.size();
     nStartPos = 0;
-    while ( (find_pos = rStr.find( L"[$", nStartPos )) != std::string::npos )
+    while ( (find_pos = rStr.find( L"[$", nStartPos )) != duckdb::string::npos )
     {
 		nPos = (uint16_t)find_pos;
         uint16_t nEnd;
@@ -7011,13 +7011,13 @@ bool SvNumberformat::GetOutputString(double fNumber,
     return bRes;
 }
 
-bool SvNumberformat::GetOutputString(double fNumber, std::string& OutString)
+bool SvNumberformat::GetOutputString(double fNumber, duckdb::string& OutString)
 {
 	String out_str;
     duckdb_excel::Color *pColor = nullptr;
 	bool result = GetOutputString(fNumber, out_str, &pColor);
 
-	std::string temp(out_str.length(), ' ');
+	duckdb::string temp(out_str.length(), ' ');
 	std::copy(out_str.begin(), out_str.end(), temp.begin());
 	OutString = temp;
 

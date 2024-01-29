@@ -54,7 +54,7 @@
 #include <string.h>
 #include <algorithm>
 #include <map>
-#include <string>
+#include "duckdb/common/string.hpp"
 #include <vector>
 
 #include "util/util.h"

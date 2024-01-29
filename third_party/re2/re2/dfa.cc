@@ -30,7 +30,7 @@
 #include <deque>
 #include <mutex>
 #include <new>
-#include <string>
+#include "duckdb/common/string.hpp"
 #include <unordered_map>
 #include <unordered_set>
 #include <utility>
@@ -102,7 +102,7 @@ class DFA {
 
   // Computes min and max for matching strings.  Won't return strings
   // bigger than maxlen.
-  bool PossibleMatchRange(std::string* min, std::string* max, int maxlen);
+  bool PossibleMatchRange(duckdb::string* min, duckdb::string* max, int maxlen);
 
   // These data structures are logically private, but C++ makes it too
   // difficult to mark them as such.
@@ -239,10 +239,10 @@ class DFA {
   void AddToQueue(Workq* q, int id, uint32_t flag);
 
   // For debugging, returns a text representation of State.
-  static std::string DumpState(State* state);
+  static duckdb::string DumpState(State* state);
 
   // For debugging, returns a text representation of a Workq.
-  static std::string DumpWorkq(Workq* q);
+  static duckdb::string DumpWorkq(Workq* q);
 
   // Search parameters
   struct SearchParams {
@@ -493,8 +493,8 @@ DFA::~DFA() {
 // Debugging printouts
 
 // For debugging, returns a string representation of the work queue.
-std::string DFA::DumpWorkq(Workq* q) {
-  std::string s;
+duckdb::string DFA::DumpWorkq(Workq* q) {
+  duckdb::string s;
   const char* sep = "";
   for (Workq::iterator it = q->begin(); it != q->end(); ++it) {
     if (q->is_mark(*it)) {
@@ -509,14 +509,14 @@ std::string DFA::DumpWorkq(Workq* q) {
 }
 
 // For debugging, returns a string representation of the state.
-std::string DFA::DumpState(State* state) {
+duckdb::string DFA::DumpState(State* state) {
   if (state == NULL)
     return "_";
   if (state == DeadState)
     return "X";
   if (state == FullMatchState)
     return "*";
-  std::string s;
+  duckdb::string s;
   const char* sep = "";
   StringAppendF(&s, "(%p)", state);
   for (int i = 0; i < state->ninst_; i++) {
@@ -1938,7 +1938,7 @@ void Prog::TEST_dfa_should_bail_when_slow(bool b) {
 
 // Computes min and max for matching string.
 // Won't return strings bigger than maxlen.
-bool DFA::PossibleMatchRange(std::string* min, std::string* max, int maxlen) {
+bool DFA::PossibleMatchRange(duckdb::string* min, duckdb::string* max, int maxlen) {
   if (!ok())
     return false;
 
@@ -2075,7 +2075,7 @@ bool DFA::PossibleMatchRange(std::string* min, std::string* max, int maxlen) {
 }
 
 // PossibleMatchRange for a Prog.
-bool Prog::PossibleMatchRange(std::string* min, std::string* max, int maxlen) {
+bool Prog::PossibleMatchRange(duckdb::string* min, duckdb::string* max, int maxlen) {
   // Have to use dfa_longest_ to get all strings for full matches.
   // For example, (a|aa) never matches aa in first-match mode.
   return GetDFA(kLongestMatch)->PossibleMatchRange(min, max, maxlen);

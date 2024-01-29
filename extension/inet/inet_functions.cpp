@@ -1,9 +1,7 @@
 #include "inet_functions.hpp"
+
 #include "duckdb/common/exception.hpp"
-#include "duckdb/common/string_util.hpp"
-#include "duckdb/common/pair.hpp"
 #include "duckdb/common/operator/cast_operators.hpp"
-#include "duckdb/common/types/cast_helpers.hpp"
 #include "duckdb/common/vector_operations/generic_executor.hpp"
 
 namespace duckdb {

@@ -72,7 +72,7 @@ TEST_CASE("Test enum types C API", "[capi]") {
 	duckdb::vector<duckdb_type> internal_types = {DUCKDB_TYPE_UTINYINT, DUCKDB_TYPE_USMALLINT, DUCKDB_TYPE_UINTEGER,
 	                                              DUCKDB_TYPE_INVALID};
 	duckdb::vector<uint32_t> dictionary_sizes = {2, 300, 70000, 0};
-	duckdb::vector<string> dictionary_strings = {"DUCK_DUCK_ENUM", "enum_0", "enum_0", string()};
+	duckdb::vector<duckdb::string> dictionary_strings = {"DUCK_DUCK_ENUM", "enum_0", "enum_0", duckdb::string()};
 	for (idx_t i = 0; i < result->ColumnCount(); i++) {
 		auto logical_type = duckdb_vector_get_column_type(duckdb_data_chunk_get_vector(chunk->GetChunk(), i));
 		REQUIRE(logical_type);
@@ -81,7 +81,7 @@ TEST_CASE("Test enum types C API", "[capi]") {
 		REQUIRE(duckdb_enum_dictionary_size(logical_type) == dictionary_sizes[i]);
 
 		auto value = duckdb_enum_dictionary_value(logical_type, 0);
-		string str_val = value ? string(value) : string();
+		duckdb::string str_val = value ? duckdb::string(value) : duckdb::string();
 		duckdb_free(value);
 
 		REQUIRE(str_val == dictionary_strings[i]);
@@ -149,7 +149,7 @@ TEST_CASE("Test struct types C API", "[capi]") {
 	duckdb::vector<duckdb_type> types = {DUCKDB_TYPE_STRUCT, DUCKDB_TYPE_STRUCT, DUCKDB_TYPE_STRUCT,
 	                                     DUCKDB_TYPE_INTEGER};
 	duckdb::vector<idx_t> child_count = {1, 2, 1, 0};
-	duckdb::vector<duckdb::vector<string>> child_names = {{"a"}, {"b", "c"}, {"d"}, {}};
+	duckdb::vector<duckdb::vector<duckdb::string>> child_names = {{"a"}, {"b", "c"}, {"d"}, {}};
 	duckdb::vector<duckdb::vector<duckdb_type>> child_types = {
 	    {DUCKDB_TYPE_INTEGER}, {DUCKDB_TYPE_VARCHAR, DUCKDB_TYPE_LIST}, {DUCKDB_TYPE_STRUCT}, {}};
 	for (idx_t i = 0; i < result->ColumnCount(); i++) {
@@ -160,7 +160,7 @@ TEST_CASE("Test struct types C API", "[capi]") {
 		REQUIRE(duckdb_struct_type_child_count(logical_type) == child_count[i]);
 		for (idx_t c_idx = 0; c_idx < child_count[i]; c_idx++) {
 			auto val = duckdb_struct_type_child_name(logical_type, c_idx);
-			string str_val(val);
+			duckdb::string str_val(val);
 			duckdb_free(val);
 
 			REQUIRE(child_names[i][c_idx] == str_val);
@@ -188,7 +188,7 @@ TEST_CASE("Test struct types creation C API", "[capi]") {
 
 	for (idx_t i = 0; i < names.size(); i++) {
 		auto name = duckdb_struct_type_child_name(logical_type, i);
-		string str_name(name);
+		duckdb::string str_name(name);
 		duckdb_free(name);
 		REQUIRE(str_name == names[i]);
 
@@ -212,7 +212,7 @@ TEST_CASE("Test enum types creation C API", "[capi]") {
 
 	for (idx_t i = 0; i < names.size(); i++) {
 		auto name = duckdb_enum_dictionary_value(logical_type, i);
-		string str_name(name);
+		duckdb::string str_name(name);
 		duckdb_free(name);
 		REQUIRE(str_name == names[i]);
 	}
@@ -241,7 +241,7 @@ TEST_CASE("Union type construction") {
 	};
 	auto get_name = [&](idx_t index) {
 		auto name = duckdb_union_type_member_name(res, index);
-		string name_s(name);
+		duckdb::string name_s(name);
 		duckdb_free(name);
 		return name_s;
 	};
@@ -291,7 +291,7 @@ TEST_CASE("Logical types with aliases", "[capi]") {
 		REQUIRE(logical_type);
 
 		auto alias = duckdb_logical_type_get_alias(logical_type);
-		REQUIRE(string(alias) == "test_type");
+		REQUIRE(duckdb::string(alias) == "test_type");
 		duckdb_free(alias);
 
 		duckdb_destroy_logical_type(&logical_type);
@@ -388,7 +388,7 @@ TEST_CASE("Binding values", "[capi]") {
 		for (idx_t c_idx = 0; c_idx < member_count; c_idx++) {
 			if (type_id == DUCKDB_TYPE_STRUCT) {
 				auto val = duckdb_struct_type_child_name(logical_type, c_idx);
-				string str_val(val);
+				duckdb::string str_val(val);
 				duckdb_free(val);
 
 				REQUIRE(member_names[c_idx] == str_val);

@@ -1,7 +1,7 @@
 #include "catch.hpp"
 #include "duckdb/common/file_system.hpp"
-#include "test_helpers.hpp"
 #include "duckdb/main/appender.hpp"
+#include "test_helpers.hpp"
 
 using namespace duckdb;
 using namespace std;
@@ -26,13 +26,13 @@ TEST_CASE("Test interleaving of insertions/updates/deletes on multiple tables", 
 			switch (stage) {
 			case 0:
 				for (; test_insert < i; test_insert++) {
-					REQUIRE_NO_FAIL(con.Query("INSERT INTO test VALUES (" + to_string(test_insert) + ")"));
+					REQUIRE_NO_FAIL(con.Query("INSERT INTO test VALUES (" + duckdb::to_string(test_insert) + ")"));
 				}
 				break;
 			case 1:
 				for (; test_insert2 < i; test_insert2++) {
-					REQUIRE_NO_FAIL(con.Query("INSERT INTO test2 VALUES (" + to_string(test_insert) + ", " +
-					                          to_string(test_insert) + " + 2)"));
+					REQUIRE_NO_FAIL(con.Query("INSERT INTO test2 VALUES (" + duckdb::to_string(test_insert) + ", " +
+					                          duckdb::to_string(test_insert) + " + 2)"));
 				}
 				break;
 			case 2:

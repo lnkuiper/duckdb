@@ -30,7 +30,7 @@ struct sqlite3_value {
 	} u;
 	duckdb::SQLiteTypeValue type;
 
-	std::string str;
+	duckdb::string str;
 	sqlite3 *db; /* The associated database connection */
 };
 

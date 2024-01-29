@@ -6,7 +6,7 @@
 // to use simple extended regular expression features.
 // Also sort and simplify character classes.
 
-#include <string>
+#include "duckdb/common/string.hpp"
 
 #include "util/util.h"
 #include "util/logging.h"
@@ -21,7 +21,7 @@ namespace duckdb_re2 {
 // string representation of the simplified form.  Returns true on success.
 // Returns false and sets *error (if error != NULL) on error.
 bool Regexp::SimplifyRegexp(const StringPiece& src, ParseFlags flags,
-                            std::string* dst, RegexpStatus* status) {
+                            duckdb::string* dst, RegexpStatus* status) {
   Regexp* re = Parse(src, flags, status);
   if (re == NULL)
     return false;

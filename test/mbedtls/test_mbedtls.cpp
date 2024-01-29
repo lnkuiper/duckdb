@@ -1,17 +1,17 @@
 #include "catch.hpp"
+#include "duckdb/common/stringstream.hpp"
 #include "mbedtls_wrapper.hpp"
 
 #include <chrono>
-#include <thread>
 #include <fstream>
-#include <sstream>
+#include <thread>
 
 using namespace duckdb_mbedtls;
 using namespace std;
 
-static string file_to_string(string filename) {
-	std::ifstream stream(filename, ios_base::binary);
-	std::stringstream buffer;
+static duckdb::string file_to_string(duckdb::string filename) {
+	std::ifstream stream(filename.c_str(), ios_base::binary);
+	duckdb::stringstream buffer;
 	buffer << stream.rdbuf();
 	return buffer.str();
 }
@@ -24,7 +24,7 @@ TEST_CASE("Test that we can verify a signature", "[mbedtls]") {
 
 	auto hash = MbedTlsWrapper::ComputeSha256Hash(file_content);
 	REQUIRE(MbedTlsWrapper::IsValidSha256Signature(pubkey, signature, hash));
-	string empty_string = "";
+	duckdb::string empty_string = "";
 
 	auto borked_pubkey = pubkey;
 	borked_pubkey[10]++;

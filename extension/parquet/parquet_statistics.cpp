@@ -47,7 +47,7 @@ static unique_ptr<BaseStatistics> CreateNumericStats(const LogicalType &type,
 
 Value ParquetStatisticsUtils::ConvertValue(const LogicalType &type,
                                            const duckdb_parquet::format::SchemaElement &schema_ele,
-                                           const std::string &stats) {
+                                           const string &stats) {
 	if (stats.empty()) {
 		return Value();
 	}

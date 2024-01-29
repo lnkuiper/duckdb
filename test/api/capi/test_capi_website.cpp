@@ -172,8 +172,8 @@ TEST_CASE("Test C API examples from the website", "[capi]") {
 		duckdb_query(con, "SELECT * FROM people", &result);
 		REQUIRE(duckdb_value_int32(&result, 0, 0) == 1);
 		REQUIRE(duckdb_value_int32(&result, 0, 1) == 2);
-		REQUIRE(string(duckdb_value_varchar_internal(&result, 1, 0)) == "Mark");
-		REQUIRE(string(duckdb_value_varchar_internal(&result, 1, 1)) == "Hannes");
+		REQUIRE(duckdb::string(duckdb_value_varchar_internal(&result, 1, 0)) == "Mark");
+		REQUIRE(duckdb::string(duckdb_value_varchar_internal(&result, 1, 1)) == "Hannes");
 
 		// error conditions: we cannot
 		REQUIRE(duckdb_value_varchar_internal(&result, 0, 0) == nullptr);
