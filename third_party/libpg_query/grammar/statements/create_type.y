@@ -27,7 +27,7 @@ CreateTypeStmt:
 					PGCreateTypeStmt *n = makeNode(PGCreateTypeStmt);
 					n->typeName = $3;
 					n->query = NULL;
-					auto name = std::string(reinterpret_cast<PGValue *>($5->names->tail->data.ptr_value)->val.str);
+					auto name = duckdb::string(reinterpret_cast<PGValue *>($5->names->tail->data.ptr_value)->val.str);
 					if (name == "enum") {
 						n->kind = PG_NEWTYPE_ENUM;
 						n->vals = $5->typmods;

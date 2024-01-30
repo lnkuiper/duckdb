@@ -23,8 +23,7 @@
 #include "pg_functions.hpp"
 
 #include "nodes/parsenodes.hpp"
-#include <string>
-#include <cstring>
+#include "duckdb/common/string.hpp"
 
 namespace duckdb_libpgquery {
 

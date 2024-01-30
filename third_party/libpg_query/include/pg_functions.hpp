@@ -1,7 +1,7 @@
 #pragma once
 
 #include <stdlib.h>
-#include <string>
+#include "duckdb/common/string.hpp"
 
 #define fprintf(...)
 
@@ -16,7 +16,7 @@ typedef struct parse_result_str parse_result;
 struct parse_result_str {
 	bool success;
 	PGList *parse_tree;
-	std::string error_message;
+	duckdb::string error_message;
 	int error_location;
 };
 

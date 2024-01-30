@@ -21233,7 +21233,7 @@ yyreduce:
 					PGCreateTypeStmt *n = makeNode(PGCreateTypeStmt);
 					n->typeName = (yyvsp[(3) - (5)].range);
 					n->query = NULL;
-					auto name = std::string(reinterpret_cast<PGValue *>((yyvsp[(5) - (5)].typnam)->names->tail->data.ptr_value)->val.str);
+					auto name = duckdb::string(reinterpret_cast<PGValue *>((yyvsp[(5) - (5)].typnam)->names->tail->data.ptr_value)->val.str);
 					if (name == "enum") {
 						n->kind = PG_NEWTYPE_ENUM;
 						n->vals = (yyvsp[(5) - (5)].typnam)->typmods;
