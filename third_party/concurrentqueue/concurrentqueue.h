@@ -30,6 +30,8 @@
 
 #pragma once
 
+#include "duckdb/common/allocator.hpp"
+
 #if defined(__GNUC__)
 // Disable -Wconversion warnings (spuriously triggered when Traits::size_t and
 // Traits::index_t are set to < 32 bits, causing integer promotion, causing warnings
@@ -346,6 +348,45 @@ struct ConcurrentQueueDefaultTraits
 #endif
 };
 
+// Just so we can use our own allocator in DuckDB
+struct ConcurrentQueueDuckTraits : public ConcurrentQueueDefaultTraits {
+#ifndef MCDBGQ_USE_RELACY
+	// Memory allocation can be customized if needed.
+	// malloc should return nullptr on failure, and handle alignment like std::malloc.
+#if defined(malloc) || defined(free)
+	// Gah, this is 2015, stop defining macros that break standard code already!
+	// Work around malloc/free being special macros:
+	static inline void *WORKAROUND_malloc(size_t size) {
+		return duckdb::Allocator::DefaultAllocate(nullptr, size);
+	}
+	static inline void WORKAROUND_free(void *ptr) {
+		return duckdb::Allocator::DefaultFree(nullptr, duckdb::data_ptr_cast(ptr), 0);
+	}
+	static inline void *(malloc)(size_t size) {
+		return WORKAROUND_malloc(size);
+	}
+	static inline void(free)(void *ptr) {
+		return WORKAROUND_free(ptr);
+	}
+#else
+	static inline void *malloc(size_t size) {
+		return duckdb::Allocator::DefaultAllocate(nullptr, size);
+	}
+	static inline void free(void *ptr) {
+		return duckdb::Allocator::DefaultFree(nullptr, duckdb::data_ptr_cast(ptr), 0);
+	}
+#endif
+#else
+	// Debug versions when running under the Relacy race detector (ignore
+	// these in user code)
+	static inline void *malloc(size_t size) {
+		return rl::rl_malloc(size, $);
+	}
+	static inline void free(void *ptr) {
+		return rl::rl_free(ptr, $);
+	}
+#endif
+};
 
 // When producing or consuming many elements, the most efficient way is to:
 //    1) Use one of the bulk-operation methods of the queue with a token
@@ -686,7 +727,7 @@ template<typename T, typename Traits>
 inline void swap(typename ConcurrentQueue<T, Traits>::ImplicitProducerKVP& a, typename ConcurrentQueue<T, Traits>::ImplicitProducerKVP& b) MOODYCAMEL_NOEXCEPT;
 
 
-template<typename T, typename Traits = ConcurrentQueueDefaultTraits>
+template<typename T, typename Traits = ConcurrentQueueDuckTraits>
 class ConcurrentQueue
 {
 public:
