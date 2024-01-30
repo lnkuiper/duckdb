@@ -18,8 +18,6 @@ template <class _CharT = char, class _Traits = std::char_traits<_CharT>, class _
 using basic_string = typename std::basic_string<_CharT, _Traits, _Alloc>;
 using string = basic_string<char>;
 
-using std::basic_string_view;
-
 int stoi(const string &__str);
 long stol(const string &__str);
 unsigned long stoul(const string &__str);
