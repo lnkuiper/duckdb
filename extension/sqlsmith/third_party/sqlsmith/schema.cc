@@ -2,7 +2,8 @@
 #include "relmodel.hh"
 #include <typeinfo>
 
-using namespace std;
+using std::cerr;
+using std::endl;
 
 void schema::generate_indexes(bool verbose_output) {
 

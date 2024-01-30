@@ -1,30 +1,29 @@
-#include <chrono>
-#include <iostream>
+#include "sqlsmith.hh"
 
-#include <regex>
-
-#include <thread>
-#include <typeinfo>
-
-#include <thread>
-#include <typeinfo>
-
+#include "duckdb.hh"
+#include "duckdb/common/shared_ptr.hpp"
+#include "duckdb/common/vector.hpp"
+#include "dump.hh"
+#include "dut.hh"
 #include "grammar.hh"
+#include "impedance.hh"
+#include "log.hh"
 #include "random.hh"
 #include "relmodel.hh"
 #include "schema.hh"
 
-#include "dump.hh"
-#include "dut.hh"
-#include "impedance.hh"
-#include "log.hh"
+#include <chrono>
+#include <iostream>
+#include <regex>
+#include <thread>
+#include <typeinfo>
 
-#include "duckdb.hh"
-#include "sqlsmith.hh"
-
-#include "duckdb/common/vector.hpp"
-
-using namespace std;
+using std::cerr;
+using std::endl;
+using std::exception;
+using std::make_shared;
+using std::ofstream;
+using std::runtime_error;
 
 using namespace std::chrono;
 

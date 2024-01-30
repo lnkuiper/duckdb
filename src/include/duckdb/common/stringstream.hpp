@@ -10,6 +10,7 @@
 
 #include "duckdb/common/string.hpp"
 
+#include <iomanip>
 #include <sstream>
 
 namespace duckdb {

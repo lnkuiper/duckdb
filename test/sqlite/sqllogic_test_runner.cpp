@@ -530,7 +530,7 @@ void SQLLogicTestRunner::ExecuteFile(string script) {
 					parser.Fail("require exact_vector_size requires a parameter");
 				}
 				// require an exact vector size
-				auto required_vector_size = std::stoi(token.parameters[1]);
+				auto required_vector_size = duckdb::stoi(token.parameters[1]);
 				if (STANDARD_VECTOR_SIZE != required_vector_size) {
 					// vector size does not match the required vector size: skip it
 					return;
@@ -540,7 +540,7 @@ void SQLLogicTestRunner::ExecuteFile(string script) {
 					parser.Fail("require block_size requires a parameter");
 				}
 				// require a specific block size
-				auto required_block_size = std::stoi(token.parameters[1]);
+				auto required_block_size = duckdb::stoi(token.parameters[1]);
 				if (Storage::BLOCK_ALLOC_SIZE != required_block_size) {
 					// block size does not match the required block size: skip it
 					return;

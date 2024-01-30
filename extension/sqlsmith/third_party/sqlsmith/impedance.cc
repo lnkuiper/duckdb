@@ -1,8 +1,12 @@
 #include "impedance.hh"
+
 #include "log.hh"
+
 #include <iostream>
 
-using namespace std;
+using std::cerr;
+using std::endl;
+using std::map;
 
 static map<const char *, long> occurances_in_failed_query;
 static map<const char *, long> occurances_in_ok_query;

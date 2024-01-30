@@ -10,8 +10,6 @@
 
 #include "duckdb/common/container_allocator.hpp"
 
-#include <iomanip>
-#include <sstream>
 #include <string>
 
 namespace duckdb {

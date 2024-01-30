@@ -1,16 +1,18 @@
 #include "duckdb.hh"
 
 #include <cassert>
+#include <chrono>
 #include <cstring>
 #include <iostream>
+#include <regex>
 #include <stdexcept>
 #include <thread>
-#include <chrono>
-
-#include <regex>
 
 using namespace duckdb;
-using namespace std;
+using std::cerr;
+using std::endl;
+using std::regex;
+using std::thread;
 
 static regex e_syntax(".*syntax error at or near .*");
 static regex e_internal(".*INTERNAL.*");

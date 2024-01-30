@@ -1,12 +1,18 @@
-#include "duckdb/common/stringstream.hpp"
-
 #include "dump.hh"
+
+#include "duckdb/common/stringstream.hpp"
+#include "duckdb/common/to_string.hpp"
 #include "util.hh"
 
-using namespace std;
+using duckdb::ostringstream;
+using duckdb::string;
+using duckdb::to_string;
+using std::endl;
+using std::ofstream;
+using std::ostream;
 
-duckdb::string graphml_dumper::id(struct prod *p) {
-	duckdb::ostringstream os;
+string graphml_dumper::id(struct prod *p) {
+	ostringstream os;
 	os << pretty_type(p) << "_" << p;
 	return os.str();
 }
@@ -52,7 +58,7 @@ void ast_logger::generated(prod &query) {
 	filename += "sqlsmith-";
 	filename += to_string(queries);
 	filename += ".xml";
-	ofstream os(filename);
+	ofstream os(filename.c_str());
 	graphml_dumper visitor(os);
 	query.accept(&visitor);
 	queries++;

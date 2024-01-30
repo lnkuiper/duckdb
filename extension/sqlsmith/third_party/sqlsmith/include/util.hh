@@ -4,8 +4,6 @@
 
 #include "duckdb/common/stringstream.hpp"
 
-using namespace std;
-
 /* TODO: The strings are implementation-defined.  How do they look in
    clang? */
 

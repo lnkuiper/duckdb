@@ -11,8 +11,13 @@
 #include "impedance.hh"
 #include "expr.hh"
 
-using namespace std;
+#include "duckdb/common/helper.hpp"
+#include "duckdb/common/to_string.hpp"
+
 using impedance::matched;
+using duckdb::make_shared;
+using duckdb::to_string;
+using std::runtime_error;
 
 shared_ptr<value_expr> value_expr::factory(prod *p, sqltype *type_constraint) {
 	try {
