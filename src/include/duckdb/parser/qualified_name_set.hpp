@@ -8,16 +8,15 @@
 
 #pragma once
 
-#include "duckdb/parser/qualified_name.hpp"
 #include "duckdb/common/types/hash.hpp"
 #include "duckdb/common/unordered_set.hpp"
+#include "duckdb/parser/qualified_name.hpp"
 
 namespace duckdb {
 
 struct QualifiedColumnHashFunction {
 	uint64_t operator()(const QualifiedColumnName &a) const {
-		std::hash<string> str_hasher;
-		return str_hasher(a.schema) ^ str_hasher(a.table) ^ str_hasher(a.column);
+		return CombineHash(CombineHash(Hash(a.schema), Hash(a.table)), Hash(a.column));
 	}
 };
 

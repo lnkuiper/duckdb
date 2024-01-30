@@ -140,6 +140,10 @@ hash_t Hash(const char *val, size_t size) {
 	return HashBytes((void *)val, size);
 }
 
+hash_t Hash(const string &val) {
+	return HashBytes((void *)val.c_str(), val.length());
+}
+
 hash_t Hash(uint8_t *val, size_t size) {
 	return HashBytes((void *)val, size);
 }
