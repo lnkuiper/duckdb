@@ -16,7 +16,8 @@ namespace duckdb {
 
 struct QualifiedColumnHashFunction {
 	uint64_t operator()(const QualifiedColumnName &a) const {
-		return CombineHash(CombineHash(Hash(a.schema), Hash(a.table)), Hash(a.column));
+		std::hash<string> str_hasher;
+		return str_hasher(a.schema) ^ str_hasher(a.table) ^ str_hasher(a.column);
 	}
 };
 

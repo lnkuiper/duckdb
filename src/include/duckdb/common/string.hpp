@@ -11,6 +11,7 @@
 #include "duckdb/common/container_allocator.hpp"
 
 #include <string>
+#include <string_view>
 
 namespace duckdb {
 
@@ -34,7 +35,8 @@ namespace std {
 template <>
 struct hash<duckdb::string> {
 	size_t operator()(const duckdb::string &__val) const {
-		return std::__do_string_hash(__val.data(), __val.data() + __val.size());
+		std::hash<string_view> str_hasher;
+		return str_hasher(__val);
 	}
 };
 
