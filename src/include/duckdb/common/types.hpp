@@ -10,6 +10,7 @@
 
 #include "duckdb/common/assert.hpp"
 #include "duckdb/common/constants.hpp"
+#include "duckdb/common/hugeint.hpp"
 #include "duckdb/common/optional_ptr.hpp"
 #include "duckdb/common/vector.hpp"
 
@@ -170,7 +171,7 @@ enum class PhysicalType : uint8_t {
 	/// DuckDB Extensions
 	VARCHAR = 200, // our own string representation, different from STRING and LARGE_STRING above
 	UINT128 = 203, // 128-bit unsigned integers
-	INT128 = 204, // 128-bit integers
+	INT128 = 204,  // 128-bit integers
 	UNKNOWN = 205, // Unknown physical type of user defined types
 	/// Boolean as 1 bit, LSB bit-packed ordering
 	BIT = 206,
@@ -212,8 +213,8 @@ enum class LogicalTypeId : uint8_t {
 	TIMESTAMP_TZ = 32,
 	TIME_TZ = 34,
 	BIT = 36,
-	STRING_LITERAL = 37, /* string literals, used for constant strings - only exists while binding */
-	INTEGER_LITERAL = 38,/* integer literals, used for constant integers - only exists while binding */
+	STRING_LITERAL = 37,  /* string literals, used for constant strings - only exists while binding */
+	INTEGER_LITERAL = 38, /* integer literals, used for constant integers - only exists while binding */
 
 	UHUGEINT = 49,
 	HUGEINT = 50,
@@ -303,16 +304,19 @@ struct LogicalType {
 	DUCKDB_API bool HasAlias() const;
 	DUCKDB_API string GetAlias() const;
 
-	//! Returns the maximum logical type when combining the two types - or throws an exception if combining is not possible
-	DUCKDB_API static LogicalType MaxLogicalType(ClientContext &context, const LogicalType &left, const LogicalType &right);
-	DUCKDB_API static bool TryGetMaxLogicalType(ClientContext &context, const LogicalType &left, const LogicalType &right, LogicalType &result);
-	//! Forcibly returns a maximum logical type - similar to MaxLogicalType but never throws. As a fallback either left or right are returned.
+	//! Returns the maximum logical type when combining the two types - or throws an exception if combining is not
+	//! possible
+	DUCKDB_API static LogicalType MaxLogicalType(ClientContext &context, const LogicalType &left,
+	                                             const LogicalType &right);
+	DUCKDB_API static bool TryGetMaxLogicalType(ClientContext &context, const LogicalType &left,
+	                                            const LogicalType &right, LogicalType &result);
+	//! Forcibly returns a maximum logical type - similar to MaxLogicalType but never throws. As a fallback either left
+	//! or right are returned.
 	DUCKDB_API static LogicalType ForceMaxLogicalType(const LogicalType &left, const LogicalType &right);
 	//! Normalize a type - removing literals
 	DUCKDB_API static LogicalType NormalizeType(const LogicalType &type);
 
-
-		//! Gets the decimal properties of a numeric type. Fails if the type is not numeric.
+	//! Gets the decimal properties of a numeric type. Fails if the type is not numeric.
 	DUCKDB_API bool GetDecimalProperties(uint8_t &width, uint8_t &scale) const;
 
 	DUCKDB_API void Verify() const;
@@ -380,7 +384,7 @@ public:
 	// ANY but with special rules (default is LogicalType::ANY, 5)
 	DUCKDB_API static LogicalType ANY_PARAMS(LogicalType target, idx_t cast_score = 5); // NOLINT
 	//! Integer literal of the specified value
-	DUCKDB_API static LogicalType INTEGER_LITERAL(const Value &constant);               // NOLINT
+	DUCKDB_API static LogicalType INTEGER_LITERAL(const Value &constant); // NOLINT
 	// DEPRECATED - provided for backwards compatibility
 	DUCKDB_API static LogicalType ENUM(const string &enum_name, Vector &ordered_data, idx_t size); // NOLINT
 	DUCKDB_API static LogicalType USER(const string &user_type_name);                              // NOLINT

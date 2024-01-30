@@ -1,5 +1,7 @@
 #include "duckdb/common/filename_pattern.hpp"
+
 #include "duckdb/common/string_util.hpp"
+#include "duckdb/common/to_string.hpp"
 
 namespace duckdb {
 

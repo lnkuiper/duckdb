@@ -4,16 +4,15 @@
 #include "duckdb/catalog/catalog_entry/schema_catalog_entry.hpp"
 #include "duckdb/common/algorithm.hpp"
 #include "duckdb/common/exception.hpp"
+#include "duckdb/common/stringstream.hpp"
 #include "duckdb/main/database.hpp"
 #include "duckdb/parser/constraints/list.hpp"
 #include "duckdb/parser/parsed_data/create_table_info.hpp"
-#include "duckdb/storage/table_storage_info.hpp"
-#include "duckdb/planner/operator/logical_update.hpp"
-#include "duckdb/planner/operator/logical_get.hpp"
 #include "duckdb/planner/constraints/bound_check_constraint.hpp"
+#include "duckdb/planner/operator/logical_get.hpp"
 #include "duckdb/planner/operator/logical_projection.hpp"
-
-#include <sstream>
+#include "duckdb/planner/operator/logical_update.hpp"
+#include "duckdb/storage/table_storage_info.hpp"
 
 namespace duckdb {
 

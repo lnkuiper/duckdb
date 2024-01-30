@@ -1,5 +1,7 @@
 #include "duckdb/function/cast_rules.hpp"
 
+#include "duckdb/common/exception.hpp"
+
 namespace duckdb {
 
 //! The target type determines the preferred implicit casts

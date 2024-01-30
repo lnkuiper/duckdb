@@ -8,10 +8,11 @@
 
 #pragma once
 
-#include "duckdb/common/enums/catalog_type.hpp"
-#include "duckdb/parser/parsed_data/parse_info.hpp"
 #include "duckdb/common/enum_util.hpp"
+#include "duckdb/common/enums/catalog_type.hpp"
 #include "duckdb/common/enums/on_create_conflict.hpp"
+#include "duckdb/common/exception.hpp"
+#include "duckdb/parser/parsed_data/parse_info.hpp"
 
 namespace duckdb {
 struct AlterInfo;

@@ -33,6 +33,7 @@
 #ifndef FMT_FORMAT_H_
 #define FMT_FORMAT_H_
 
+#include "duckdb/common/helper.hpp"
 #include "duckdb/common/exception.hpp"
 #include "duckdb/common/to_string.hpp"
 #include "fmt/core.h"

@@ -9,8 +9,10 @@
 #pragma once
 
 #include "duckdb/common/common.hpp"
+#include "duckdb/common/exception.hpp"
 
 namespace duckdb {
+
 class ClientContext;
 class Executor;
 class Task;
