@@ -28,3 +28,14 @@ double stod(const string &__str);
 long double stold(const string &__str);
 
 } // namespace duckdb
+
+namespace std {
+
+template <>
+struct hash<duckdb::string> {
+	size_t operator()(const duckdb::string &__val) const {
+		return std::__do_string_hash(__val.data(), __val.data() + __val.size());
+	}
+};
+
+} // namespace std
