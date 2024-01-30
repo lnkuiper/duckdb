@@ -19,11 +19,12 @@ public:
 	using original::original;
 
 	typename original::pointer allocate(typename original::size_type n, const void * = 0) {
-		return reinterpret_cast<typename original::pointer>(Allocator::DefaultAllocator().AllocateData(n));
+		return reinterpret_cast<typename original::pointer>(
+		    Allocator::DefaultAllocator().AllocateData(n * sizeof(_Tp)));
 	}
 
 	void deallocate(typename original::pointer p, typename original::size_type n) {
-		Allocator::DefaultAllocator().FreeData(data_ptr_cast(p), n);
+		Allocator::DefaultAllocator().FreeData(data_ptr_cast(p), n * sizeof(_Tp));
 	}
 
 	template <typename _Up>
