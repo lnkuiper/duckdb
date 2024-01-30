@@ -1,5 +1,7 @@
 #include "duckdb/common/string.hpp"
 
+#include "duckdb/common/types/hash.hpp"
+
 namespace duckdb {
 
 int stoi(const string &__str) {
@@ -25,6 +27,10 @@ double stod(const string &__str) {
 }
 long double stold(const string &__str) {
 	return std::stold(__str.c_str());
+}
+
+size_t DuckStringHash(const duckdb::string &val) {
+	return Hash(val.c_str(), val.length());
 }
 
 } // namespace duckdb
