@@ -25,8 +25,8 @@ static void test_runner() {
 	auto query = buffer.str();
 	result = con.Query(query.c_str());
 
-	unordered_set<duckdb::string> internal_error_messages = {"Unoptimized Result differs from original result!",
-	                                                         "INTERNAL"};
+	duckdb::unordered_set<duckdb::string> internal_error_messages = {"Unoptimized Result differs from original result!",
+	                                                                 "INTERNAL"};
 	if (result->HasError()) {
 		if (TestIsInternalError(internal_error_messages, result->GetError())) {
 			result->Print();

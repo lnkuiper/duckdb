@@ -114,7 +114,7 @@ OptionValueSet &GetValueForOption(const duckdb::string &name) {
 }
 
 bool OptionIsExcludedFromTest(const duckdb::string &name) {
-	static unordered_set<duckdb::string> excluded_options = {
+	static duckdb::unordered_set<duckdb::string> excluded_options = {
 	    "access_mode",
 	    "schema",
 	    "search_path",

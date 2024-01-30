@@ -1,7 +1,7 @@
 #include "catch.hpp"
-#include "test_helpers.hpp"
 #include "duckdb/parser/parser.hpp"
 #include "duckdb/planner/logical_operator.hpp"
+#include "test_helpers.hpp"
 
 #include <chrono>
 #include <thread>
@@ -12,7 +12,7 @@ using namespace std;
 TEST_CASE("Test GetTableNames", "[api]") {
 	DuckDB db(nullptr);
 	Connection con(db);
-	unordered_set<duckdb::string> table_names;
+	duckdb::unordered_set<duckdb::string> table_names;
 
 	// standard
 	table_names = con.GetTableNames("SELECT * FROM my_table");
