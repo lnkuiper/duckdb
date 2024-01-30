@@ -241,7 +241,7 @@ static string AdditionalProcessInfo(FileSystem &fs, pid_t pid) {
 	// try to find out who created that process
 	try {
 		auto loginuid_file = fs.OpenFile(StringUtil::Format("/proc/%d/loginuid", pid), FileFlags::FILE_FLAGS_READ);
-		auto uid = std::stoi(loginuid_file->ReadLine());
+		auto uid = stoi(loginuid_file->ReadLine());
 		auto pw = getpwuid(uid);
 		if (pw) {
 			process_owner = pw->pw_name;
