@@ -58,7 +58,7 @@ static void testRunner() {
 		prev_directory = TestGetCurrentDirectory();
 
 		std::size_t found = name.rfind("test/sql");
-		if (found == std::string::npos) {
+		if (found == duckdb::string::npos) {
 			throw Exception("Failed to auto detect working dir for test '" + name +
 			                "' because a non-standard path was used!");
 		}
@@ -77,11 +77,11 @@ static void testRunner() {
 
 static duckdb::string ParseGroupFromPath(duckdb::string file) {
 	duckdb::string extension = "";
-	if (file.find(".test_slow") != std::string::npos) {
+	if (file.find(".test_slow") != duckdb::string::npos) {
 		// "slow" in the name indicates a slow test (i.e. only run as part of allunit)
 		extension = "[.]";
 	}
-	if (file.find(".test_coverage") != std::string::npos) {
+	if (file.find(".test_coverage") != duckdb::string::npos) {
 		// "coverage" in the name indicates a coverage test (i.e. only run as part of coverage)
 		return "[coverage][.]";
 	}

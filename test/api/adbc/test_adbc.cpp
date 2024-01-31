@@ -93,7 +93,7 @@ public:
 	AdbcConnection adbc_connection;
 
 	ArrowArrayStream arrow_stream;
-	std::string path;
+	duckdb::string path;
 };
 
 TEST_CASE("ADBC - Select 42", "[adbc]") {

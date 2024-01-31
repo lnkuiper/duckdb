@@ -3,6 +3,7 @@
 #include "duckdb/common/file_system.hpp"
 #include "duckdb/common/fstream.hpp"
 #include "duckdb/common/local_file_system.hpp"
+#include "duckdb/common/string.hpp"
 #include "test_helpers.hpp"
 
 using namespace duckdb;
@@ -106,9 +107,9 @@ TEST_CASE("absolute paths", "[file_system]") {
 	REQUIRE(!fs.IsPathAbsolute("./me"));
 	REQUIRE(!fs.IsPathAbsolute("me"));
 #else
-	const std::string long_path = "\\\\?\\D:\\very long network\\";
+	const duckdb::string long_path = "\\\\?\\D:\\very long network\\";
 	REQUIRE(fs.IsPathAbsolute(long_path));
-	const std::string network = "\\\\network_drive\\filename.csv";
+	const duckdb::string network = "\\\\network_drive\\filename.csv";
 	REQUIRE(fs.IsPathAbsolute(network));
 	REQUIRE(fs.IsPathAbsolute("C:\\folder\\filename.csv"));
 	REQUIRE(fs.IsPathAbsolute("C:/folder\\filename.csv"));
