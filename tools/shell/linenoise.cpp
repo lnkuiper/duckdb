@@ -108,6 +108,7 @@
 #include "duckdb_shell_wrapper.h"
 #include "sqlite3.h"
 #include "utf8proc_wrapper.hpp"
+#include "duckdb/common/to_string.hpp"
 
 #include <ctype.h>
 #include <errno.h>
@@ -989,8 +990,8 @@ static void refreshSearch(struct linenoiseState *l) {
 		duckdb::string matches_text;
 		search_text += l->search_buf;
 		if (!no_matches) {
-			matches_text += std::to_string(l->search_index + 1);
-			matches_text += "/" + std::to_string(l->search_matches.size());
+			matches_text += duckdb::to_string(l->search_index + 1);
+			matches_text += "/" + duckdb::to_string(l->search_matches.size());
 		}
 		size_t search_text_length = linenoiseComputeRenderWidth(search_text.c_str(), search_text.size());
 		size_t matches_text_length = linenoiseComputeRenderWidth(matches_text.c_str(), matches_text.size());
