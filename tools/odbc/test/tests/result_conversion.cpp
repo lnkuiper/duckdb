@@ -1,5 +1,7 @@
 #include "../common.h"
 
+#include <sstream>
+
 using namespace odbc_test;
 
 #define EXPECTED_ERROR "error"
