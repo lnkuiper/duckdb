@@ -364,7 +364,7 @@ string QueryProfiler::QueryTreeToString() const {
 	return str.str();
 }
 
-void QueryProfiler::QueryTreeToStream(std::ostream &ss) const {
+void QueryProfiler::QueryTreeToStream(ostream &ss) const {
 	if (!IsEnabled()) {
 		ss << "Query profiling is disabled. Call "
 		      "Connection::EnableProfiling() to enable profiling!";
@@ -486,8 +486,8 @@ static string JSONSanitize(const string &text) {
 }
 
 // Print a row
-static void PrintRow(std::ostream &ss, const string &annotation, int id, const string &name, double time,
-                     int sample_counter, int tuple_counter, const string &extra_info, int depth) {
+static void PrintRow(ostream &ss, const string &annotation, int id, const string &name, double time, int sample_counter,
+                     int tuple_counter, const string &extra_info, int depth) {
 	ss << string(depth * 3, ' ') << " {\n";
 	ss << string(depth * 3, ' ') << "   \"annotation\": \"" + JSONSanitize(annotation) + "\",\n";
 	ss << string(depth * 3, ' ') << "   \"id\": " + to_string(id) + ",\n";
@@ -505,7 +505,7 @@ static void PrintRow(std::ostream &ss, const string &annotation, int id, const s
 	ss << string(depth * 3, ' ') << " },\n";
 }
 
-static void ExtractFunctions(std::ostream &ss, ExpressionInfo &info, int &fun_id, int depth) {
+static void ExtractFunctions(ostream &ss, ExpressionInfo &info, int &fun_id, int depth) {
 	if (info.hasfunction) {
 		double time = info.sample_tuples_count == 0 ? 0 : int(info.function_time) / double(info.sample_tuples_count);
 		PrintRow(ss, "Function", fun_id++, info.function_name, time, info.sample_tuples_count, info.tuples_count, "",
@@ -520,7 +520,7 @@ static void ExtractFunctions(std::ostream &ss, ExpressionInfo &info, int &fun_id
 	}
 }
 
-static void ToJSONRecursive(QueryProfiler::TreeNode &node, std::ostream &ss, int depth = 1) {
+static void ToJSONRecursive(QueryProfiler::TreeNode &node, ostream &ss, int depth = 1) {
 	ss << string(depth * 3, ' ') << " {\n";
 	ss << string(depth * 3, ' ') << "   \"name\": \"" + JSONSanitize(node.name) + "\",\n";
 	ss << string(depth * 3, ' ') << "   \"timing\":" + to_string(node.info.time) + ",\n";
@@ -632,7 +632,7 @@ unique_ptr<QueryProfiler::TreeNode> QueryProfiler::CreateTree(const PhysicalOper
 	return node;
 }
 
-void QueryProfiler::Render(const QueryProfiler::TreeNode &node, std::ostream &ss) const {
+void QueryProfiler::Render(const QueryProfiler::TreeNode &node, ostream &ss) const {
 	TreeRenderer renderer;
 	if (IsDetailedEnabled()) {
 		renderer.EnableDetailed();

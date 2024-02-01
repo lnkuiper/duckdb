@@ -39,7 +39,7 @@ void RenderTree::SetNode(idx_t x, idx_t y, unique_ptr<RenderTreeNode> node) {
 	nodes[GetPosition(x, y)] = std::move(node);
 }
 
-void TreeRenderer::RenderTopLayer(RenderTree &root, std::ostream &ss, idx_t y) {
+void TreeRenderer::RenderTopLayer(RenderTree &root, ostream &ss, idx_t y) {
 	for (idx_t x = 0; x < root.width; x++) {
 		if (x * config.NODE_RENDER_WIDTH >= config.MAXIMUM_RENDER_WIDTH) {
 			break;
@@ -63,7 +63,7 @@ void TreeRenderer::RenderTopLayer(RenderTree &root, std::ostream &ss, idx_t y) {
 	ss << std::endl;
 }
 
-void TreeRenderer::RenderBottomLayer(RenderTree &root, std::ostream &ss, idx_t y) {
+void TreeRenderer::RenderBottomLayer(RenderTree &root, ostream &ss, idx_t y) {
 	for (idx_t x = 0; x <= root.width; x++) {
 		if (x * config.NODE_RENDER_WIDTH >= config.MAXIMUM_RENDER_WIDTH) {
 			break;
@@ -130,7 +130,7 @@ static bool NodeHasMultipleChildren(RenderTree &root, idx_t x, idx_t y) {
 	return false;
 }
 
-void TreeRenderer::RenderBoxContent(RenderTree &root, std::ostream &ss, idx_t y) {
+void TreeRenderer::RenderBoxContent(RenderTree &root, ostream &ss, idx_t y) {
 	// we first need to figure out how high our boxes are going to be
 	vector<vector<string>> extra_info;
 	idx_t extra_height = 0;
@@ -237,27 +237,27 @@ string TreeRenderer::ToString(const Pipeline &op) {
 	return ss.str();
 }
 
-void TreeRenderer::Render(const LogicalOperator &op, std::ostream &ss) {
+void TreeRenderer::Render(const LogicalOperator &op, ostream &ss) {
 	auto tree = CreateTree(op);
 	ToStream(*tree, ss);
 }
 
-void TreeRenderer::Render(const PhysicalOperator &op, std::ostream &ss) {
+void TreeRenderer::Render(const PhysicalOperator &op, ostream &ss) {
 	auto tree = CreateTree(op);
 	ToStream(*tree, ss);
 }
 
-void TreeRenderer::Render(const QueryProfiler::TreeNode &op, std::ostream &ss) {
+void TreeRenderer::Render(const QueryProfiler::TreeNode &op, ostream &ss) {
 	auto tree = CreateTree(op);
 	ToStream(*tree, ss);
 }
 
-void TreeRenderer::Render(const Pipeline &op, std::ostream &ss) {
+void TreeRenderer::Render(const Pipeline &op, ostream &ss) {
 	auto tree = CreateTree(op);
 	ToStream(*tree, ss);
 }
 
-void TreeRenderer::ToStream(RenderTree &root, std::ostream &ss) {
+void TreeRenderer::ToStream(RenderTree &root, ostream &ss) {
 	while (root.width * config.NODE_RENDER_WIDTH > config.MAXIMUM_RENDER_WIDTH) {
 		if (config.NODE_RENDER_WIDTH - 2 < config.MINIMUM_RENDER_WIDTH) {
 			break;

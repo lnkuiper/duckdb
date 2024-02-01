@@ -86,7 +86,7 @@ public:
 
 	string ToString(ClientContext &context, const vector<string> &names, const ColumnDataCollection &op);
 
-	void Render(ClientContext &context, const vector<string> &names, const ColumnDataCollection &op, std::ostream &ss);
+	void Render(ClientContext &context, const vector<string> &names, const ColumnDataCollection &op, ostream &ss);
 	void Print(ClientContext &context, const vector<string> &names, const ColumnDataCollection &op);
 
 private:
@@ -94,7 +94,7 @@ private:
 	BoxRendererConfig config;
 
 private:
-	void RenderValue(std::ostream &ss, const string &value, idx_t column_width,
+	void RenderValue(ostream &ss, const string &value, idx_t column_width,
 	                 ValueRenderAlignment alignment = ValueRenderAlignment::MIDDLE);
 	string RenderType(const LogicalType &type);
 	ValueRenderAlignment TypeAlignment(const LogicalType &type);
@@ -109,13 +109,12 @@ private:
 	                                  vector<idx_t> &column_map, idx_t &total_length);
 	void RenderHeader(const vector<string> &names, const vector<LogicalType> &result_types,
 	                  const vector<idx_t> &column_map, const vector<idx_t> &widths, const vector<idx_t> &boundaries,
-	                  idx_t total_length, bool has_results, std::ostream &ss);
+	                  idx_t total_length, bool has_results, ostream &ss);
 	void RenderValues(const list<ColumnDataCollection> &collections, const vector<idx_t> &column_map,
-	                  const vector<idx_t> &widths, const vector<LogicalType> &result_types, std::ostream &ss);
+	                  const vector<idx_t> &widths, const vector<LogicalType> &result_types, ostream &ss);
 	void RenderRowCount(string row_count_str, string shown_str, const string &column_count_str,
 	                    const vector<idx_t> &boundaries, bool has_hidden_rows, bool has_hidden_columns,
-	                    idx_t total_length, idx_t row_count, idx_t column_count, idx_t minimum_row_length,
-	                    std::ostream &ss);
+	                    idx_t total_length, idx_t row_count, idx_t column_count, idx_t minimum_row_length, ostream &ss);
 };
 
 } // namespace duckdb

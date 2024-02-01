@@ -23,8 +23,7 @@ void BoxRenderer::Print(ClientContext &context, const vector<string> &names, con
 	Printer::Print(ToString(context, names, result));
 }
 
-void BoxRenderer::RenderValue(std::ostream &ss, const string &value, idx_t column_width,
-                              ValueRenderAlignment alignment) {
+void BoxRenderer::RenderValue(ostream &ss, const string &value, idx_t column_width, ValueRenderAlignment alignment) {
 	auto render_width = Utf8Proc::RenderWidth(value);
 
 	const string *render_value = &value;
@@ -430,8 +429,7 @@ vector<idx_t> BoxRenderer::ComputeRenderWidths(const vector<string> &names, cons
 
 void BoxRenderer::RenderHeader(const vector<string> &names, const vector<LogicalType> &result_types,
                                const vector<idx_t> &column_map, const vector<idx_t> &widths,
-                               const vector<idx_t> &boundaries, idx_t total_length, bool has_results,
-                               std::ostream &ss) {
+                               const vector<idx_t> &boundaries, idx_t total_length, bool has_results, ostream &ss) {
 	auto column_count = column_map.size();
 	// render the top line
 	ss << config.LTCORNER;
@@ -488,7 +486,7 @@ void BoxRenderer::RenderHeader(const vector<string> &names, const vector<Logical
 }
 
 void BoxRenderer::RenderValues(const list<ColumnDataCollection> &collections, const vector<idx_t> &column_map,
-                               const vector<idx_t> &widths, const vector<LogicalType> &result_types, std::ostream &ss) {
+                               const vector<idx_t> &widths, const vector<LogicalType> &result_types, ostream &ss) {
 	auto &top_collection = collections.front();
 	auto &bottom_collection = collections.back();
 	// render the top rows
@@ -612,7 +610,7 @@ void BoxRenderer::RenderValues(const list<ColumnDataCollection> &collections, co
 void BoxRenderer::RenderRowCount(string row_count_str, string shown_str, const string &column_count_str,
                                  const vector<idx_t> &boundaries, bool has_hidden_rows, bool has_hidden_columns,
                                  idx_t total_length, idx_t row_count, idx_t column_count, idx_t minimum_row_length,
-                                 std::ostream &ss) {
+                                 ostream &ss) {
 	// check if we can merge the row_count_str and the shown_str
 	bool display_shown_separately = has_hidden_rows;
 	if (has_hidden_rows && total_length >= row_count_str.size() + shown_str.size() + 5) {
@@ -679,7 +677,7 @@ void BoxRenderer::RenderRowCount(string row_count_str, string shown_str, const s
 }
 
 void BoxRenderer::Render(ClientContext &context, const vector<string> &names, const ColumnDataCollection &result,
-                         std::ostream &ss) {
+                         ostream &ss) {
 	if (result.ColumnCount() != names.size()) {
 		throw InternalException("Error in BoxRenderer::Render - unaligned columns and names");
 	}

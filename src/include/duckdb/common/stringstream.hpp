@@ -29,4 +29,7 @@ template <class _CharT = char, class _Traits = std::char_traits<_CharT>, class _
 using basic_ostringstream = typename std::basic_ostringstream<_CharT, _Traits, _Alloc>;
 using ostringstream = basic_ostringstream<char>;
 
+using std::istream;
+using std::ostream;
+
 } // namespace duckdb

@@ -144,7 +144,7 @@ public:
 
 private:
 	unique_ptr<TreeNode> CreateTree(const PhysicalOperator &root, idx_t depth = 0);
-	void Render(const TreeNode &node, std::ostream &str) const;
+	void Render(const TreeNode &node, ostream &str) const;
 
 public:
 	DUCKDB_API bool IsEnabled() const;
@@ -169,7 +169,7 @@ public:
 	DUCKDB_API void Initialize(const PhysicalOperator &root);
 
 	DUCKDB_API string QueryTreeToString() const;
-	DUCKDB_API void QueryTreeToStream(std::ostream &str) const;
+	DUCKDB_API void QueryTreeToStream(ostream &str) const;
 	DUCKDB_API void Print();
 
 	//! return the printed as a string. Unlike ToString, which is always formatted as a string,

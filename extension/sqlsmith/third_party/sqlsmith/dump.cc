@@ -17,7 +17,7 @@ string graphml_dumper::id(struct prod *p) {
 	return os.str();
 }
 
-graphml_dumper::graphml_dumper(ostream &out) : o(out) {
+graphml_dumper::graphml_dumper(std::ostream &out) : o(out) {
 	o << "<?xml version=\"1.0\" encoding=\"UTF-8\"?>" << endl
 	  << "<graphml xmlns=\"http://graphml.graphdrawing.org/xmlns\" "
 	  << "xmlns:xsi=\"http://www.w3.org/2001/XMLSchema-instance\" "

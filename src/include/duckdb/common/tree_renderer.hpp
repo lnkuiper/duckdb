@@ -97,12 +97,12 @@ public:
 	string ToString(const QueryProfiler::TreeNode &op);
 	string ToString(const Pipeline &op);
 
-	void Render(const LogicalOperator &op, std::ostream &ss);
-	void Render(const PhysicalOperator &op, std::ostream &ss);
-	void Render(const QueryProfiler::TreeNode &op, std::ostream &ss);
-	void Render(const Pipeline &op, std::ostream &ss);
+	void Render(const LogicalOperator &op, ostream &ss);
+	void Render(const PhysicalOperator &op, ostream &ss);
+	void Render(const QueryProfiler::TreeNode &op, ostream &ss);
+	void Render(const Pipeline &op, ostream &ss);
 
-	void ToStream(RenderTree &root, std::ostream &ss);
+	void ToStream(RenderTree &root, ostream &ss);
 
 	void EnableDetailed() {
 		config.enable_detailed();
@@ -129,9 +129,9 @@ private:
 	TreeRendererConfig config;
 
 private:
-	void RenderTopLayer(RenderTree &root, std::ostream &ss, idx_t y);
-	void RenderBoxContent(RenderTree &root, std::ostream &ss, idx_t y);
-	void RenderBottomLayer(RenderTree &root, std::ostream &ss, idx_t y);
+	void RenderTopLayer(RenderTree &root, ostream &ss, idx_t y);
+	void RenderBoxContent(RenderTree &root, ostream &ss, idx_t y);
+	void RenderBottomLayer(RenderTree &root, ostream &ss, idx_t y);
 
 	bool CanSplitOnThisChar(char l);
 	bool IsPadding(char l);

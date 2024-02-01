@@ -10,13 +10,14 @@
 
 #include "duckdb/common/common.hpp"
 #include "duckdb/common/exception.hpp"
+#include "duckdb/common/stringstream.hpp"
 #include "duckdb/common/types.hpp"
-#include "duckdb/common/uhugeint.hpp"
-#include "duckdb/common/winapi.hpp"
-#include "duckdb/common/types/timestamp.hpp"
 #include "duckdb/common/types/date.hpp"
 #include "duckdb/common/types/datetime.hpp"
 #include "duckdb/common/types/interval.hpp"
+#include "duckdb/common/types/timestamp.hpp"
+#include "duckdb/common/uhugeint.hpp"
+#include "duckdb/common/winapi.hpp"
 
 namespace duckdb {
 
@@ -283,7 +284,7 @@ public:
 	//! Returns true if the values are not distinct from each other, following SQL semantics for NOT DISTINCT FROM.
 	DUCKDB_API static bool NotDistinctFrom(const Value &lvalue, const Value &rvalue);
 
-	friend std::ostream &operator<<(std::ostream &out, const Value &val) {
+	friend ostream &operator<<(ostream &out, const Value &val) {
 		out << val.ToString();
 		return out;
 	}
