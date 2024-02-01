@@ -11,6 +11,8 @@
 #include "duckdb/common/string.hpp"
 
 #include <iomanip>
+#include <istream>
+#include <ostream>
 #include <sstream>
 
 namespace duckdb {
