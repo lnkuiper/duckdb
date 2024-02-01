@@ -48,12 +48,10 @@ add_library_unity(
   printer.cpp
   radix_partitioning.cpp
   re2_regex.cpp
-  string.cpp
   random_engine.cpp
   string_util.cpp
   enum_util.cpp
   symbols.cpp
-  to_string.cpp
   tree_renderer.cpp
   types.cpp
   virtual_file_system.cpp

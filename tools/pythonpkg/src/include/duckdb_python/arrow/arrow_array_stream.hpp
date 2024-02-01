@@ -11,15 +11,14 @@
 #include "duckdb/common/arrow/arrow_wrapper.hpp"
 #include "duckdb/common/atomic.hpp"
 #include "duckdb/common/constants.hpp"
-#include "duckdb/function/table_function.hpp"
-#include "duckdb/function/table/arrow.hpp"
-#include "duckdb/main/client_config.hpp"
-#include "duckdb/main/config.hpp"
-#include "duckdb_python/pybind11/pybind_wrapper.hpp"
-
 #include "duckdb/common/string.hpp"
 #include "duckdb/common/vector.hpp"
+#include "duckdb/function/table/arrow.hpp"
+#include "duckdb/function/table_function.hpp"
+#include "duckdb/main/client_config.hpp"
 #include "duckdb/main/client_properties.hpp"
+#include "duckdb/main/config.hpp"
+#include "duckdb_python/pybind11/pybind_wrapper.hpp"
 
 namespace duckdb {
 
@@ -75,7 +74,7 @@ public:
 
 private:
 	//! We transform a TableFilterSet to an Arrow Expression Object
-	static py::object TransformFilter(TableFilterSet &filters, std::unordered_map<idx_t, string> &columns,
+	static py::object TransformFilter(TableFilterSet &filters, unordered_map<idx_t, string> &columns,
 	                                  unordered_map<idx_t, idx_t> filter_to_col,
 	                                  const ClientProperties &client_properties, const ArrowTableType &arrow_table);
 

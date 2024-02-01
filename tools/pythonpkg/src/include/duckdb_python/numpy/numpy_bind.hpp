@@ -2,6 +2,7 @@
 
 #include "duckdb_python/pybind11/pybind_wrapper.hpp"
 #include "duckdb/common/common.hpp"
+#include "duckdb/common/types.hpp"
 
 namespace duckdb {
 

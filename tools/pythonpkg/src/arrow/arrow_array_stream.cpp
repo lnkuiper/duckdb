@@ -3,16 +3,15 @@
 #include "duckdb/common/assert.hpp"
 #include "duckdb/common/common.hpp"
 #include "duckdb/common/limits.hpp"
+#include "duckdb/function/table/arrow.hpp"
 #include "duckdb/main/client_config.hpp"
 #include "duckdb/planner/filter/conjunction_filter.hpp"
 #include "duckdb/planner/filter/constant_filter.hpp"
 #include "duckdb/planner/filter/struct_filter.hpp"
 #include "duckdb/planner/table_filter.hpp"
-
 #include "duckdb_python/pyconnection/pyconnection.hpp"
 #include "duckdb_python/pyrelation.hpp"
 #include "duckdb_python/pyresult.hpp"
-#include "duckdb/function/table/arrow.hpp"
 
 namespace duckdb {
 
@@ -375,7 +374,7 @@ py::object TransformFilterRecursive(TableFilter *filter, vector<string> &column_
 }
 
 py::object PythonTableArrowArrayStreamFactory::TransformFilter(TableFilterSet &filter_collection,
-                                                               std::unordered_map<idx_t, string> &columns,
+                                                               unordered_map<idx_t, string> &columns,
                                                                unordered_map<idx_t, idx_t> filter_to_col,
                                                                const ClientProperties &config,
                                                                const ArrowTableType &arrow_table) {

@@ -22,8 +22,8 @@ namespace pybind11 {
 
 namespace detail {
 
-template <typename Type, bool SAFE>
-struct type_caster<duckdb::vector<Type, SAFE>> : list_caster<duckdb::vector<Type, SAFE>, Type> {};
+template <typename Type, typename Allocator, bool SAFE>
+struct type_caster<duckdb::vector<Type, Allocator, SAFE>> : list_caster<duckdb::vector<Type, Allocator, SAFE>, Type> {};
 } // namespace detail
 
 bool gil_check();
