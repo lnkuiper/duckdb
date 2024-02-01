@@ -1,5 +1,4 @@
 #include "duckdb/common/enums/join_type.hpp"
-
 #include "duckdb/common/enum_util.hpp"
 #include "duckdb/common/exception.hpp"
 

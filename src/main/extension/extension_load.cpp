@@ -130,8 +130,8 @@ bool ExtensionHelper::TryInitialLoad(DBConfig &config, FileSystem &fs, const str
 
 		const idx_t maxLenChunks = 1024ULL * 1024ULL;
 		const idx_t numChunks = (signature_offset + maxLenChunks - 1) / maxLenChunks;
-		std::vector<string> hash_chunks(numChunks);
-		std::vector<idx_t> splits(numChunks + 1);
+		vector<string> hash_chunks(numChunks);
+		vector<idx_t> splits(numChunks + 1);
 
 		for (idx_t i = 0; i < numChunks; i++) {
 			splits[i] = maxLenChunks * i;
@@ -139,7 +139,7 @@ bool ExtensionHelper::TryInitialLoad(DBConfig &config, FileSystem &fs, const str
 		splits.back() = signature_offset;
 
 #ifndef DUCKDB_NO_THREADS
-		std::vector<std::thread> threads;
+		vector<std::thread> threads;
 		threads.reserve(numChunks);
 		for (idx_t i = 0; i < numChunks; i++) {
 			threads.emplace_back(ComputeSHA256FileSegment, handle.get(), splits[i], splits[i + 1], &hash_chunks[i]);
@@ -300,8 +300,9 @@ void ExtensionHelper::LoadExternalExtension(DatabaseInstance &db, FileSystem &fs
 	try {
 		(*init_fun)(db);
 	} catch (std::exception &e) {
+		ErrorData error(e);
 		throw InvalidInputException("Initialization function \"%s\" from file \"%s\" threw an exception: \"%s\"",
-		                            init_fun_name, res.filename, e.what());
+		                            init_fun_name, res.filename, error.RawMessage());
 	}
 
 	db.SetExtensionLoaded(extension);

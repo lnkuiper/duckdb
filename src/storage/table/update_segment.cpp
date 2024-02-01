@@ -1,5 +1,6 @@
 #include "duckdb/storage/table/update_segment.hpp"
 
+#include "duckdb/common/exception/transaction_exception.hpp"
 #include "duckdb/common/printer.hpp"
 #include "duckdb/storage/statistics/distinct_statistics.hpp"
 #include "duckdb/storage/table/column_data.hpp"

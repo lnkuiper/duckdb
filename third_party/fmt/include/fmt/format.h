@@ -1537,7 +1537,7 @@ template <typename Range> class basic_writer {
     }
 
     FMT_NORETURN void on_error(duckdb::string error) {
-      FMT_THROW(duckdb::Exception(error));
+      FMT_THROW(duckdb::InvalidInputException(error));
     }
   };
 
@@ -1770,7 +1770,7 @@ class arg_formatter_base {
 
   void write(const char_type* value) {
     if (!value) {
-      FMT_THROW(duckdb::Exception("string pointer is null"));
+      FMT_THROW(duckdb::InternalException("string pointer is null"));
     } else {
       auto length = std::char_traits<char_type>::length(value);
       basic_string_view<char_type> sv(value, length);

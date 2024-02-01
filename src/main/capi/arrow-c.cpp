@@ -288,7 +288,7 @@ duckdb_state duckdb_arrow_scan(duckdb_connection connection, const char *table_n
 	}
 
 	typedef void (*release_fn_t)(ArrowSchema *);
-	std::vector<release_fn_t> release_fns(schema.n_children);
+	duckdb::vector<release_fn_t> release_fns(schema.n_children);
 	for (int64_t i = 0; i < schema.n_children; i++) {
 		auto child = schema.children[i];
 		release_fns[i] = child->release;

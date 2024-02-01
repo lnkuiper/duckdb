@@ -8,7 +8,6 @@
 #include "test_helpers.hpp"
 
 #include <functional>
-#include <vector>
 
 using namespace duckdb;
 using namespace std;
@@ -58,9 +57,9 @@ static void testRunner() {
 		prev_directory = TestGetCurrentDirectory();
 
 		std::size_t found = name.rfind("test/sql");
-		if (found == duckdb::string::npos) {
-			throw Exception("Failed to auto detect working dir for test '" + name +
-			                "' because a non-standard path was used!");
+		if (found == std::string::npos) {
+			throw InvalidInputException("Failed to auto detect working dir for test '" + name +
+			                            "' because a non-standard path was used!");
 		}
 		auto test_working_dir = name.substr(0, found);
 

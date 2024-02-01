@@ -77,7 +77,7 @@ ExceptionFormatValue ExceptionFormatValue::CreateFormatValue(uhugeint_t value) {
 
 string ExceptionFormatValue::Format(const string &msg, const vector<ExceptionFormatValue> &values) {
 	try {
-		std::vector<duckdb_fmt::basic_format_arg<duckdb_fmt::printf_context>> format_args;
+		vector<duckdb_fmt::basic_format_arg<duckdb_fmt::printf_context>> format_args;
 		for (auto &val : values) {
 			switch (val.type) {
 			case ExceptionFormatValueType::FORMAT_VALUE_TYPE_DOUBLE:
@@ -96,7 +96,7 @@ string ExceptionFormatValue::Format(const string &msg, const vector<ExceptionFor
 	} catch (std::exception &ex) { // LCOV_EXCL_START
 		// work-around for oss-fuzz limiting memory which causes issues here
 		if (StringUtil::Contains(ex.what(), "fuzz mode")) {
-			throw Exception(msg);
+			throw InvalidInputException(msg);
 		}
 		throw InternalException(string("Primary exception: ") + msg +
 		                        "\nSecondary exception in ExceptionFormatValue: " + ex.what());
