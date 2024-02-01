@@ -62,7 +62,7 @@ class StringPiece {
   StringPiece()
       : data_(NULL), size_(0) {}
 #if __has_include(<string_view>) && __cplusplus >= 201703L
-  StringPiece(const duckdb::string_view& str)
+  StringPiece(const std::string_view& str)
       : data_(str.data()), size_(str.size()) {}
 #endif
   StringPiece(const duckdb::string& str)
