@@ -166,6 +166,7 @@ bool SQLLogicParser::IsSingleLineStatement(SQLLogicToken &token) {
 	case SQLLogicTokenType::SQLLOGIC_LOAD:
 	case SQLLogicTokenType::SQLLOGIC_RESTART:
 	case SQLLogicTokenType::SQLLOGIC_RECONNECT:
+	case SQLLogicTokenType::SQLLOGIC_SLEEP:
 		return true;
 
 	case SQLLogicTokenType::SQLLOGIC_SKIP_IF:
@@ -217,6 +218,8 @@ SQLLogicTokenType SQLLogicParser::CommandToToken(const string &token) {
 		return SQLLogicTokenType::SQLLOGIC_RESTART;
 	} else if (token == "reconnect") {
 		return SQLLogicTokenType::SQLLOGIC_RECONNECT;
+	} else if (token == "sleep") {
+		return SQLLogicTokenType::SQLLOGIC_SLEEP;
 	}
 	Fail("Unrecognized parameter %s", token);
 	return SQLLogicTokenType::SQLLOGIC_INVALID;

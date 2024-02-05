@@ -26,7 +26,9 @@
 #include "duckdb/common/adbc/adbc.hpp"
 
 #include "duckdb/common/string.hpp"
+#include "duckdb/common/to_string.hpp"
 using duckdb::string;
+using duckdb::to_string;
 
 #include <algorithm>
 #include <array>

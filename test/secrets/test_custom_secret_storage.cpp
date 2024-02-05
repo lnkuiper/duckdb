@@ -42,9 +42,8 @@ struct DemoSecretType {
 // Demo pluggable secret storage
 class TestSecretStorage : public CatalogSetSecretStorage {
 public:
-	TestSecretStorage(const duckdb::string &name_p, DatabaseInstance &db, TestSecretLog &logger_p,
-	                  int64_t tie_break_offset_p)
-	    : CatalogSetSecretStorage(name_p), tie_break_offset(tie_break_offset_p), logger(logger_p) {
+	TestSecretStorage(const string &name_p, DatabaseInstance &db, TestSecretLog &logger_p, int64_t tie_break_offset_p)
+	    : CatalogSetSecretStorage(db, name_p), tie_break_offset(tie_break_offset_p), logger(logger_p) {
 		secrets = make_uniq<CatalogSet>(Catalog::GetSystemCatalog(db));
 		persistent = true;
 		include_in_lookups = true;
@@ -61,12 +60,11 @@ public:
 	bool include_in_lookups;
 
 protected:
-	void WriteSecret(CatalogTransaction transaction, const BaseSecret &secret, OnCreateConflict on_conflict) override {
+	void WriteSecret(const BaseSecret &secret, OnCreateConflict on_conflict) override {
 		duckdb::lock_guard<duckdb::mutex> lock(logger.lock);
 		logger.write_secret_requests.push_back(secret.GetName());
 	};
-	virtual void RemoveSecret(CatalogTransaction transaction, const duckdb::string &secret,
-	                          OnEntryNotFound on_entry_not_found) override {
+	virtual void RemoveSecret(const string &secret, OnEntryNotFound on_entry_not_found) override {
 		duckdb::lock_guard<duckdb::mutex> lock(logger.lock);
 		logger.remove_secret_requests.push_back(secret);
 	};

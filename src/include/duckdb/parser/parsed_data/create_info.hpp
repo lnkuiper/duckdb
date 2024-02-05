@@ -12,6 +12,7 @@
 #include "duckdb/common/enums/catalog_type.hpp"
 #include "duckdb/common/enums/on_create_conflict.hpp"
 #include "duckdb/common/exception.hpp"
+#include "duckdb/common/types/value.hpp"
 #include "duckdb/parser/parsed_data/parse_info.hpp"
 
 namespace duckdb {
@@ -43,6 +44,8 @@ public:
 	bool internal;
 	//! The SQL string of the CREATE statement
 	string sql;
+	//! User provided comment
+	Value comment;
 
 public:
 	void Serialize(Serializer &serializer) const override;
