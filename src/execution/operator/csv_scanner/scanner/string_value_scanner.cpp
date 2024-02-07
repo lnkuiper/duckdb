@@ -1,13 +1,10 @@
 #include "duckdb/execution/operator/csv_scanner/scanner/string_value_scanner.hpp"
-
-#include "duckdb/common/operator/double_cast_operator.hpp"
-#include "duckdb/common/operator/integer_cast_operator.hpp"
-#include "duckdb/common/stringstream.hpp"
+#include "duckdb/execution/operator/csv_scanner/util/csv_casting.hpp"
 #include "duckdb/execution/operator/csv_scanner/scanner/skip_scanner.hpp"
 #include "duckdb/execution/operator/csv_scanner/table_function/csv_file_scanner.hpp"
-#include "duckdb/execution/operator/csv_scanner/util/csv_casting.hpp"
 #include "duckdb/main/client_data.hpp"
-
+#include "duckdb/common/operator/integer_cast_operator.hpp"
+#include "duckdb/common/operator/double_cast_operator.hpp"
 #include <algorithm>
 
 namespace duckdb {
@@ -116,7 +113,7 @@ void StringValueResult::AddValueToVector(const char *value_ptr, const idx_t size
 					}
 					if (parse_types[chunk_col_id] != LogicalTypeId::VARCHAR) {
 						// If it is not a varchar, empty values are not accepted, we must error.
-						cast_errors[chunk_col_id] = string("");
+						cast_errors[chunk_col_id] = std::string("");
 					}
 					static_cast<string_t *>(vector_ptr[chunk_col_id])[number_of_rows] = string_t();
 				} else {
@@ -208,7 +205,7 @@ void StringValueResult::AddValueToVector(const char *value_ptr, const idx_t size
 	}
 	if (!success) {
 		// We had a casting error, we push it here because we can only error when finishing the line read.
-		cast_errors[cur_col_id] = string(value_ptr, size);
+		cast_errors[cur_col_id] = std::string(value_ptr, size);
 	}
 	cur_col_id++;
 	chunk_col_id++;
@@ -310,7 +307,7 @@ bool StringValueResult::AddRowInternal() {
 			}
 		}
 		for (auto &cast_error : cast_errors) {
-			ostringstream error;
+			std::ostringstream error;
 			// Casting Error Message
 			error << "Could not convert string \"" << cast_error.second << "\" to \'"
 			      << LogicalTypeIdToString(parse_types[cast_error.first]) << "\'";

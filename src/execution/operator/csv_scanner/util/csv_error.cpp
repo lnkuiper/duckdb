@@ -1,7 +1,6 @@
 #include "duckdb/execution/operator/csv_scanner/util/csv_error.hpp"
-
 #include "duckdb/common/exception/conversion_exception.hpp"
-#include "duckdb/common/stringstream.hpp"
+#include <sstream>
 
 namespace duckdb {
 
@@ -26,7 +25,7 @@ void CSVErrorHandler::Error(LinesPerBoundary &error_info, CSVError &csv_error, b
 		return;
 	}
 
-	ostringstream error;
+	std::ostringstream error;
 	if (PrintLineNumber(csv_error)) {
 		error << "CSV Error on Line: " << GetLine(error_info) << std::endl;
 	}
@@ -91,7 +90,7 @@ CSVError CSVError::ColumnTypesError(case_insensitive_map_t<idx_t> sql_types_per_
 
 CSVError CSVError::CastError(const CSVReaderOptions &options, string &column_name, string &cast_error, idx_t column_idx,
                              vector<Value> &row) {
-	ostringstream error;
+	std::ostringstream error;
 	// Which column
 	error << "Error when converting column \"" << column_name << "\"." << std::endl;
 	// What was the cast error
@@ -103,7 +102,7 @@ CSVError CSVError::CastError(const CSVReaderOptions &options, string &column_nam
 }
 
 CSVError CSVError::LineSizeError(const CSVReaderOptions &options, idx_t actual_size) {
-	ostringstream error;
+	std::ostringstream error;
 	error << "Maximum line size of " << options.maximum_line_size << " bytes exceeded. ";
 	error << "Actual Size:" << actual_size << " bytes." << std::endl;
 	error << options.ToString();
@@ -111,7 +110,7 @@ CSVError CSVError::LineSizeError(const CSVReaderOptions &options, idx_t actual_s
 }
 
 CSVError CSVError::SniffingError(string &file_path) {
-	ostringstream error;
+	std::ostringstream error;
 	// Which column
 	error << "Error when sniffing file \"" << file_path << "\"." << std::endl;
 	error << "CSV options could not be auto-detected. Consider setting parser options manually." << std::endl;
@@ -119,7 +118,7 @@ CSVError CSVError::SniffingError(string &file_path) {
 }
 
 CSVError CSVError::NullPaddingFail(const CSVReaderOptions &options) {
-	ostringstream error;
+	std::ostringstream error;
 	error << " The parallel scanner does not support null_padding in conjunction with quoted new lines. Please "
 	         "disable the parallel csv reader with parallel=false"
 	      << std::endl;
@@ -130,7 +129,7 @@ CSVError CSVError::NullPaddingFail(const CSVReaderOptions &options) {
 
 CSVError CSVError::UnterminatedQuotesError(const CSVReaderOptions &options, string_t *vector_ptr,
                                            idx_t vector_line_start, idx_t current_column) {
-	ostringstream error;
+	std::ostringstream error;
 	error << "Value with unterminated quote found." << std::endl;
 	error << std::endl;
 	// What were the options
@@ -140,7 +139,7 @@ CSVError CSVError::UnterminatedQuotesError(const CSVReaderOptions &options, stri
 
 CSVError CSVError::IncorrectColumnAmountError(const CSVReaderOptions &options, string_t *vector_ptr,
                                               idx_t vector_line_start, idx_t actual_columns) {
-	ostringstream error;
+	std::ostringstream error;
 	// How many columns were expected and how many were found
 	error << "Expected Number of Columns: " << options.dialect_options.num_cols << " Found: " << actual_columns
 	      << std::endl;

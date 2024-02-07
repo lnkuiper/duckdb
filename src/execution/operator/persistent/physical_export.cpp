@@ -5,15 +5,17 @@
 #include "duckdb/catalog/catalog_entry/table_catalog_entry.hpp"
 #include "duckdb/common/file_system.hpp"
 #include "duckdb/common/string_util.hpp"
-#include "duckdb/common/stringstream.hpp"
 #include "duckdb/parallel/meta_pipeline.hpp"
 #include "duckdb/parallel/pipeline.hpp"
 #include "duckdb/parser/keyword_helper.hpp"
 #include "duckdb/transaction/transaction.hpp"
 
 #include <algorithm>
+#include <sstream>
 
 namespace duckdb {
+
+using std::stringstream;
 
 static void WriteCatalogEntries(stringstream &ss, vector<reference<CatalogEntry>> &entries) {
 	for (auto &entry : entries) {
