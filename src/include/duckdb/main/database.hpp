@@ -12,6 +12,7 @@
 #include "duckdb/main/valid_checker.hpp"
 #include "duckdb/common/winapi.hpp"
 #include "duckdb/main/extension.hpp"
+#include "duckdb/main/settings.hpp"
 
 namespace duckdb {
 class BufferManager;
@@ -53,7 +54,7 @@ public:
 	DUCKDB_API const unordered_set<string> &LoadedExtensions();
 	DUCKDB_API bool ExtensionIsLoaded(const string &name);
 
-	DUCKDB_API bool TryGetCurrentSetting(const string &key, Value &result);
+	DUCKDB_API SettingLookupResult TryGetCurrentSetting(const string &key, Value &result);
 
 	unique_ptr<AttachedDatabase> CreateAttachedDatabase(ClientContext &context, const AttachInfo &info,
 	                                                    const string &type, AccessMode access_mode);
