@@ -11,6 +11,7 @@
 #include "duckdb/common/unordered_set.hpp"
 
 namespace duckdb {
+
 struct BenchmarkFileReader;
 class MaterializedQueryResult;
 
@@ -68,6 +69,10 @@ private:
 
 	string benchmark_path;
 	string cache_db = "";
+	string cache_file = "";
+	// check the existence of a cached db, but do not connect
+	// can be used to test accessing data from a different db in a non-persistent connection
+	bool cache_no_connect = false;
 	unordered_set<string> extensions;
 	int64_t result_column_count = 0;
 	vector<vector<string>> result_values;

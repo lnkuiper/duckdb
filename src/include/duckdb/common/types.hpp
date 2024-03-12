@@ -336,6 +336,10 @@ struct LogicalType {
 
 	DUCKDB_API bool IsValid() const;
 
+	template<class F>
+	bool Contains(F &&predicate) const;
+	bool Contains(LogicalTypeId type_id) const;
+
 private:
 	LogicalTypeId id_;
 	PhysicalType physical_type_;
@@ -382,7 +386,7 @@ public:
 	static constexpr const LogicalTypeId ROW_TYPE = LogicalTypeId::BIGINT;
 
 	// explicitly allowing these functions to be capitalized to be in-line with the remaining functions
-	DUCKDB_API static LogicalType DECIMAL(int width, int scale);                 // NOLINT
+	DUCKDB_API static LogicalType DECIMAL(uint8_t width, uint8_t scale);                 // NOLINT
 	DUCKDB_API static LogicalType VARCHAR_COLLATION(string collation);           // NOLINT
 	DUCKDB_API static LogicalType LIST(const LogicalType &child);                // NOLINT
 	DUCKDB_API static LogicalType STRUCT(child_list_t<LogicalType> children);    // NOLINT
@@ -474,6 +478,8 @@ struct ArrayType {
 	DUCKDB_API static idx_t GetSize(const LogicalType &type);
 	DUCKDB_API static bool IsAnySize(const LogicalType &type);
 	DUCKDB_API static constexpr idx_t MAX_ARRAY_SIZE = 100000; // 100k for now
+	//! Recursively replace all ARRAY types to LIST types within the given type
+	DUCKDB_API static LogicalType ConvertToList(const LogicalType &type);
 };
 
 struct AggregateStateType {
@@ -527,5 +533,38 @@ struct aggregate_state_t {
 	LogicalType return_type;
 	vector<LogicalType> bound_argument_types;
 };
+
+template<class F>
+bool LogicalType::Contains(F &&predicate) const {
+	if(predicate(*this)) {
+		return true;
+	}
+	switch(id()) {
+	case LogicalTypeId::STRUCT: {
+		for(const auto &child : StructType::GetChildTypes(*this)) {
+			if(child.second.Contains(predicate)) {
+				return true;
+			}
+		}
+		}
+		break;
+	case LogicalTypeId::LIST:
+		return ListType::GetChildType(*this).Contains(predicate);
+	case LogicalTypeId::MAP:
+		return MapType::KeyType(*this).Contains(predicate) || MapType::ValueType(*this).Contains(predicate);
+	case LogicalTypeId::UNION:
+		for(const auto &child : UnionType::CopyMemberTypes(*this)) {
+			if(child.second.Contains(predicate)) {
+				return true;
+			}
+		}
+		break;
+	case LogicalTypeId::ARRAY:
+		return ArrayType::GetChildType(*this).Contains(predicate);
+	default:
+		return false;
+	}
+	return false;
+}
 
 } // namespace duckdb

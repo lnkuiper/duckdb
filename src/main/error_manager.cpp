@@ -19,7 +19,7 @@ static DefaultError internal_errors[] = {
                                       "database must be restarted prior to being used again.\nOriginal error: \"%s\""},
     {ErrorType::INVALID, nullptr}};
 
-string ErrorManager::FormatExceptionRecursive(ErrorType error_type, vector<ExceptionFormatValue> &values) {
+string ErrorManager::FormatExceptionRecursive(ErrorType error_type, std::vector<ExceptionFormatValue> &values) {
 	if (error_type >= ErrorType::ERROR_COUNT) {
 		throw InternalException("Invalid error type passed to ErrorManager::FormatError");
 	}

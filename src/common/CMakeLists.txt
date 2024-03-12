@@ -20,6 +20,10 @@ if(${EXIT_TIME_DESTRUCTORS_WARNING})
       "${CMAKE_CXX_FLAGS_DEBUG} -Wno-exit-time-destructors")
 endif()
 
+if(DEBUG_STACKTRACE)
+  set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -DDUCKDB_DEBUG_STACKTRACE")
+endif()
+
 add_library_unity(
   duckdb_common
   OBJECT
@@ -29,6 +33,7 @@ add_library_unity(
   box_renderer.cpp
   compressed_file_system.cpp
   constants.cpp
+  container_allocator.cpp
   checksum.cpp
   cycle_counter.cpp
   exception.cpp
@@ -43,7 +48,6 @@ add_library_unity(
   http_state.cpp
   pipe_file_system.cpp
   local_file_system.cpp
-  memory_safety_exceptions.cpp
   multi_file_reader.cpp
   error_data.cpp
   printer.cpp

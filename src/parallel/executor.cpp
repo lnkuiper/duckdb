@@ -20,10 +20,11 @@
 
 namespace duckdb {
 
-Executor::Executor(ClientContext &context) : context(context) {
+Executor::Executor(ClientContext &context) : context(context), executor_tasks(0) {
 }
 
 Executor::~Executor() {
+	D_ASSERT(executor_tasks == 0);
 }
 
 Executor &Executor::Get(ClientContext &context) {
@@ -160,9 +161,8 @@ void Executor::SchedulePipeline(const shared_ptr<MetaPipeline> &meta_pipeline, S
 		auto root_entry = event_map.find(*pipeline);
 		D_ASSERT(root_entry != event_map.end());
 		auto &pipeline_stack = root_entry->second;
-		// iterate in reverse so the deepest dependencies are added first
-		for (auto it = dependencies->rbegin(); it != dependencies->rend(); ++it) {
-			auto event_entry = event_map.find(*it);
+		for (auto &dependency : *dependencies) {
+			auto event_entry = event_map.find(dependency);
 			D_ASSERT(event_entry != event_map.end());
 			auto &dependency_stack = event_entry->second;
 			pipeline_stack.pipeline_event.AddDependency(dependency_stack.pipeline_event);
@@ -175,8 +175,8 @@ void Executor::ScheduleEventsInternal(ScheduleEventData &event_data) {
 	D_ASSERT(events.empty());
 
 	// create all the required pipeline events
-	for (auto &pipeline : event_data.meta_pipelines) {
-		SchedulePipeline(pipeline, event_data);
+	for (auto &meta_pipeline : event_data.meta_pipelines) {
+		SchedulePipeline(meta_pipeline, event_data);
 	}
 
 	// set up the dependencies across MetaPipelines
@@ -187,9 +187,33 @@ void Executor::ScheduleEventsInternal(ScheduleEventData &event_data) {
 			auto dep = dependency.lock();
 			D_ASSERT(dep);
 			auto event_map_entry = event_map.find(*dep);
+			if (event_map_entry == event_map.end()) {
+				continue;
+			}
 			D_ASSERT(event_map_entry != event_map.end());
 			auto &dep_entry = event_map_entry->second;
 			entry.second.pipeline_event.AddDependency(dep_entry.pipeline_complete_event);
+		}
+	}
+
+	// make pipeline_finish_event of each MetaPipeline depend on the pipeline_event of the base pipeline of its sublings
+	// this allows TemporaryMemoryManager to more fairly distribute memory
+	for (auto &meta_pipeline : event_data.meta_pipelines) {
+		vector<shared_ptr<MetaPipeline>> children;
+		meta_pipeline->GetMetaPipelines(children, false, true);
+		for (auto &child1 : children) {
+			auto &child1_base = *child1->GetBasePipeline();
+			auto child1_entry = event_map.find(child1_base);
+			D_ASSERT(child1_entry != event_map.end());
+			for (auto &child2 : children) {
+				if (RefersToSameObject(*child1, *child2)) {
+					continue;
+				}
+				auto &child2_base = *child2->GetBasePipeline();
+				auto child2_entry = event_map.find(child2_base);
+				D_ASSERT(child2_entry != event_map.end());
+				child1_entry->second.pipeline_finish_event.AddDependency(child2_entry->second.pipeline_event);
+			}
 		}
 	}
 
@@ -266,10 +290,6 @@ void Executor::VerifyScheduledEventsInternal(const idx_t vertex, const vector<re
 
 void Executor::AddRecursiveCTE(PhysicalOperator &rec_cte) {
 	recursive_ctes.push_back(rec_cte);
-}
-
-void Executor::AddMaterializedCTE(PhysicalOperator &mat_cte) {
-	materialized_ctes.push_back(mat_cte);
 }
 
 void Executor::ReschedulePipelines(const vector<shared_ptr<MetaPipeline>> &pipelines_p,
@@ -349,12 +369,6 @@ void Executor::InitializeInternal(PhysicalOperator &plan) {
 			rec_cte.recursive_meta_pipeline->Ready();
 		}
 
-		// ready materialized cte pipelines too
-		for (auto &mat_cte_ref : materialized_ctes) {
-			auto &mat_cte = mat_cte_ref.get().Cast<PhysicalCTE>();
-			mat_cte.recursive_meta_pipeline->Ready();
-		}
-
 		// set root pipelines, i.e., all pipelines that end in the final sink
 		root_pipeline->GetPipelines(root_pipelines, false);
 		root_pipeline_idx = 0;
@@ -377,38 +391,24 @@ void Executor::InitializeInternal(PhysicalOperator &plan) {
 
 void Executor::CancelTasks() {
 	task.reset();
-	// we do this by creating weak pointers to all pipelines
-	// then clearing our references to the pipelines
-	// and waiting until all pipelines have been destroyed
-	vector<weak_ptr<Pipeline>> weak_references;
+
 	{
 		lock_guard<mutex> elock(executor_lock);
-		weak_references.reserve(pipelines.size());
+		// mark the query as cancelled so tasks will early-out
 		cancelled = true;
-		for (auto &pipeline : pipelines) {
-			weak_references.push_back(weak_ptr<Pipeline>(pipeline));
-		}
+		// destroy all pipelines, events and states
 		for (auto &rec_cte_ref : recursive_ctes) {
 			auto &rec_cte = rec_cte_ref.get().Cast<PhysicalRecursiveCTE>();
 			rec_cte.recursive_meta_pipeline.reset();
-		}
-		for (auto &mat_cte_ref : materialized_ctes) {
-			auto &mat_cte = mat_cte_ref.get().Cast<PhysicalCTE>();
-			mat_cte.recursive_meta_pipeline.reset();
 		}
 		pipelines.clear();
 		root_pipelines.clear();
 		to_be_rescheduled_tasks.clear();
 		events.clear();
 	}
-	WorkOnTasks();
-	for (auto &weak_ref : weak_references) {
-		while (true) {
-			auto weak = weak_ref.lock();
-			if (!weak) {
-				break;
-			}
-		}
+	// Take all pending tasks and execute them until they cancel
+	while (executor_tasks > 0) {
+		WorkOnTasks();
 	}
 }
 
@@ -638,7 +638,7 @@ bool Executor::GetPipelinesProgress(double &current_progress, uint64_t &current_
 	current_progress = 0;
 
 	for (size_t i = 0; i < progress.size(); i++) {
-		D_ASSERT(progress[i] <= 100);
+		progress[i] = MaxValue(0.0, MinValue(100.0, progress[i]));
 		current_cardinality += double(progress[i]) * double(cardinality[i]) / double(100);
 		current_progress += progress[i] * double(cardinality[i]) / double(total_cardinality);
 		D_ASSERT(current_cardinality <= total_cardinality);

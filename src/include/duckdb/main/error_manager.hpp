@@ -34,14 +34,14 @@ class ErrorManager {
 public:
 	template <typename... Args>
 	string FormatException(ErrorType error_type, Args... params) {
-		vector<ExceptionFormatValue> values;
+		std::vector<ExceptionFormatValue> values;
 		return FormatExceptionRecursive(error_type, values, params...);
 	}
 
-	DUCKDB_API string FormatExceptionRecursive(ErrorType error_type, vector<ExceptionFormatValue> &values);
+	DUCKDB_API string FormatExceptionRecursive(ErrorType error_type, std::vector<ExceptionFormatValue> &values);
 
 	template <class T, typename... Args>
-	string FormatExceptionRecursive(ErrorType error_type, vector<ExceptionFormatValue> &values, T param,
+	string FormatExceptionRecursive(ErrorType error_type, std::vector<ExceptionFormatValue> &values, T param,
 	                                Args... params) {
 		values.push_back(ExceptionFormatValue::CreateFormatValue<T>(param));
 		return FormatExceptionRecursive(error_type, values, params...);

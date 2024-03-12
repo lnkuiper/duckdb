@@ -18,13 +18,13 @@ IPAddress IPAddress::FromIPv6(hugeint_t address, uint16_t mask) {
 	return IPAddress(IPAddressType::IP_ADDRESS_V6, address, mask);
 }
 
-static bool IPAddressError(string_t input, string *error_message, string error) {
+static bool IPAddressError(string_t input, CastParameters &parameters, string error) {
 	string e = "Failed to convert string \"" + input.GetString() + "\" to inet: " + error;
-	HandleCastError::AssignError(e, error_message);
+	HandleCastError::AssignError(e, parameters);
 	return false;
 }
 
-bool IPAddress::TryParse(string_t input, IPAddress &result, string *error_message) {
+bool IPAddress::TryParse(string_t input, IPAddress &result, CastParameters &parameters) {
 	auto data = input.GetData();
 	auto size = input.GetSize();
 	idx_t c = 0;
@@ -37,11 +37,11 @@ parse_number:
 		c++;
 	}
 	if (start == c) {
-		return IPAddressError(input, error_message, "Expected a number");
+		return IPAddressError(input, parameters, "Expected a number");
 	}
 	uint8_t number;
 	if (!TryCast::Operation<string_t, uint8_t>(string_t(data + start, c - start), number)) {
-		return IPAddressError(input, error_message, "Expected a number between 0 and 255");
+		return IPAddressError(input, parameters, "Expected a number between 0 and 255");
 	}
 	address <<= 8;
 	address += number;
@@ -54,7 +54,7 @@ parse_number:
 	}
 parse_dot:
 	if (c == size || data[c] != '.') {
-		return IPAddressError(input, error_message, "Expected a dot");
+		return IPAddressError(input, parameters, "Expected a dot");
 	}
 	c++;
 	goto parse_number;
@@ -65,7 +65,7 @@ parse_mask:
 		return true;
 	}
 	if (data[c] != '/') {
-		return IPAddressError(input, error_message, "Expected a slash");
+		return IPAddressError(input, parameters, "Expected a slash");
 	}
 	c++;
 	start = c;
@@ -74,10 +74,10 @@ parse_mask:
 	}
 	uint8_t mask;
 	if (!TryCast::Operation<string_t, uint8_t>(string_t(data + start, c - start), mask)) {
-		return IPAddressError(input, error_message, "Expected a number between 0 and 32");
+		return IPAddressError(input, parameters, "Expected a number between 0 and 32");
 	}
 	if (mask > 32) {
-		return IPAddressError(input, error_message, "Expected a number between 0 and 32");
+		return IPAddressError(input, parameters, "Expected a number between 0 and 32");
 	}
 	result.mask = mask;
 	return true;
@@ -101,9 +101,10 @@ string IPAddress::ToString() const {
 
 IPAddress IPAddress::FromString(string_t input) {
 	IPAddress result;
-	string error_message;
-	if (!TryParse(input, result, &error_message)) {
-		throw ConversionException(error_message);
+	CastParameters parameters;
+	auto success = TryParse(input, result, parameters);
+	if (!success) {
+		throw InternalException("Not successful but no exception was thrown");
 	}
 	return result;
 }

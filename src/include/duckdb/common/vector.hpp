@@ -9,10 +9,9 @@
 #pragma once
 
 #include "duckdb/common/assert.hpp"
-#include "duckdb/common/container_allocator.hpp"
+#include "duckdb/common/exception.hpp"
 #include "duckdb/common/likely.hpp"
 #include "duckdb/common/memory_safety.hpp"
-#include "duckdb/common/memory_safety_exceptions.hpp"
 #include "duckdb/common/typedefs.hpp"
 
 #include <vector>
@@ -34,7 +33,7 @@ private:
 		return;
 #else
 		if (DUCKDB_UNLIKELY(index >= size)) {
-			throw VectorOutOfBoundsException(index, size);
+			throw InternalException("Attempted to access index %ld within vector of size %ld", index, size);
 		}
 #endif
 	}
@@ -91,14 +90,14 @@ public:
 
 	typename original::reference back() {
 		if (MemorySafety<SAFE>::enabled && original::empty()) {
-			throw VectorBackOnEmptyException();
+			throw InternalException("'back' called on an empty vector!");
 		}
 		return get<SAFE>(original::size() - 1);
 	}
 
 	typename original::const_reference back() const {
 		if (MemorySafety<SAFE>::enabled && original::empty()) {
-			throw VectorBackOnEmptyException();
+			throw InternalException("'back' called on an empty vector!");
 		}
 		return get<SAFE>(original::size() - 1);
 	}

@@ -8,8 +8,6 @@
 
 #pragma once
 
-#include "duckdb/common/container_allocator.hpp"
-
 #include <string>
 
 namespace duckdb {

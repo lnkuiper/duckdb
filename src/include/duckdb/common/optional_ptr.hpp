@@ -8,7 +8,7 @@
 
 #pragma once
 
-#include "duckdb/common/memory_safety_exceptions.hpp"
+#include "duckdb/common/exception.hpp"
 #include "duckdb/common/unique_ptr.hpp"
 
 namespace duckdb {
@@ -25,7 +25,7 @@ public:
 
 	void CheckValid() const {
 		if (!ptr) {
-			throw UniquePtrNullException();
+			throw InternalException("Attempting to dereference an optional pointer that is not set");
 		}
 	}
 

@@ -33,8 +33,6 @@
 #include "parser/parser.hpp"
 #include "parser/kwlist.hpp"
 
-#include "duckdb/common/vector.hpp"
-
 namespace duckdb_libpgquery {
 
 /*
@@ -74,8 +72,8 @@ bool is_keyword(const char *text) {
 	return ScanKeywordLookup(text, ScanKeywords, NumScanKeywords) != NULL;
 }
 
-duckdb::vector<PGKeyword> keyword_list() {
-    duckdb::vector<PGKeyword> result;
+std::vector<PGKeyword> keyword_list() {
+    std::vector<PGKeyword> result;
 	for(size_t i = 0; i < NumScanKeywords; i++) {
 		PGKeyword keyword;
 		keyword.text = ScanKeywords[i].name;
@@ -98,11 +96,11 @@ duckdb::vector<PGKeyword> keyword_list() {
 	return result;
 }
 
-duckdb::vector<PGSimplifiedToken> tokenize(const char *str) {
+std::vector<PGSimplifiedToken> tokenize(const char *str) {
 	core_yyscan_t yyscanner;
 	base_yy_extra_type yyextra;
 
-	duckdb::vector<PGSimplifiedToken> result;
+	std::vector<PGSimplifiedToken> result;
 	yyscanner = scanner_init(str, &yyextra.core_yy_extra, ScanKeywords, NumScanKeywords);
 	yyextra.have_lookahead = false;
 

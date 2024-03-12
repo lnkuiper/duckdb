@@ -23,7 +23,7 @@
  */
 #include "pg_functions.hpp"
 #include <string.h>
-#include "duckdb/common/string.hpp"
+#include <string>
 #include <memory>
 
 #include "parser/gramparse.hpp"

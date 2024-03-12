@@ -1116,6 +1116,10 @@ int Linenoise::Edit() {
 		if (c == TAB && completionCallback != NULL) {
 			if (has_more_data) {
 				// if there is more data, this tab character was added as part of copy-pasting data
+				// instead insert some spaces
+				if (EditInsertMulti("    ")) {
+					return -1;
+				}
 				continue;
 			}
 			c = CompleteLine(current_sequence);
@@ -1132,13 +1136,14 @@ int Linenoise::Edit() {
 		Linenoise::Log("%d\n", (int)c);
 		switch (c) {
 		case CTRL_J:
-		case ENTER: /* enter */
+		case ENTER: { /* enter */
 			if (Terminal::IsMultiline() && len > 0) {
 				// check if this forms a complete SQL statement or not
 				buf[len] = '\0';
 				if (buf[0] != '.' && !AllWhitespace(buf) && !sqlite3_complete(buf)) {
 					// not a complete SQL statement yet! continuation
-					// insert "\r\n"
+					// insert "\r\n" at the end
+					pos = len;
 					if (EditInsertMulti("\r\n")) {
 						return -1;
 					}
@@ -1164,7 +1169,17 @@ int Linenoise::Edit() {
 				RefreshLine();
 				hintsCallback = hc;
 			}
-			return (int)len;
+			// rewrite \r\n to \n
+			idx_t new_len = 0;
+			for (idx_t i = 0; i < len; i++) {
+				if (buf[i] == '\r' && buf[i + 1] == '\n') {
+					continue;
+				}
+				buf[new_len++] = buf[i];
+			}
+			buf[new_len] = '\0';
+			return (int)new_len;
+		}
 		case CTRL_O:
 		case CTRL_G:
 		case CTRL_C: /* ctrl-c */ {
@@ -1337,7 +1352,9 @@ int Linenoise::Edit() {
 		case CTRL_W: /* ctrl+w, delete previous word */
 			EditDeletePrevWord();
 			break;
-		case CTRL_X:
+		case CTRL_X: /* ctrl+x, insert newline */
+			EditInsertMulti("\r\n");
+			break;
 		case CTRL_Y:
 			// unsupported
 			break;

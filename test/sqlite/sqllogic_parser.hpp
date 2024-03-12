@@ -9,8 +9,8 @@
 #pragma once
 
 #include "duckdb.hpp"
-#include "duckdb/common/types.hpp"
 #include "duckdb/common/exception_format_value.hpp"
+#include "duckdb/common/types.hpp"
 
 namespace duckdb {
 
@@ -88,17 +88,17 @@ public:
 
 	template <typename... Args>
 	void Fail(const string &msg, Args... params) {
-		vector<ExceptionFormatValue> values;
+		std::vector<ExceptionFormatValue> values;
 		FailRecursive(msg, values, params...);
 	}
 
 private:
 	SQLLogicTokenType CommandToToken(const string &token);
 
-	void FailRecursive(const string &msg, vector<ExceptionFormatValue> &values);
+	void FailRecursive(const string &msg, std::vector<ExceptionFormatValue> &values);
 
 	template <class T, typename... Args>
-	void FailRecursive(const string &msg, vector<ExceptionFormatValue> &values, T param, Args... params) {
+	void FailRecursive(const string &msg, std::vector<ExceptionFormatValue> &values, T param, Args... params) {
 		values.push_back(ExceptionFormatValue::CreateFormatValue<T>(param));
 		FailRecursive(msg, values, params...);
 	}

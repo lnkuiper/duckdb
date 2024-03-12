@@ -18,6 +18,7 @@
 #include <vector>
 
 namespace duckdb {
+
 enum class PhysicalType : uint8_t;
 struct LogicalType;
 class Expression;
@@ -105,7 +106,7 @@ public:
 		const std::size_t num_args = sizeof...(Args);
 		if (num_args == 0)
 			return msg;
-		vector<ExceptionFormatValue> values;
+		std::vector<ExceptionFormatValue> values;
 		return ConstructMessageRecursive(msg, values, params...);
 	}
 
@@ -124,10 +125,10 @@ public:
 	DUCKDB_API static bool InvalidatesTransaction(ExceptionType exception_type);
 	DUCKDB_API static bool InvalidatesDatabase(ExceptionType exception_type);
 
-	DUCKDB_API static string ConstructMessageRecursive(const string &msg, vector<ExceptionFormatValue> &values);
+	DUCKDB_API static string ConstructMessageRecursive(const string &msg, std::vector<ExceptionFormatValue> &values);
 
 	template <class T, typename... Args>
-	static string ConstructMessageRecursive(const string &msg, vector<ExceptionFormatValue> &values, T param,
+	static string ConstructMessageRecursive(const string &msg, std::vector<ExceptionFormatValue> &values, T param,
 	                                        Args... params) {
 		values.push_back(ExceptionFormatValue::CreateFormatValue<T>(param));
 		return ConstructMessageRecursive(msg, values, params...);
@@ -222,11 +223,17 @@ public:
 class IOException : public Exception {
 public:
 	DUCKDB_API explicit IOException(const string &msg);
+	DUCKDB_API explicit IOException(const string &msg, const unordered_map<string, string> &extra_info);
 	explicit IOException(ExceptionType exception_type, const string &msg) : Exception(exception_type, msg) {
 	}
 
 	template <typename... Args>
 	explicit IOException(const string &msg, Args... params) : IOException(ConstructMessage(msg, params...)) {
+	}
+
+	template <typename... Args>
+	explicit IOException(const string &msg, const unordered_map<string, string> &extra_info, Args... params)
+	    : IOException(ConstructMessage(msg, params...), extra_info) {
 	}
 };
 
@@ -333,6 +340,8 @@ class TypeMismatchException : public Exception {
 public:
 	DUCKDB_API TypeMismatchException(const PhysicalType type_1, const PhysicalType type_2, const string &msg);
 	DUCKDB_API TypeMismatchException(const LogicalType &type_1, const LogicalType &type_2, const string &msg);
+	DUCKDB_API TypeMismatchException(optional_idx error_location, const LogicalType &type_1, const LogicalType &type_2,
+	                                 const string &msg);
 	DUCKDB_API
 	TypeMismatchException(const string &msg); //! Needed to be able to recreate the exception after it's been serialized
 };

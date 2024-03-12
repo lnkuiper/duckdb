@@ -44,13 +44,13 @@ void StringUtil::LTrim(string &str) {
 
 // Remove trailing ' ', '\f', '\n', '\r', '\t', '\v'
 void StringUtil::RTrim(string &str) {
-	str.erase(find_if(str.rbegin(), str.rend(), [](int ch) { return ch > 0 && !CharacterIsSpace(ch); }).base(),
+	str.erase(find_if(str.rbegin(), str.rend(), [](char ch) { return ch > 0 && !CharacterIsSpace(ch); }).base(),
 	          str.end());
 }
 
 void StringUtil::RTrim(string &str, const string &chars_to_trim) {
 	str.erase(find_if(str.rbegin(), str.rend(),
-	                  [&chars_to_trim](int ch) { return ch > 0 && chars_to_trim.find(ch) == string::npos; })
+	                  [&chars_to_trim](char ch) { return ch > 0 && chars_to_trim.find(ch) == string::npos; })
 	              .base(),
 	          str.end());
 }
@@ -355,7 +355,7 @@ idx_t StringUtil::LevenshteinDistance(const string &s1_p, const string &s2_p, id
 			// d[i][j] = std::min({ d[i - 1][j] + 1,
 			//                      d[i][j - 1] + 1,
 			//                      d[i - 1][j - 1] + (s1[i - 1] == s2[j - 1] ? 0 : 1) });
-			int equal = s1[i - 1] == s2[j - 1] ? 0 : not_equal_penalty;
+			auto equal = s1[i - 1] == s2[j - 1] ? 0 : not_equal_penalty;
 			idx_t adjacent_score1 = array.Score(i - 1, j) + 1;
 			idx_t adjacent_score2 = array.Score(i, j - 1) + 1;
 			idx_t adjacent_score3 = array.Score(i - 1, j - 1) + equal;
@@ -584,10 +584,6 @@ string StringUtil::ToJSONMap(ExceptionType type, const string &message, const un
 }
 
 string StringUtil::GetFileName(const string &file_path) {
-
-	if (EndsWith(file_path, "..")) {
-		return "";
-	}
 
 	idx_t pos = file_path.find_last_of("/\\");
 	if (pos == string::npos) {

@@ -8,7 +8,7 @@
 #include <stddef.h>
 #include <stdint.h>
 #include <stdio.h>
-#include "duckdb/common/string.hpp"
+#include <string>
 
 #ifdef ERROR
 #undef ERROR

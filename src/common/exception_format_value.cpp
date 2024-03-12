@@ -1,10 +1,10 @@
 #include "duckdb/common/exception.hpp"
 #include "duckdb/common/types.hpp"
-#include "fmt/format.h"
-#include "fmt/printf.h"
 #include "duckdb/common/types/hugeint.hpp"
 #include "duckdb/common/types/uhugeint.hpp"
 #include "duckdb/parser/keyword_helper.hpp"
+#include "fmt/format.h"
+#include "fmt/printf.h"
 
 namespace duckdb {
 
@@ -75,9 +75,9 @@ ExceptionFormatValue ExceptionFormatValue::CreateFormatValue(uhugeint_t value) {
 	return ExceptionFormatValue(value);
 }
 
-string ExceptionFormatValue::Format(const string &msg, const vector<ExceptionFormatValue> &values) {
+string ExceptionFormatValue::Format(const string &msg, std::vector<ExceptionFormatValue> &values) {
 	try {
-		vector<duckdb_fmt::basic_format_arg<duckdb_fmt::printf_context>> format_args;
+		std::vector<duckdb_fmt::basic_format_arg<duckdb_fmt::printf_context>> format_args;
 		for (auto &val : values) {
 			switch (val.type) {
 			case ExceptionFormatValueType::FORMAT_VALUE_TYPE_DOUBLE:

@@ -8,12 +8,15 @@
 
 #pragma once
 
-#include "duckdb/common/string.hpp"
 #include "duckdb/common/vector.hpp"
 #include "nodes/pg_list.hpp"
 #include "pg_simplified_token.hpp"
 
+#include <string>
+#include <vector>
+
 namespace duckdb {
+
 class PostgresParser {
 public:
 	PostgresParser();
@@ -21,15 +24,15 @@ public:
 
 	bool success;
 	duckdb_libpgquery::PGList *parse_tree;
-	string error_message;
+	std::string error_message;
 	int error_location;
 
 public:
-	void Parse(const string &query);
-	static vector<duckdb_libpgquery::PGSimplifiedToken> Tokenize(const string &query);
+	void Parse(const std::string &query);
+	static std::vector<duckdb_libpgquery::PGSimplifiedToken> Tokenize(const std::string &query);
 
-	static bool IsKeyword(const string &text);
-	static vector<duckdb_libpgquery::PGKeyword> KeywordList();
+	static bool IsKeyword(const std::string &text);
+	static std::vector<duckdb_libpgquery::PGKeyword> KeywordList();
 
 	static void SetPreserveIdentifierCase(bool downcase);
 };

@@ -29,7 +29,7 @@ bool INetFunctions::CastVarcharToINET(Vector &source, Vector &result, idx_t coun
 			continue;
 		}
 		IPAddress inet;
-		if (!IPAddress::TryParse(input[idx], inet, parameters.error_message)) {
+		if (!IPAddress::TryParse(input[idx], inet, parameters)) {
 			FlatVector::SetNull(result, i, true);
 			success = false;
 			continue;

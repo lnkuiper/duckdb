@@ -1,7 +1,7 @@
 #pragma once
 
 #include <cstdint>
-#include "duckdb/common/string.hpp"
+#include <string>
 
 namespace duckdb_libpgquery {
 
@@ -27,7 +27,7 @@ enum class PGKeywordCategory : uint8_t {
 };
 
 struct PGKeyword {
-	duckdb::string text;
+	std::string text;
 	PGKeywordCategory category;
 };
 

@@ -1,5 +1,5 @@
 #include <stdexcept>
-#include "duckdb/common/string.hpp"
+#include <string>
 #include <thread>
 #include <mutex>
 #include "pg_functions.hpp"
@@ -121,8 +121,8 @@ void pg_parser_cleanup() {
 }
 
 int ereport(int code, ...) {
-	duckdb::string err = "parser error : " + duckdb::string(pg_parser_state.pg_err_msg);
-	throw std::runtime_error(err.c_str());
+	std::string err = "parser error : " + std::string(pg_parser_state.pg_err_msg);
+	throw std::runtime_error(err);
 }
 void elog(int code, const char *fmt, ...) {
 	throw std::runtime_error("elog NOT IMPLEMENTED");

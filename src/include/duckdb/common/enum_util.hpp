@@ -154,6 +154,8 @@ enum class JoinType : uint8_t;
 
 enum class KeywordCategory : uint8_t;
 
+enum class LimitNodeType : uint8_t;
+
 enum class LoadType : uint8_t;
 
 enum class LogicalOperatorType : uint8_t;
@@ -307,8 +309,6 @@ enum class WindowAggregationMode : uint32_t;
 enum class WindowBoundary : uint8_t;
 
 enum class WindowExcludeMode : uint8_t;
-
-enum class WithinCollection : uint8_t;
 
 
 template<>
@@ -493,6 +493,9 @@ const char* EnumUtil::ToChars<JoinType>(JoinType value);
 
 template<>
 const char* EnumUtil::ToChars<KeywordCategory>(KeywordCategory value);
+
+template<>
+const char* EnumUtil::ToChars<LimitNodeType>(LimitNodeType value);
 
 template<>
 const char* EnumUtil::ToChars<LoadType>(LoadType value);
@@ -725,9 +728,6 @@ const char* EnumUtil::ToChars<WindowBoundary>(WindowBoundary value);
 template<>
 const char* EnumUtil::ToChars<WindowExcludeMode>(WindowExcludeMode value);
 
-template<>
-const char* EnumUtil::ToChars<WithinCollection>(WithinCollection value);
-
 
 template<>
 AccessMode EnumUtil::FromString<AccessMode>(const char *value);
@@ -911,6 +911,9 @@ JoinType EnumUtil::FromString<JoinType>(const char *value);
 
 template<>
 KeywordCategory EnumUtil::FromString<KeywordCategory>(const char *value);
+
+template<>
+LimitNodeType EnumUtil::FromString<LimitNodeType>(const char *value);
 
 template<>
 LoadType EnumUtil::FromString<LoadType>(const char *value);
@@ -1142,9 +1145,6 @@ WindowBoundary EnumUtil::FromString<WindowBoundary>(const char *value);
 
 template<>
 WindowExcludeMode EnumUtil::FromString<WindowExcludeMode>(const char *value);
-
-template<>
-WithinCollection EnumUtil::FromString<WithinCollection>(const char *value);
 
 
 }

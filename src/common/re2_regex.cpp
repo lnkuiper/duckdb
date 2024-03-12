@@ -1,13 +1,13 @@
-#include "duckdb/common/re2_regex.hpp"
-
+#include "duckdb/common/numeric_utils.hpp"
 #include "duckdb/common/vector.hpp"
-#include "re2/re2.h"
-
 #include <memory>
+
+#include "duckdb/common/re2_regex.hpp"
+#include "re2/re2.h"
 
 namespace duckdb_re2 {
 
-Regex::Regex(const duckdb::string &pattern, RegexOptions options) {
+Regex::Regex(const std::string &pattern, RegexOptions options) {
 	RE2::Options o;
 	o.set_case_sensitive(options == RegexOptions::CASE_INSENSITIVE);
 	regex = std::make_shared<duckdb_re2::RE2>(StringPiece(pattern), o);
@@ -26,17 +26,17 @@ bool RegexSearchInternal(const char *input, Match &match, const Regex &r, RE2::A
 	for (auto &group : target_groups) {
 		GroupMatch group_match;
 		group_match.text = group.ToString();
-		group_match.position = group.data() - input;
+		group_match.position = group.data() != nullptr ? duckdb::NumericCast<uint32_t>(group.data() - input) : 0;
 		match.groups.emplace_back(group_match);
 	}
 	return true;
 }
 
-bool RegexSearch(const duckdb::string &input, Match &match, const Regex &regex) {
+bool RegexSearch(const std::string &input, Match &match, const Regex &regex) {
 	return RegexSearchInternal(input.c_str(), match, regex, RE2::UNANCHORED, 0, input.size());
 }
 
-bool RegexMatch(const duckdb::string &input, Match &match, const Regex &regex) {
+bool RegexMatch(const std::string &input, Match &match, const Regex &regex) {
 	return RegexSearchInternal(input.c_str(), match, regex, RE2::ANCHOR_BOTH, 0, input.size());
 }
 
@@ -44,12 +44,12 @@ bool RegexMatch(const char *start, const char *end, Match &match, const Regex &r
 	return RegexSearchInternal(start, match, regex, RE2::ANCHOR_BOTH, 0, end - start);
 }
 
-bool RegexMatch(const duckdb::string &input, const Regex &regex) {
+bool RegexMatch(const std::string &input, const Regex &regex) {
 	Match nop_match;
 	return RegexSearchInternal(input.c_str(), nop_match, regex, RE2::ANCHOR_BOTH, 0, input.size());
 }
 
-duckdb::vector<Match> RegexFindAll(const duckdb::string &input, const Regex &regex) {
+duckdb::vector<Match> RegexFindAll(const std::string &input, const Regex &regex) {
 	duckdb::vector<Match> matches;
 	size_t position = 0;
 	Match match;

@@ -110,7 +110,7 @@ string SQLLogicParser::ExtractExpectedError(bool expect_ok, bool original_sqlite
 	return error;
 }
 
-void SQLLogicParser::FailRecursive(const string &msg, vector<ExceptionFormatValue> &values) {
+void SQLLogicParser::FailRecursive(const string &msg, std::vector<ExceptionFormatValue> &values) {
 	auto error_message =
 	    file_name + ":" + to_string(current_line + 1) + ": " + ExceptionFormatValue::Format(msg, values);
 	FAIL(error_message.c_str());
