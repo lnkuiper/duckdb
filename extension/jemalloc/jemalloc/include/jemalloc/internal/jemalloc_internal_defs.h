@@ -207,21 +207,15 @@ namespace duckdb_jemalloc {
 /* One page is 2^LG_PAGE bytes. */
 // FIXME (duckdb): not sure how future-proof this is. What if Intel makes a chip with a 16k page?
 //  What if someone uses a Windows ARM machine? I hope this suffices for now. If an issue pops up we can fix it.
-#if defined(__i386__)
-#define LG_PAGE 12
-#elif defined(__x86_64__) || defined(__amd64__)
+#if defined(__i386__) || defined(__x86_64__) || defined(__amd64__) || defined(COMPILER_MSVC) && (defined(_M_IX86) || defined(_M_X64))
 #define LG_PAGE 12
 #elif defined(__powerpc__) || defined(__ppc__)
-#define LG_PAGE 12
+#define LG_PAGE 16
 #elif defined(__sparc__)
-#define LG_PAGE 12
-#elif defined(__ia64__)
-#define LG_PAGE 12
-#elif defined(COMPILER_MSVC) && defined(_M_IX86)
-#define LG_PAGE 12
+#define LG_PAGE 13
 #elif defined(__aarch64__)
 #define LG_PAGE 16
-#elif defined(__ARM_ARCH)
+#elif defined(__ARM_ARCH) && __ARM_ARCH >= 7
 #define LG_PAGE 14
 #else
 #define LG_PAGE 12

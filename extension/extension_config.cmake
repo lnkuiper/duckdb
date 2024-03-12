@@ -10,7 +10,8 @@
 # Parquet is loaded by default on every build as its a essential part of DuckDB
 duckdb_extension_load(parquet)
 
-# Jemalloc is enabled by default for linux. MacOS malloc is already good enough and Jemalloc on windows has issues.
-if(NOT WASM_LOADABLE_EXTENSIONS AND NOT CLANG_TIDY AND OS_NAME STREQUAL "linux" AND NOT ANDROID AND NOT ZOS)
+# The Linux allocator has issues so we use jemalloc,
+# But not for arm64 because page sizes vary a lot and we cannot statically configure jemalloc properly
+if(OS_NAME STREQUAL "linux" AND NOT OS_ARCH STREQUAL "arm64" AND NOT WASM_LOADABLE_EXTENSIONS AND NOT CLANG_TIDY AND NOT ANDROID AND NOT ZOS)
     duckdb_extension_load(jemalloc)
 endif()

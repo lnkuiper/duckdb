@@ -18,7 +18,7 @@ namespace duckdb {
 //! Wrapper to prevent circular imports
 struct AllocatorWrapper {
 	DUCKDB_API static data_ptr_t Allocate(idx_t size);
-	DUCKDB_API static void Free(data_ptr_t pointer);
+	DUCKDB_API static void Free(data_ptr_t pointer, idx_t size);
 };
 
 template <typename _Tp>
@@ -32,7 +32,7 @@ public:
 	}
 
 	void deallocate(typename original::pointer p, typename original::size_type n) {
-		AllocatorWrapper::Free(data_ptr_cast(p));
+		AllocatorWrapper::Free(data_ptr_cast(p), n * sizeof(_Tp));
 	}
 
 	template <typename _Up>
