@@ -58,7 +58,7 @@ void ast_logger::generated(prod &query) {
 	filename += "sqlsmith-";
 	filename += to_string(queries);
 	filename += ".xml";
-	ofstream os(filename.c_str());
+	ofstream os(filename);
 	graphml_dumper visitor(os);
 	query.accept(&visitor);
 	queries++;

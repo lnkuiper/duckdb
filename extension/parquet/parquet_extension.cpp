@@ -438,11 +438,9 @@ public:
 			names = result->names;
 		} else {
 			if (return_types.size() != result->types.size()) {
-				throw std::runtime_error(
-				    StringUtil::Format(
-				        "Failed to read file \"%s\" - column count mismatch: expected %d columns but found %d",
-				        result->files[0], return_types.size(), result->types.size())
-				        .c_str());
+				throw std::runtime_error(StringUtil::Format(
+				    "Failed to read file \"%s\" - column count mismatch: expected %d columns but found %d",
+				    result->files[0], return_types.size(), result->types.size()));
 			}
 			// expected types - overwrite the types we want to read instead
 			result->types = return_types;

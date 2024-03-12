@@ -8,9 +8,9 @@
 
 #pragma once
 
+#include "duckdb/function/built_in_functions.hpp"
 #include "duckdb/function/function_set.hpp"
 #include "re2/re2.h"
-#include "duckdb/function/built_in_functions.hpp"
 #include "re2/stringpiece.h"
 
 namespace duckdb {
@@ -25,14 +25,10 @@ inline duckdb_re2::StringPiece CreateStringPiece(const string_t &input) {
 	return duckdb_re2::StringPiece(input.GetData(), input.GetSize());
 }
 
-inline duckdb_re2::StringPiece CreateStringPiece(const string &input) {
-	return duckdb_re2::StringPiece(input.c_str(), input.length());
-}
-
 inline string_t Extract(const string_t &input, Vector &result, const RE2 &re, const duckdb_re2::StringPiece &rewrite) {
 	string extracted;
-	RE2::Extract(CreateStringPiece(input), re, rewrite, &extracted);
-	return StringVector::AddString(result, extracted);
+	RE2::Extract(input.GetString(), re, rewrite, &extracted);
+	return StringVector::AddString(result, extracted.c_str(), extracted.size());
 }
 
 } // namespace regexp_util

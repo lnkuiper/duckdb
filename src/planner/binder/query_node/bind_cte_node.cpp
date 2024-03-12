@@ -1,7 +1,7 @@
 #include "duckdb/parser/expression/constant_expression.hpp"
 #include "duckdb/parser/expression_map.hpp"
-#include "duckdb/parser/query_node/select_node.hpp"
 #include "duckdb/parser/query_node/cte_node.hpp"
+#include "duckdb/parser/query_node/select_node.hpp"
 #include "duckdb/planner/binder.hpp"
 #include "duckdb/planner/query_node/bound_cte_node.hpp"
 #include "duckdb/planner/query_node/bound_select_node.hpp"
@@ -36,7 +36,7 @@ unique_ptr<BoundQueryNode> Binder::BindNode(CTENode &statement) {
 	for (auto &n : result->names) {
 		string name = n;
 		while (find(names.begin(), names.end(), name) != names.end()) {
-			name = n + ":" + to_string(index++);
+			name = n + "_" + to_string(index++);
 		}
 		names.push_back(name);
 	}

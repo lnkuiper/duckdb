@@ -1,6 +1,8 @@
 #include "duckdb/planner/bind_context.hpp"
 
+#include "duckdb/catalog/catalog_entry/table_catalog_entry.hpp"
 #include "duckdb/catalog/catalog_entry/table_column_type.hpp"
+#include "duckdb/catalog/catalog_entry/view_catalog_entry.hpp"
 #include "duckdb/catalog/standard_entry.hpp"
 #include "duckdb/common/pair.hpp"
 #include "duckdb/common/string_util.hpp"
@@ -10,12 +12,10 @@
 #include "duckdb/parser/expression/star_expression.hpp"
 #include "duckdb/parser/tableref/subqueryref.hpp"
 #include "duckdb/parser/tableref/table_function_ref.hpp"
+#include "duckdb/planner/binder.hpp"
 #include "duckdb/planner/bound_query_node.hpp"
 #include "duckdb/planner/expression/bound_columnref_expression.hpp"
-#include "duckdb/catalog/catalog_entry/view_catalog_entry.hpp"
-#include "duckdb/catalog/catalog_entry/table_catalog_entry.hpp"
 #include "duckdb/planner/expression_binder/constant_binder.hpp"
-#include "duckdb/planner/binder.hpp"
 
 #include <algorithm>
 
@@ -461,7 +461,7 @@ static string AddColumnNameToBinding(const string &base_name, case_insensitive_s
 	idx_t index = 1;
 	string name = base_name;
 	while (current_names.find(name) != current_names.end()) {
-		name = base_name + ":" + to_string(index++);
+		name = base_name + "_" + to_string(index++);
 	}
 	current_names.insert(name);
 	return name;

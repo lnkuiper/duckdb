@@ -182,8 +182,8 @@ struct DBConfigOptions {
 	bool lock_configuration = false;
 	//! Whether to print bindings when printing the plan (debug mode only)
 	static bool debug_print_bindings;
-	//! The peak allocation threshold at which to flush the allocator after completing a task (1 << 28, ~256MB)
-	idx_t allocator_flush_threshold = 268435456;
+	//! The peak allocation threshold at which to flush the allocator after completing a task (1 << 27, ~128MB)
+	idx_t allocator_flush_threshold = 134217728;
 	//! DuckDB API surface
 	string duckdb_api;
 	//! Metadata from DuckDB callers

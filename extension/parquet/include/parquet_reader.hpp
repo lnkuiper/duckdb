@@ -166,9 +166,8 @@ private:
 
 	template <typename... Args>
 	std::runtime_error FormatException(const string fmt_str, Args... params) {
-		return std::runtime_error(
-		    StringUtil::Format("Failed to read Parquet file \"%s\": %s", StringUtil::Format(fmt_str, params...))
-		        .c_str());
+		return std::runtime_error("Failed to read Parquet file \"" + file_name +
+		                          "\": " + StringUtil::Format(fmt_str, params...));
 	}
 
 private:

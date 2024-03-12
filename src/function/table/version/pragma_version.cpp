@@ -59,7 +59,7 @@ const char *DuckDB::LibraryVersion() {
 }
 
 string DuckDB::Platform() {
-	return DuckDBPlatform().c_str();
+	return DuckDBPlatform();
 }
 
 struct PragmaPlatformData : public GlobalTableFunctionState {

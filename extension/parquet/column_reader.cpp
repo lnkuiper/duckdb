@@ -364,10 +364,10 @@ void ColumnReader::DecompressInternal(CompressionCodec::type codec, const_data_p
 		break;
 	}
 	default: {
-		stringstream error;
-		error << "Unsupported compression codec \"" << codec
-		      << "\". Supported options are uncompressed, gzip, snappy or zstd";
-		throw std::runtime_error(error.str().c_str());
+		std::stringstream codec_name;
+		codec_name << codec;
+		throw std::runtime_error("Unsupported compression codec \"" + codec_name.str() +
+		                         "\". Supported options are uncompressed, gzip, snappy or zstd");
 	}
 	}
 }

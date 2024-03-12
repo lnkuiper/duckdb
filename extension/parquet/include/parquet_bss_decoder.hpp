@@ -28,7 +28,7 @@ public:
 			stringstream error;
 			error << "Data buffer size for the BYTE_STREAM_SPLIT encoding (" << buffer_.len
 			      << ") should be a multiple of the type size (" << sizeof(T) << ")";
-			throw std::runtime_error(error.str().c_str());
+			throw std::runtime_error(error.str());
 		}
 		uint32_t num_buffer_values = buffer_.len / sizeof(T);
 
