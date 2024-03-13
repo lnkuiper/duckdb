@@ -131,7 +131,7 @@ data_ptr_t Allocator::AllocateData(idx_t size) {
 	private_data->debug_info->AllocateData(result, size);
 #endif
 	if (!result) {
-		throw OutOfMemoryException("Failed to allocate block of %llu bytes", size);
+		throw OutOfMemoryException("Failed to allocate block of %llu bytes bad allocation)", size);
 	}
 	return result;
 }
@@ -164,7 +164,7 @@ data_ptr_t Allocator::ReallocateData(data_ptr_t pointer, idx_t old_size, idx_t s
 	private_data->debug_info->ReallocateData(pointer, new_pointer, old_size, size);
 #endif
 	if (!new_pointer) {
-		throw OutOfMemoryException("Failed to re-allocate block of %llu bytes", size);
+		throw OutOfMemoryException("Failed to re-allocate block of %llu bytes bad allocation)", size);
 	}
 	return new_pointer;
 }
