@@ -224,14 +224,16 @@ Allocator &Allocator::DefaultAllocator() {
 }
 
 void Allocator::ThreadFlush(idx_t threshold) {
-#ifdef USE_JEMALLOC
+#if defined(USE_JEMALLOC)
 	JemallocExtension::ThreadFlush(threshold);
 #endif
 }
 
 void Allocator::FlushAll() {
-#ifdef USE_JEMALLOC
+#if defined(USE_JEMALLOC)
 	JemallocExtension::FlushAll();
+#elif defined(USE_MIMALLOC)
+	MimallocExtension::FlushAll();
 #endif
 }
 

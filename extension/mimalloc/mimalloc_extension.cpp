@@ -8,7 +8,15 @@
 namespace duckdb {
 
 void MimallocExtension::Load(DuckDB &db) {
-	// NOP: This extension can only be loaded statically
+	// NOTE: This extension can only be loaded statically
+
+	// These options should help free up memory: https://github.com/microsoft/mimalloc/issues/351
+	mi_option_enable(mi_option_t::mi_option_page_reset);
+	mi_option_enable(mi_option_t::mi_option_reset_decommits);
+
+	// Trying these options
+	//mi_option_enable(mi_option_t::mi_option_large_os_pages);
+	//mi_option_set(mi_option_t::mi_option_reset_delay, 10);
 }
 
 std::string MimallocExtension::Name() {
@@ -26,6 +34,10 @@ void MimallocExtension::Free(PrivateAllocatorData *private_data, data_ptr_t poin
 data_ptr_t MimallocExtension::Reallocate(PrivateAllocatorData *private_data, data_ptr_t pointer, idx_t old_size,
                                          idx_t size) {
 	return data_ptr_cast(mi_realloc(pointer, size));
+}
+
+void MimallocExtension::FlushAll() {
+	mi_collect(true);
 }
 
 } // namespace duckdb

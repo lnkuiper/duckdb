@@ -244,6 +244,7 @@ void BufferPool::SetLimit(idx_t limit, const char *exception_postscript) {
 		    "Failed to change memory limit to %lld: could not free up enough memory for the new limit%s", limit,
 		    exception_postscript);
 	}
+	Allocator::FlushAll();
 }
 
 } // namespace duckdb
