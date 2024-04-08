@@ -21,8 +21,22 @@
 #endif
 #endif
 
+#ifndef USE_MIMALLOC
+#if defined(DUCKDB_EXTENSION_MIMALLOC_LINKED) && DUCKDB_EXTENSION_MIMALLOC_LINKED
+#define USE_MIMALLOC
+#endif
+#endif
+
+#if defined(USE_JEMALLOC) && defined(USE_MIMALLOC)
+#error "Cannot use jemalloc and mimalloc at the same time"
+#endif
+
 #ifdef USE_JEMALLOC
 #include "jemalloc_extension.hpp"
+#endif
+
+#ifdef USE_MIMALLOC
+#include "mimalloc_extension.hpp"
 #endif
 
 namespace duckdb {
@@ -170,16 +184,20 @@ data_ptr_t Allocator::ReallocateData(data_ptr_t pointer, idx_t old_size, idx_t s
 }
 
 data_ptr_t Allocator::DefaultAllocate(PrivateAllocatorData *private_data, idx_t size) {
-#ifdef USE_JEMALLOC
+#if defined(USE_JEMALLOC)
 	return JemallocExtension::Allocate(private_data, size);
+#elif defined(USE_MIMALLOC)
+	return MimallocExtension::Allocate(private_data, size);
 #else
 	return data_ptr_cast(malloc(size));
 #endif
 }
 
 void Allocator::DefaultFree(PrivateAllocatorData *private_data, data_ptr_t pointer, idx_t size) {
-#ifdef USE_JEMALLOC
+#if defined(USE_JEMALLOC)
 	JemallocExtension::Free(private_data, pointer, size);
+#elif defined(USE_MIMALLOC)
+	MimallocExtension::Free(private_data, pointer, size);
 #else
 	free(pointer);
 #endif
@@ -187,8 +205,10 @@ void Allocator::DefaultFree(PrivateAllocatorData *private_data, data_ptr_t point
 
 data_ptr_t Allocator::DefaultReallocate(PrivateAllocatorData *private_data, data_ptr_t pointer, idx_t old_size,
                                         idx_t size) {
-#ifdef USE_JEMALLOC
+#if defined(USE_JEMALLOC)
 	return JemallocExtension::Reallocate(private_data, pointer, old_size, size);
+#elif defined(USE_MIMALLOC)
+	return MimallocExtension::Reallocate(private_data, pointer, old_size, size);
 #else
 	return data_ptr_cast(realloc(pointer, size));
 #endif

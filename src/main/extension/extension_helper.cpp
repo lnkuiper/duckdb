@@ -44,6 +44,10 @@
 #define DUCKDB_EXTENSION_JEMALLOC_LINKED false
 #endif
 
+#ifndef DUCKDB_EXTENSION_MIMALLOC_LINKED
+#define DUCKDB_EXTENSION_MIMALLOC_LINKED false
+#endif
+
 #ifndef DUCKDB_EXTENSION_AUTOCOMPLETE_LINKED
 #define DUCKDB_EXTENSION_AUTOCOMPLETE_LINKED false
 #endif
@@ -90,6 +94,10 @@
 #include "jemalloc_extension.hpp"
 #endif
 
+#if DUCKDB_EXTENSION_MIMALLOC_LINKED
+#include "mimalloc_extension.hpp"
+#endif
+
 #if DUCKDB_EXTENSION_AUTOCOMPLETE_LINKED
 #include "autocomplete_extension.hpp"
 #endif
@@ -110,6 +118,7 @@ static DefaultExtension internal_extensions[] = {
     {"httpfs", "Adds support for reading and writing files over a HTTP(S) connection", DUCKDB_EXTENSION_HTTPFS_LINKED},
     {"json", "Adds support for JSON operations", DUCKDB_EXTENSION_JSON_LINKED},
     {"jemalloc", "Overwrites system allocator with JEMalloc", DUCKDB_EXTENSION_JEMALLOC_LINKED},
+    {"mimalloc", "Overwrites system allocator with mimalloc", DUCKDB_EXTENSION_MIMALLOC_LINKED},
     {"autocomplete", "Adds support for autocomplete in the shell", DUCKDB_EXTENSION_AUTOCOMPLETE_LINKED},
     {"motherduck", "Enables motherduck integration with the system", false},
     {"mysql_scanner", "Adds support for connecting to a MySQL database", false},
@@ -249,8 +258,8 @@ void ExtensionHelper::LoadAllExtensions(DuckDB &db) {
 	// The in-tree extensions that we check. Non-cmake builds are currently limited to these for static linking
 	// TODO: rewrite package_build.py to allow also loading out-of-tree extensions in non-cmake builds, after that
 	//		 these can be removed
-	unordered_set<string> extensions {"parquet", "icu",   "tpch",     "tpcds", "fts",      "httpfs",
-	                                  "json",    "excel", "sqlsmith", "inet",  "jemalloc", "autocomplete"};
+	unordered_set<string> extensions {"parquet", "icu",      "tpch", "tpcds",    "fts",      "httpfs",      "json",
+	                                  "excel",   "sqlsmith", "inet", "jemalloc", "mimalloc", "autocomplete"};
 	for (auto &ext : extensions) {
 		LoadExtensionInternal(db, ext, true);
 	}
@@ -377,6 +386,13 @@ ExtensionLoadResult ExtensionHelper::LoadExtensionInternal(DuckDB &db, const std
 		db.LoadExtension<JemallocExtension>();
 #else
 		// jemalloc extension required but not build: skip this test
+		return ExtensionLoadResult::NOT_LOADED;
+#endif
+	} else if (extension == "mimalloc") {
+#if DUCKDB_EXTENSION_MIMALLOC_LINKED
+		db.LoadExtension<MimallocExtension>();
+#else
+		// mimalloc extension required but not build: skip this test
 		return ExtensionLoadResult::NOT_LOADED;
 #endif
 	} else if (extension == "autocomplete") {
