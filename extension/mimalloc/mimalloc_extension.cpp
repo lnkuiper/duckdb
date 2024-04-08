@@ -11,12 +11,8 @@ void MimallocExtension::Load(DuckDB &db) {
 	// NOTE: This extension can only be loaded statically
 
 	// These options should help free up memory: https://github.com/microsoft/mimalloc/issues/351
-	mi_option_enable(mi_option_t::mi_option_page_reset);
-	mi_option_enable(mi_option_t::mi_option_reset_decommits);
-
-	// Trying these options
-	//mi_option_enable(mi_option_t::mi_option_large_os_pages);
-	//mi_option_set(mi_option_t::mi_option_reset_delay, 10);
+	mi_option_enable(mi_option_t::mi_option_purge_decommits);
+	mi_option_enable(mi_option_t::mi_option_abandoned_page_purge);
 }
 
 std::string MimallocExtension::Name() {
@@ -37,6 +33,7 @@ data_ptr_t MimallocExtension::Reallocate(PrivateAllocatorData *private_data, dat
 }
 
 void MimallocExtension::FlushAll() {
+	mi_collect(false);
 	mi_collect(true);
 }
 
