@@ -226,6 +226,8 @@ Allocator &Allocator::DefaultAllocator() {
 void Allocator::ThreadFlush(idx_t threshold) {
 #if defined(USE_JEMALLOC)
 	JemallocExtension::ThreadFlush(threshold);
+#elif defined(USE_MIMALLOC)
+	MimallocExtension::ThreadFlush(threshold);
 #endif
 }
 
