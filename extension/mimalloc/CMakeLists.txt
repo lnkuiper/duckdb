@@ -11,7 +11,7 @@ set(PARAMETERS "-warnings")
 build_static_extension(mimalloc ${MIMALLOC_EXTENSION_FILES})
 # we do not do build_loadable_extension here because mimalloc is static-only
 
-find_package(mimalloc CONFIG)
+find_package(mimalloc CONFIG REQUIRED)
 
 if(NOT ${mimalloc_FOUND})
   message(FATAL_ERROR "mimalloc not found, did you set up vcpkg correctly?")
@@ -19,7 +19,7 @@ endif()
 
 # Static lib
 target_link_libraries(${EXTENSION_NAME} mimalloc-static)
-target_include_directories(${EXTENSION_NAME} PRIVATE ${MIMALLOC_DIR}/include)
+target_include_directories(${EXTENSION_NAME} PRIVATE ${MIMALLOC_INCLUDE_DIR})
 
 install(
   TARGETS mimalloc_extension

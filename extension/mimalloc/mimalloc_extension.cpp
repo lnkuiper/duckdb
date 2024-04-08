@@ -2,7 +2,7 @@
 #include "mimalloc_extension.hpp"
 
 #include "duckdb/common/allocator.hpp"
-#include "mimalloc-new-delete.h"
+// #include "mimalloc-new-delete.h" FIXME: we would like to override all allocations but it's tricky
 #include "mimalloc.h"
 
 namespace duckdb {
@@ -14,7 +14,7 @@ void MimallocExtension::Load(DuckDB &db) {
 	mi_option_enable(mi_option_t::mi_option_purge_decommits);
 	mi_option_enable(mi_option_t::mi_option_abandoned_page_purge);
 
-	// 100 is the default
+	// 100ms is the default
 	mi_option_set(mi_option_t::mi_option_purge_delay, 100);
 }
 
@@ -52,8 +52,9 @@ void MimallocExtension::ThreadFlush(idx_t threshold) {
 }
 
 void MimallocExtension::FlushAll() {
-	mi_collect(false);
-	mi_collect(true);
+	auto heap = mi_heap_get_default();
+	mi_heap_collect(heap, false);
+	mi_heap_collect(heap, true);
 }
 
 } // namespace duckdb
