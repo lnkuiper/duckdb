@@ -3,6 +3,7 @@
 
 #include "duckdb/common/allocator.hpp"
 // #include "mimalloc-new-delete.h" FIXME: we would like to override all allocations but it's tricky
+#include "duckdb/common/pair.hpp"
 #include "mimalloc.h"
 
 namespace duckdb {
@@ -22,30 +23,39 @@ std::string MimallocExtension::Name() {
 	return "mimalloc";
 }
 
-data_ptr_t MimallocExtension::Allocate(PrivateAllocatorData *private_data, idx_t size) {
+data_ptr_t MimallocExtension::Allocate(PrivateAllocatorData *, idx_t size) {
 	return data_ptr_cast(mi_malloc(size));
 }
 
-void MimallocExtension::Free(PrivateAllocatorData *private_data, data_ptr_t pointer, idx_t size) {
+void MimallocExtension::Free(PrivateAllocatorData *, data_ptr_t pointer, idx_t) {
 	mi_free(pointer);
 }
 
-data_ptr_t MimallocExtension::Reallocate(PrivateAllocatorData *private_data, data_ptr_t pointer, idx_t old_size,
-                                         idx_t size) {
+data_ptr_t MimallocExtension::Reallocate(PrivateAllocatorData *, data_ptr_t pointer, idx_t, idx_t size) {
 	return data_ptr_cast(mi_realloc(pointer, size));
 }
 
-bool MiSumFree(const mi_heap_t *heap, const mi_heap_area_t *area, void *block, size_t block_size, void *arg) {
-	auto &total_free = *reinterpret_cast<idx_t *>(arg);
-	total_free += area->committed - area->used;
+bool SumCommitedAndUsed(const mi_heap_t *, const mi_heap_area_t *area, void *, size_t, void *arg) {
+	auto &committed_and_used = *reinterpret_cast<pair<idx_t, idx_t> *>(arg);
+	committed_and_used.first += area->committed;
+	committed_and_used.second += area->used;
 	return true;
 }
 
 void MimallocExtension::ThreadFlush(idx_t threshold) {
 	auto heap = mi_heap_get_backing();
-	idx_t total_free = 0;
-	mi_heap_visit_blocks(heap, false, MiSumFree, &total_free);
-	if (total_free > threshold) {
+
+	auto committed_and_used = make_pair<idx_t, idx_t>(0, 0);
+	mi_heap_visit_blocks(heap, false, SumCommitedAndUsed, &committed_and_used);
+	auto &committed = committed_and_used.first;
+	auto &used = committed_and_used.second;
+
+	if (used > threshold) {
+		// This thread has more than threshold in use after finishing task, most likely buffer-managed blocks
+		// Delete the heap so that the main thread's heap takes ownership over them
+		mi_heap_delete(heap);
+	} else if (committed - used > threshold) {
+		// This thread has more than theshold outstanding unused allocations, clean them up
 		mi_heap_collect(heap, false);
 		mi_heap_collect(heap, true);
 	}
