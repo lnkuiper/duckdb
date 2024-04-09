@@ -35,30 +35,44 @@ data_ptr_t MimallocExtension::Reallocate(PrivateAllocatorData *, data_ptr_t poin
 	return data_ptr_cast(mi_realloc(pointer, size));
 }
 
-bool SumCommitedAndUsed(const mi_heap_t *, const mi_heap_area_t *area, void *, size_t, void *arg) {
-	auto &committed_and_used = *reinterpret_cast<pair<idx_t, idx_t> *>(arg);
-	committed_and_used.first += area->committed;
-	committed_and_used.second += area->used;
+struct MiHeapStats {
+	idx_t used = 0;
+	idx_t committed = 0;
+};
+
+static inline bool SumHeapStats(const mi_heap_t *, const mi_heap_area_t *area, void *, size_t, void *arg) {
+	auto &stats = *reinterpret_cast<MiHeapStats *>(arg);
+	stats.used += area->used * area->block_size;
+	stats.committed += area->committed;
 	return true;
 }
 
-void MimallocExtension::ThreadFlush(idx_t threshold) {
-	auto heap = mi_heap_get_backing();
+static inline void FlushHeap(mi_heap_t *heap, idx_t threshold) {
+	MiHeapStats stats;
+	mi_heap_visit_blocks(heap, false, SumHeapStats, &stats);
+	Printer::PrintF("%llu before: %llu/%llu", heap, stats.used, stats.committed);
 
-	auto committed_and_used = make_pair<idx_t, idx_t>(0, 0);
-	mi_heap_visit_blocks(heap, false, SumCommitedAndUsed, &committed_and_used);
-	auto &committed = committed_and_used.first;
-	auto &used = committed_and_used.second;
-
-	if (used > threshold) {
+	if (stats.used > threshold) {
 		// This thread has more than threshold in use after finishing task, most likely buffer-managed blocks
 		// Delete the heap so that the main thread's heap takes ownership over them
-		mi_heap_delete(heap);
-	} else if (committed - used > threshold) {
+		mi_thread_done();
+		mi_thread_init();
+//		mi_heap_destroy(heap);
+	} else if (stats.committed - stats.used > threshold) {
 		// This thread has more than theshold outstanding unused allocations, clean them up
 		mi_heap_collect(heap, false);
 		mi_heap_collect(heap, true);
 	}
+
+	stats.used = 0;
+	stats.committed = 0;
+	mi_heap_visit_blocks(heap, false, SumHeapStats, &stats);
+	Printer::PrintF("%llu after: %llu/%llu", heap, stats.used, stats.committed);
+}
+
+void MimallocExtension::ThreadFlush(idx_t threshold) {
+	FlushHeap(mi_heap_get_default(), threshold);
+	FlushHeap(mi_heap_get_backing(), threshold);
 }
 
 void MimallocExtension::FlushAll() {
