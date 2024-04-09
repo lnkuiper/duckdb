@@ -48,31 +48,33 @@ static inline bool SumHeapStats(const mi_heap_t *, const mi_heap_area_t *area, v
 }
 
 static inline void FlushHeap(mi_heap_t *heap, idx_t threshold) {
-	MiHeapStats stats;
-	mi_heap_visit_blocks(heap, false, SumHeapStats, &stats);
-	Printer::PrintF("%llu before: %llu/%llu", heap, stats.used, stats.committed);
+	mi_heap_collect(heap, false);
+	mi_heap_collect(heap, true);
+	//	MiHeapStats stats;
+	//	mi_heap_visit_blocks(heap, false, SumHeapStats, &stats);
+	//	Printer::PrintF("%llu before: %llu/%llu", heap, stats.used, stats.committed);
 
-	if (stats.used > threshold) {
-		// This thread has more than threshold in use after finishing task, most likely buffer-managed blocks
-		// Delete the heap so that the main thread's heap takes ownership over them
-		mi_thread_done();
-		mi_thread_init();
-//		mi_heap_destroy(heap);
-	} else if (stats.committed - stats.used > threshold) {
-		// This thread has more than theshold outstanding unused allocations, clean them up
-		mi_heap_collect(heap, false);
-		mi_heap_collect(heap, true);
-	}
+	//	if (stats.used > threshold) {
+	//		// This thread has more than threshold in use after finishing task, most likely buffer-managed blocks
+	//		// Delete the heap so that the main thread's heap takes ownership over them
+	//		mi_thread_done();
+	//		mi_thread_init();
+	////		mi_heap_destroy(heap);
+	//	} else if (stats.committed - stats.used > threshold) {
+	//		// This thread has more than theshold outstanding unused allocations, clean them up
+	//	}
 
-	stats.used = 0;
-	stats.committed = 0;
-	mi_heap_visit_blocks(heap, false, SumHeapStats, &stats);
-	Printer::PrintF("%llu after: %llu/%llu", heap, stats.used, stats.committed);
+	//	stats.used = 0;
+	//	stats.committed = 0;
+	//	mi_heap_visit_blocks(heap, false, SumHeapStats, &stats);
+	//	Printer::PrintF("%llu after: %llu/%llu", heap, stats.used, stats.committed);
 }
 
 void MimallocExtension::ThreadFlush(idx_t threshold) {
 	FlushHeap(mi_heap_get_default(), threshold);
 	FlushHeap(mi_heap_get_backing(), threshold);
+	mi_thread_done();
+	mi_thread_init();
 }
 
 void MimallocExtension::FlushAll() {
