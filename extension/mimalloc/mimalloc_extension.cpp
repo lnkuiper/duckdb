@@ -33,7 +33,20 @@ data_ptr_t MimallocExtension::Reallocate(PrivateAllocatorData *, data_ptr_t poin
 	return data_ptr_cast(mi_realloc(pointer, size));
 }
 
-void MimallocExtension::ThreadFlush(idx_t) {
+static inline bool SumHeapCommitted(const mi_heap_t *, const mi_heap_area_t *area, void *, size_t, void *arg) {
+	auto &committed = *reinterpret_cast<idx_t *>(arg);
+	committed += area->committed;
+	return true;
+}
+
+void MimallocExtension::ThreadFlush(idx_t threshold) {
+	idx_t committed = 0;
+	mi_heap_visit_blocks(mi_heap_get_default(), false, SumHeapCommitted, &committed);
+	mi_heap_visit_blocks(mi_heap_get_backing(), false, SumHeapCommitted, &committed);
+	if (committed < threshold) {
+		return;
+	}
+
 	// mimalloc's cleanup assumes threads are short-lived, i.e., do one task, but our threads live forever
 	// this gets us the behavior from mimalloc that we want
 	FlushAll();
