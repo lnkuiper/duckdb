@@ -17,12 +17,12 @@
 #include <string>
 #include <vector>
 #ifndef DUCKDB_AMALGAMATION
-#include "duckdb/common/helper.hpp"
 #include "duckdb/catalog/catalog.hpp"
 #include "duckdb/catalog/catalog_entry/table_function_catalog_entry.hpp"
 #include "duckdb/common/constants.hpp"
 #include "duckdb/common/enums/file_compression_type.hpp"
 #include "duckdb/common/file_system.hpp"
+#include "duckdb/common/helper.hpp"
 #include "duckdb/common/multi_file_reader.hpp"
 #include "duckdb/common/serializer/deserializer.hpp"
 #include "duckdb/common/serializer/serializer.hpp"
@@ -50,6 +50,7 @@ struct ParquetReadBindData : public TableFunctionData {
 	atomic<idx_t> chunk_count;
 	vector<string> names;
 	vector<LogicalType> types;
+	optional_idx maximum_threads;
 
 	// The union readers are created (when parquet union_by_name option is on) during binding
 	// Those readers can be re-used during ParquetParallelStateNext
@@ -317,6 +318,7 @@ public:
 		                                                                 {"type", LogicalType::VARCHAR},
 		                                                                 {"default_value", LogicalType::VARCHAR}}}));
 		table_function.named_parameters["encryption_config"] = LogicalTypeId::ANY;
+		table_function.named_parameters["maximum_threads"] = LogicalType::UINTEGER;
 		MultiFileReader::AddParameters(table_function);
 		table_function.get_batch_index = ParquetScanGetBatchIndex;
 		table_function.serialize = ParquetScanSerialize;
@@ -425,9 +427,10 @@ public:
 		return nullptr;
 	}
 
-	static unique_ptr<FunctionData> ParquetScanBindInternal(ClientContext &context, vector<string> files,
-	                                                        vector<LogicalType> &return_types, vector<string> &names,
-	                                                        ParquetOptions parquet_options) {
+	static unique_ptr<FunctionData>
+	ParquetScanBindInternal(ClientContext &context, vector<string> files, vector<LogicalType> &return_types,
+	                        vector<string> &names, ParquetOptions parquet_options,
+	                        optional_idx maximum_threads = NumericLimits<uint32_t>::Maximum()) {
 		auto result = make_uniq<ParquetReadBindData>();
 		result->files = std::move(files);
 		if (parquet_options.schema.empty()) {
@@ -452,6 +455,7 @@ public:
 			result->types = return_types;
 		}
 		result->parquet_options = parquet_options;
+		result->maximum_threads = maximum_threads;
 		return std::move(result);
 	}
 
@@ -459,6 +463,7 @@ public:
 	                                                vector<LogicalType> &return_types, vector<string> &names) {
 		auto files = MultiFileReader::GetFileList(context, input.inputs[0], "Parquet");
 		ParquetOptions parquet_options(context);
+		optional_idx maximum_threads;
 		for (auto &kv : input.named_parameters) {
 			auto loption = StringUtil::Lower(kv.first);
 			if (MultiFileReader::ParseOption(kv.first, kv.second, parquet_options.file_options, context)) {
@@ -485,10 +490,17 @@ public:
 				parquet_options.file_options.auto_detect_hive_partitioning = false;
 			} else if (loption == "encryption_config") {
 				parquet_options.encryption_config = ParquetEncryptionConfig::Create(context, kv.second);
+			} else if (loption == "maximum_threads") {
+				auto arg = UIntegerValue::Get(kv.second);
+				if (arg == 0) {
+					throw BinderException("Parquet maximum_threads cannot be 0");
+				}
+				maximum_threads = arg;
 			}
 		}
 		parquet_options.file_options.AutoDetectHivePartitioning(files, context);
-		return ParquetScanBindInternal(context, std::move(files), return_types, names, parquet_options);
+		return ParquetScanBindInternal(context, std::move(files), return_types, names, parquet_options,
+		                               maximum_threads);
 	}
 
 	static double ParquetProgress(ClientContext &context, const FunctionData *bind_data_p,
@@ -592,6 +604,7 @@ public:
 		serializer.WriteProperty(101, "types", bind_data.types);
 		serializer.WriteProperty(102, "names", bind_data.names);
 		serializer.WriteProperty(103, "parquet_options", bind_data.parquet_options);
+		serializer.WriteProperty(104, "maximum_threads", bind_data.maximum_threads);
 	}
 
 	static unique_ptr<FunctionData> ParquetScanDeserialize(Deserializer &deserializer, TableFunction &function) {
@@ -600,7 +613,9 @@ public:
 		auto types = deserializer.ReadProperty<vector<LogicalType>>(101, "types");
 		auto names = deserializer.ReadProperty<vector<string>>(102, "names");
 		auto parquet_options = deserializer.ReadProperty<ParquetOptions>(103, "parquet_options");
-		return ParquetScanBindInternal(context, files, types, names, parquet_options);
+		auto maximum_threads = deserializer.ReadPropertyWithDefault<optional_idx>(104, "maximum_threads",
+		                                                                          NumericLimits<uint32_t>::Maximum());
+		return ParquetScanBindInternal(context, files, types, names, parquet_options, maximum_threads);
 	}
 
 	static void ParquetScanImplementation(ClientContext &context, TableFunctionInput &data_p, DataChunk &output) {
@@ -639,10 +654,12 @@ public:
 
 	static idx_t ParquetScanMaxThreads(ClientContext &context, const FunctionData *bind_data) {
 		auto &data = bind_data->Cast<ParquetReadBindData>();
+		const idx_t maximum =
+		    data.maximum_threads.IsValid() ? data.maximum_threads.GetIndex() : NumericLimits<uint32_t>::Maximum();
 		if (data.files.size() > 1) {
-			return TaskScheduler::GetScheduler(context).NumberOfThreads();
+			return MinValue<idx_t>(TaskScheduler::GetScheduler(context).NumberOfThreads(), maximum);
 		}
-		return MaxValue(data.initial_file_row_groups, (idx_t)1);
+		return MaxValue(MinValue(data.initial_file_row_groups, maximum), (idx_t)1);
 	}
 
 	// This function looks for the next available row group. If not available, it will open files from bind_data.files
