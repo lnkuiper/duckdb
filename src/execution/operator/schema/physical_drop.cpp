@@ -55,6 +55,10 @@ SourceResultType PhysicalDrop::GetData(ExecutionContext &context, DataChunk &chu
 	}
 	}
 
+	if (Allocator::SupportsFlush()) {
+		Allocator::FlushAll();
+	}
+
 	return SourceResultType::FINISHED;
 }
 
