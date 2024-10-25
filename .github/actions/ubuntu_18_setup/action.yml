@@ -44,8 +44,8 @@ runs:
         apt-get install -y -qq -t focal gcc-10-aarch64-linux-gnu g++-10-aarch64-linux-gnu
         rm /etc/apt/sources.list.d/focal-temp.list
         apt-get update -y -qq
-        update-alternatives --install /usr/bin/aarch64-linux-gnu-gcc aarch64-linux-gnu-gcc /usr/bin/aarch64-linux-gnu-gcc-8 100
-        update-alternatives --install /usr/bin/aarch64-linux-gnu-g++ aarch64-linux-gnu-g++ /usr/bin/aarch64-linux-gnu-g++-8 100
+        update-alternatives --install /usr/bin/aarch64-linux-gnu-gcc aarch64-linux-gnu-gcc /usr/bin/aarch64-linux-gnu-gcc-10 100
+        update-alternatives --install /usr/bin/aarch64-linux-gnu-g++ aarch64-linux-gnu-g++ /usr/bin/aarch64-linux-gnu-g++-10 100
 
     - name: Install Git 2.18.5
       shell: bash
