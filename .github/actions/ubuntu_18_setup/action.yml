@@ -31,7 +31,7 @@ runs:
         add-apt-repository -y ppa:git-core/ppa
         add-apt-repository -y ppa:ubuntu-toolchain-r/test
         apt-get update -y -qq
-        apt-get install -y -qq --fix-missing ninja-build make gcc-10 g++-10 gcc-10-multilib g++-10-multilib libssl-dev wget openjdk-8-jdk zip maven unixodbc-dev libc6-dev-i386 lib32readline6-dev libssl-dev libcurl4-gnutls-dev libexpat1-dev gettext unzip build-essential checkinstall libffi-dev curl libz-dev openssh-client pkg-config
+        apt-get install -y -qq --fix-missing ninja-build make libstdc++6 gcc-10 g++-10 gcc-10-multilib g++-10-multilib libssl-dev wget openjdk-8-jdk zip maven unixodbc-dev libc6-dev-i386 lib32readline6-dev libssl-dev libcurl4-gnutls-dev libexpat1-dev gettext unzip build-essential checkinstall libffi-dev curl libz-dev openssh-client pkg-config
         update-alternatives --install /usr/bin/gcc gcc /usr/bin/gcc-10 100
         update-alternatives --install /usr/bin/g++ g++ /usr/bin/g++-10 100
 
