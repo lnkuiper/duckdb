@@ -476,7 +476,7 @@ void HashJoinGlobalSinkState::ScheduleFinalize(Pipeline &pipeline, Event &event)
 		hash_table->finalized = true;
 		return;
 	}
-	hash_table->InitializePointerTable();
+	hash_table->InitializePointerTable(external);
 	auto new_event = make_shared_ptr<HashJoinFinalizeEvent>(pipeline, *this);
 	event.InsertEvent(std::move(new_event));
 }
@@ -1062,7 +1062,7 @@ void HashJoinGlobalSourceState::PrepareBuild(HashJoinGlobalSinkState &sink) {
 
 	build_chunks_per_thread = MaxValue<idx_t>((build_chunk_count + sink.num_threads - 1) / sink.num_threads, 1);
 
-	ht.InitializePointerTable();
+	ht.InitializePointerTable(sink.external);
 
 	global_stage = HashJoinSourceStage::BUILD;
 }

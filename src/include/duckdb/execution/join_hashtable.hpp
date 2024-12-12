@@ -18,6 +18,7 @@
 #include "duckdb/common/types/vector.hpp"
 #include "duckdb/execution/aggregate_hashtable.hpp"
 #include "duckdb/execution/ht_entry.hpp"
+#include "duckdb/common/types/hyperloglog.hpp"
 
 namespace duckdb {
 
@@ -178,7 +179,7 @@ public:
 	//! Combines the partitions in sink_collection into data_collection, as if it were not partitioned
 	void Unpartition();
 	//! Initialize the pointer table for the probe
-	void InitializePointerTable();
+	void InitializePointerTable(bool external);
 	//! Finalize the build of the HT, constructing the actual hash table and making the HT ready for probing.
 	//! Finalize must be called before any call to Probe, and after Finalize is called Build should no longer be
 	//! ever called.
@@ -312,6 +313,9 @@ private:
 	unique_ptr<PartitionedTupleData> sink_collection;
 	//! The DataCollection holding the main data of the hash table
 	unique_ptr<TupleDataCollection> data_collection;
+
+	//! HLL sketch for estimating how large of a hash map we should allocate
+	HyperLogLog hll;
 
 	//! The hash map of the HT, created after finalization
 	AllocatedData hash_map;

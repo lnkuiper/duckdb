@@ -117,6 +117,7 @@ void JoinHashTable::Merge(JoinHashTable &other) {
 	{
 		lock_guard<mutex> guard(data_lock);
 		data_collection->Combine(*other.data_collection);
+		hll.Merge(other.hll);
 	}
 
 	if (join_type == JoinType::MARK) {
@@ -404,7 +405,13 @@ void JoinHashTable::Build(PartitionedTupleDataAppendState &append_state, DataChu
 
 	// Re-reference and ToUnifiedFormat the hash column after computing it
 	source_chunk.data[col_offset].Reference(hash_values);
-	hash_values.ToUnifiedFormat(source_chunk.size(), append_state.chunk_state.vector_data.back().unified);
+	auto &hashes_unified = append_state.chunk_state.vector_data.back().unified;
+	hash_values.ToUnifiedFormat(source_chunk.size(), hashes_unified);
+
+	for (idx_t i = 0; i < added_count; i++) {
+		const auto idx = hashes_unified.sel->get_index(current_sel->get_index(i));
+		hll.InsertElement(UnifiedVectorFormat::GetData<hash_t>(hashes_unified)[idx]);
+	}
 
 	// We already called TupleDataCollection::ToUnifiedFormat, so we can AppendUnified here
 	sink_collection->AppendUnified(append_state, source_chunk, *current_sel, added_count);
@@ -675,8 +682,16 @@ void JoinHashTable::InsertHashes(Vector &hashes_v, const idx_t count, TupleDataC
 	}
 }
 
-void JoinHashTable::InitializePointerTable() {
-	capacity = PointerTableCapacity(Count());
+void JoinHashTable::InitializePointerTable(bool external) {
+	if (external) {
+		capacity = PointerTableCapacity(Count());
+	} else {
+		// Our HLL has a 13% error margin, multiplying by 8/7 increases estimate by more than >14%
+		const auto count_bound = MinValue(Count(), hll.Count() * 8 / 7);
+		// We do not have to worry about tuples not fitting into the HT due to a bad estimate,
+		// as PointerTableCapacity doubles count_bound, and then takes the NextPowerOfTwo
+		capacity = PointerTableCapacity(count_bound);
+	}
 	D_ASSERT(IsPowerOfTwo(capacity));
 
 	if (hash_map.get()) {
