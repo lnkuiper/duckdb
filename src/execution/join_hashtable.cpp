@@ -409,9 +409,13 @@ void JoinHashTable::Build(PartitionedTupleDataAppendState &append_state, DataChu
 	hash_values.ToUnifiedFormat(source_chunk.size(), hashes_unified);
 
 	const auto hash_data = UnifiedVectorFormat::GetData<hash_t>(hashes_unified);
-	for (idx_t i = 0; i < added_count; i++) {
-		const auto idx = hashes_unified.sel->get_index(current_sel->get_index(i));
-		hll.InsertElement(hash_data[idx]);
+	if (hash_values.GetVectorType() == VectorType::CONSTANT_VECTOR) {
+		hll.InsertElement(hash_data[0]);
+	} else {
+		for (idx_t i = 0; i < added_count; i++) {
+			const auto idx = hashes_unified.sel->get_index(current_sel->get_index(i));
+			hll.InsertElement(hash_data[idx]);
+		}
 	}
 
 	// We already called TupleDataCollection::ToUnifiedFormat, so we can AppendUnified here
