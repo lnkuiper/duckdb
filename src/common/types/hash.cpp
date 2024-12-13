@@ -80,27 +80,30 @@ hash_t Hash(char *val) {
 	return Hash<const char *>(val);
 }
 
-hash_t HashBytes(data_ptr_t ptr, const idx_t len) noexcept {
-	const auto end = ptr + len;
+inline hash_t HashBytes(const const_data_ptr_t ptr, const idx_t len) noexcept {
+	idx_t offset = 0;
 
+	// Load/hash/XOR 8 bytes (as uint64_t) at a time until there are less than 8 bytes left
 	hash_t h = 0;
-	while (ptr + sizeof(uint64_t) < end) {
-		h ^= Hash(Load<uint64_t>(ptr));
-		ptr += sizeof(uint64_t);
+	while (offset + sizeof(uint64_t) < len) {
+		h ^= Hash(Load<uint64_t>(ptr + offset));
+		offset += sizeof(uint64_t);
 	}
 
-	hash_t hr = 0;
-	memcpy(&hr, ptr, end - ptr);
+	// Load remaining bytes into a seeded uint64_t (same number as in our hash function)
+	uint64_t hr = 0xd6e8feb86659fd93U;
+	memcpy(&hr, ptr + offset, len - offset);
 
-	return h ^ hr;
+	// Hash/XOR the remaining bytes
+	return h ^ Hash(hr);
 }
 
 hash_t Hash(const char *val, size_t size) {
-	return HashBytes(data_ptr_cast(val), size);
+	return HashBytes(const_data_ptr_cast(val), size);
 }
 
 hash_t Hash(uint8_t *val, size_t size) {
-	return HashBytes(data_ptr_cast(val), size);
+	return HashBytes(const_data_ptr_cast(val), size);
 }
 
 } // namespace duckdb
