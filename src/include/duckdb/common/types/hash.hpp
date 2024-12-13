@@ -43,6 +43,12 @@ inline hash_t CombineHash(hash_t left, hash_t right) {
 	return left ^ right;
 }
 
+static inline hash_t CombineHashScalar(hash_t a, hash_t b) {
+	a ^= a >> 32;
+	a *= 0xd6e8feb86659fd93U;
+	return a ^ b;
+}
+
 template <>
 DUCKDB_API hash_t Hash(uint64_t val);
 template <>

@@ -20,10 +20,6 @@ struct HashOp {
 	}
 };
 
-static inline hash_t CombineHashScalar(hash_t a, hash_t b) {
-	return (a * UINT64_C(0xbf58476d1ce4e5b9)) ^ b;
-}
-
 template <bool HAS_RSEL, class T>
 static inline void TightLoopHash(const T *__restrict ldata, hash_t *__restrict result_data, const SelectionVector *rsel,
                                  idx_t count, const SelectionVector *__restrict sel_vector, ValidityMask &mask) {

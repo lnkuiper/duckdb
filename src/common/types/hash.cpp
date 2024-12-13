@@ -83,19 +83,19 @@ hash_t Hash(char *val) {
 inline hash_t HashBytes(const const_data_ptr_t ptr, const idx_t len) noexcept {
 	idx_t offset = 0;
 
-	// Load/hash/XOR 8 bytes (as uint64_t) at a time until there are less than 8 bytes left
+	// Hash and combine 8 bytes at a time
 	hash_t h = 0;
 	while (offset + sizeof(uint64_t) < len) {
-		h ^= Hash(Load<uint64_t>(ptr + offset));
+		h = CombineHashScalar(h, Load<uint64_t>(ptr + offset));
 		offset += sizeof(uint64_t);
 	}
 
 	// Load remaining bytes into a seeded uint64_t (same number as in our hash function)
-	uint64_t hr = 0xd6e8feb86659fd93U;
+	uint64_t hr = 0;
 	memcpy(&hr, ptr + offset, len - offset);
 
-	// Hash/XOR the remaining bytes
-	return h ^ Hash(hr);
+	// Hash and combine the remaining bytes
+	return Hash(CombineHashScalar(h, hr));
 }
 
 hash_t Hash(const char *val, size_t size) {
