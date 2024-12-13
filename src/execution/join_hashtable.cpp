@@ -408,9 +408,10 @@ void JoinHashTable::Build(PartitionedTupleDataAppendState &append_state, DataChu
 	auto &hashes_unified = append_state.chunk_state.vector_data.back().unified;
 	hash_values.ToUnifiedFormat(source_chunk.size(), hashes_unified);
 
+	const auto hash_data = UnifiedVectorFormat::GetData<hash_t>(hashes_unified);
 	for (idx_t i = 0; i < added_count; i++) {
 		const auto idx = hashes_unified.sel->get_index(current_sel->get_index(i));
-		hll.InsertElement(UnifiedVectorFormat::GetData<hash_t>(hashes_unified)[idx]);
+		hll.InsertElement(MurmurHash64(hash_data[idx]));
 	}
 
 	// We already called TupleDataCollection::ToUnifiedFormat, so we can AppendUnified here
@@ -687,7 +688,10 @@ void JoinHashTable::InitializePointerTable(bool external) {
 		capacity = PointerTableCapacity(Count());
 	} else {
 		// Our HLL has a 13% error margin, multiplying by 8/7 increases estimate by more than >14%
-		const auto count_bound = MinValue(Count(), hll.Count() * 8 / 7);
+		auto count_bound = hll.Count() * 8 / 7;
+		if (Count() < count_bound) {
+			count_bound = Count();
+		}
 		// We do not have to worry about tuples not fitting into the HT due to a bad estimate,
 		// as PointerTableCapacity doubles count_bound, and then takes the NextPowerOfTwo
 		capacity = PointerTableCapacity(count_bound);
