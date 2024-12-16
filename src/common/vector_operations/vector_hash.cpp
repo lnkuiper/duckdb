@@ -12,13 +12,19 @@
 namespace duckdb {
 
 struct HashOp {
-	static const hash_t NULL_HASH = 0xbf58476d1ce4e5b9;
+	static constexpr hash_t NULL_HASH = 0xbf58476d1ce4e5b9;
 
 	template <class T>
 	static inline hash_t Operation(T input, bool is_null) {
 		return is_null ? NULL_HASH : duckdb::Hash<T>(input);
 	}
 };
+
+static inline hash_t CombineHashScalar(hash_t a, hash_t b) {
+	a ^= a >> 32;
+	a *= 0xd6e8feb86659fd93U;
+	return a ^ b;
+}
 
 template <bool HAS_RSEL, class T>
 static inline void TightLoopHash(const T *__restrict ldata, hash_t *__restrict result_data, const SelectionVector *rsel,

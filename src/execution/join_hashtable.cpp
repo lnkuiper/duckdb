@@ -687,17 +687,16 @@ void JoinHashTable::InsertHashes(Vector &hashes_v, const idx_t count, TupleDataC
 	}
 }
 
-void JoinHashTable::InitializePointerTable(bool external) {
+void JoinHashTable::InitializePointerTable(const bool external) {
 	if (external) {
 		capacity = PointerTableCapacity(Count());
 	} else {
-		// Our HLL has a 13% error margin, multiplying by 8/7 increases estimate by more than >14%
-		auto count_bound = hll.Count() * 8 / 7;
+		// We 4x the HLL estimate to be conservative
+		// This means the optimization only triggers on VERY skewed HT builds
+		auto count_bound = hll.Count() * 4;
 		if (Count() < count_bound) {
 			count_bound = Count();
 		}
-		// We do not have to worry about tuples not fitting into the HT due to a bad estimate,
-		// as PointerTableCapacity doubles count_bound, and then takes the NextPowerOfTwo
 		capacity = PointerTableCapacity(count_bound);
 	}
 	D_ASSERT(IsPowerOfTwo(capacity));
