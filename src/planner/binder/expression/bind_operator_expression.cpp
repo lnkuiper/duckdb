@@ -110,8 +110,8 @@ BindResult ExpressionBinder::BindExpression(OperatorExpression &op, idx_t depth)
 		const auto &b_exp_type = b_exp->return_type;
 		if (b_exp_type.id() == LogicalTypeId::MAP) {
 			function_name = "map_extract";
-		} else if (b_exp_type.IsJSONType() && op.children.size() == 2) {
-			function_name = "json_extract";
+		} else if (b_exp_type.id() == LogicalTypeId::VARCHAR && op.children.size() == 2) {
+			function_name = "json_extract_string";
 			// Make sure we only extract array elements, not fields, by adding the $[] syntax
 			auto &i_exp = BoundExpression::GetExpression(*op.children[1]);
 			if (i_exp->GetExpressionClass() == ExpressionClass::BOUND_CONSTANT) {
@@ -138,7 +138,7 @@ BindResult ExpressionBinder::BindExpression(OperatorExpression &op, idx_t depth)
 		const auto &extract_expr_type = extract_exp->return_type;
 		if (extract_expr_type.id() != LogicalTypeId::STRUCT && extract_expr_type.id() != LogicalTypeId::UNION &&
 		    extract_expr_type.id() != LogicalTypeId::MAP && extract_expr_type.id() != LogicalTypeId::SQLNULL &&
-		    !extract_expr_type.IsJSONType()) {
+		    extract_expr_type.id() != LogicalTypeId::VARCHAR) {
 			return BindResult(StringUtil::Format(
 			    "Cannot extract field %s from expression \"%s\" because it is not a struct, union, map, or json",
 			    name_exp->ToString(), extract_exp->ToString()));
@@ -147,8 +147,8 @@ BindResult ExpressionBinder::BindExpression(OperatorExpression &op, idx_t depth)
 			function_name = "union_extract";
 		} else if (extract_expr_type.id() == LogicalTypeId::MAP) {
 			function_name = "map_extract";
-		} else if (extract_expr_type.IsJSONType()) {
-			function_name = "json_extract";
+		} else if (extract_expr_type.id() == LogicalTypeId::VARCHAR) {
+			function_name = "json_extract_string";
 			// Make sure we only extract fields, not array elements, by adding $. syntax
 			if (name_exp->GetExpressionClass() == ExpressionClass::BOUND_CONSTANT) {
 				auto &const_exp = name_exp->Cast<BoundConstantExpression>();

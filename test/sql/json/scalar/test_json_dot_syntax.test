@@ -9,7 +9,7 @@ pragma enable_verification
 
 # should work within other functions (no conflict with list Lambda functions)
 query T
-SELECT json_structure(json('{"duck":"goose"}').duck);
+SELECT json_structure(to_json(json('{"duck":"goose"}').duck));
 ----
 "VARCHAR"
 
@@ -17,7 +17,7 @@ SELECT json_structure(json('{"duck":"goose"}').duck);
 query T
 select json('{"foo": null}').foo
 ----
-null
+NULL
 
 query T
 select json('{"foo": null}').foo.bar
@@ -44,7 +44,7 @@ NULL
 query T
 select json('{"my_field": {"my_nested_field": ["goose", "duck"]}}').my_field.my_nested_field[1]
 ----
-"duck"
+duck
 
 # again, this won't work
 query T
@@ -56,13 +56,13 @@ NULL
 query T
 select ('{"my_field": {"my_nested_field": ["goose", "duck"]}}'::JSON).my_field.my_nested_field[1]
 ----
-"duck"
+duck
 
 # can also access from back
 query T
 select ('{"my_field": {"my_nested_field": ["goose", "duck"]}}'::JSON).my_field.my_nested_field[-1]
 ----
-"duck"
+duck
 
 # array slicing doesn't work (yet) for json extract
 # this looks a bit weird, but this actually does a string slice
@@ -74,22 +74,22 @@ select ('{"my_field": {"my_nested_field": ["goose", "duck"]}}'::JSON).my_field.m
 query T
 select json('{"my_field": {"my_nested_field": ["goose", "duck"]}}').my_field.my_nested_field[1]
 ----
-"duck"
+duck
 
 query T
 select json('{"my_field": {"my_nested_field": ["goose", "duckduckduckduck"]}}').my_field.my_nested_field[1]
 ----
-"duckduckduckduck"
+duckduckduckduck
 
 query T
 select ('{"my_field": {"my_nested_field": ["goose", "duckduckduckduck"]}}'::JSON).my_field.my_nested_field[1]
 ----
-"duckduckduckduck"
+duckduckduckduck
 
 query T
 select json('{"my_field": {"my_nested_field": ["goose", "duckduckduckduck"]}}').my_field.my_nested_field[1]
 ----
-"duckduckduckduck"
+duckduckduckduck
 
 # doesn't work
 query T
@@ -112,7 +112,7 @@ select json('[1, 2, 42]')[2]::text
 query T
 select ('{"my_field": {"my_nested_field": ["goose", "duck"]}}'::JSON).my_field.my_nested_field[1]
 ----
-"duck"
+duck
 
 # some sqlite tests
 query T
@@ -187,16 +187,16 @@ SELECT (x::JSON).settings.layer2."tris.legomenon"."summary.report" FROM t12;
 ----
 false
 
-# this will be upcast to JSON, cannot parse 'bar'
-statement error
+query T
 SELECT json('{"foo": "bar"}').foo = 'bar';
 ----
-Conversion Error
-
-query T
-SELECT json('{"foo": "bar"}').foo = '"bar"';
-----
 true
+
+# dot notation uses json_extract_string, so this comparison fails
+statement error
+SELECT json('{"foo": "bar"}').foo = '"bar"'::JSON;
+----
+Conversion Error
 
 query T
 SELECT json('{"foo": 1}').foo = 1;
