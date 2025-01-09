@@ -15,4 +15,4 @@ statement ok
 create table t3 as select range c from range(100);
 
 statement ok
-select * from t1 join (select * from t2, t3 where b = c) on a = b order by all nulls first;
+select * from t1 left join (select * from t2, t3 where b = c) on a = c;

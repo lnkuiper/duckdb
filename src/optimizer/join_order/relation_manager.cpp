@@ -145,7 +145,7 @@ static bool JoinIsReorderable(LogicalOperator &op) {
 		switch (join.join_type) {
 		case JoinType::INNER:
 		case JoinType::SEMI:
-		// case JoinType::LEFT:
+		case JoinType::LEFT:
 		case JoinType::ANTI:
 			for (auto &cond : join.conditions) {
 				if (ExpressionContainsColumnRef(*cond.left) && ExpressionContainsColumnRef(*cond.right)) {

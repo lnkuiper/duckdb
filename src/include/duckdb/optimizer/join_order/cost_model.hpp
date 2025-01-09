@@ -27,7 +27,9 @@ public:
 	void InitCostModel();
 
 	//! Compute cost of a join relation set
-	double ComputeCost(DPJoinNode &left, DPJoinNode &right);
+	double ComputeCost(DPJoinNode &left, DPJoinNode &right, NeighborInfo &connection);
+	double ComputeLeftJoinCost(DPJoinNode &left, DPJoinNode &right);
+	double ComputeInnerJoinCost(DPJoinNode &left, DPJoinNode &right);
 
 	//! Cardinality Estimator used to calculate cost
 	CardinalityEstimator cardinality_estimator;
