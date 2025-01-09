@@ -1,0 +1,53 @@
+# name: test/optimizer/joins/left_join_reordering/test_reordering_left_joins.test
+# description: Reordering left joins produces still valid results
+# group: [left_join_reordering]
+
+statement ok
+create table t1 as from values (0), (1), (2), (3), (NULL) t(a);
+
+
+statement ok
+create table t2 as from values (0), (1) t(b);
+
+statement ok
+create table t3 as from values (1), (2) t(c);
+
+
+# filters (a LEFT JOIN (b = c).c)
+# query III
+# select * from t1 left join (select * from t2, t3 where b = c) on a = c;
+# ----
+# NULL	NULL	NULL
+# 0	NULL	NULL
+# 1	1	1
+# 2	NULL	NULL
+# 3	NULL	NULL
+#
+# # reordering (a LEFT JOIN c).c = b
+# query III
+# select * from (from t1 left join t3 on a=c), t2 where b = c order by all nulls first;
+# ----
+# NULL	NULL	NULL
+# 0	NULL	NULL
+# 1	1	1
+# 2	NULL	NULL
+# 3	NULL	NULL
+
+# this is probably one of the most basic left join reordering tests there can be
+#
+# filters (a LEFT JOIN (b = c).b)
+query III
+select * from t1 left join (select * from t2, t3 where b = c) on a = b order by all nulls first;
+----
+NULL	NULL	NULL
+0	NULL	NULL
+1	1	1
+2	NULL	NULL
+3	NULL	NULL
+
+# reordering ((a LEFT JOIN b).b = c)
+query III
+select * from (t1 left join t2 on a=b) left_result, t3 where left_result.b = c order by all nulls first;
+----
+1	1	1
+

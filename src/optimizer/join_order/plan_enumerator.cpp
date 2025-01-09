@@ -125,6 +125,9 @@ unique_ptr<DPJoinNode> PlanEnumerator::CreateJoinTree(JoinRelationSet &set,
 		}
 
 		join_type = filter_binding->join_type;
+		if (join_type == JoinType::LEFT) {
+			auto break_here = 0;
+		}
 		// prefer joining on semi and anti joins as they have a higher chance of being more
 		// selective
 		if (join_type == JoinType::SEMI || join_type == JoinType::ANTI) {

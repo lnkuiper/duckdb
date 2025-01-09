@@ -7,6 +7,7 @@
 #include "duckdb/optimizer/join_order/plan_enumerator.hpp"
 #include "duckdb/planner/expression/list.hpp"
 #include "duckdb/planner/operator/list.hpp"
+#include "duckdb/optimizer/column_binding_replacer.hpp"
 
 namespace duckdb {
 
@@ -20,10 +21,64 @@ JoinOrderOptimizer JoinOrderOptimizer::CreateChildOptimizer() {
 	return child_optimizer;
 }
 
+unique_ptr<LogicalOperator> RemoveUnnecessaryProjections::RemoveProjectionsChildren(unique_ptr<LogicalOperator> plan) {
+	for (idx_t i = 0; i < plan->children.size(); i++) {
+		plan->children[i] = RemoveProjections(std::move(plan->children[i]));
+	}
+	return plan;
+}
+unique_ptr<LogicalOperator> RemoveUnnecessaryProjections::RemoveProjections(unique_ptr<LogicalOperator> plan) {
+	if (plan->type != LogicalOperatorType::LOGICAL_PROJECTION) {
+		return RemoveProjectionsChildren(std::move(plan));
+	}
+	if (first_projection) {
+		first_projection = false;
+		return RemoveProjectionsChildren(std::move(plan));
+	}
+	// we only care about projections on top of joins
+	if (plan->children[0]->type != LogicalOperatorType::LOGICAL_COMPARISON_JOIN) {
+		return plan;
+	}
+	auto &proj = plan->Cast<LogicalProjection>();
+	auto child_bindings = plan->children[0]->GetColumnBindings();
+	if (proj.GetColumnBindings().size() != child_bindings.size()) {
+		return plan;
+	}
+	idx_t binding_index = 0;
+	for (auto &expr : proj.expressions) {
+		if (expr->type != ExpressionType::BOUND_COLUMN_REF) {
+			return plan;
+		}
+		auto &bound_ref = expr->Cast<BoundColumnRefExpression>();
+		if (bound_ref.binding != child_bindings[binding_index]) {
+			return plan;
+		}
+		binding_index++;
+	}
+	D_ASSERT(binding_index == plan->GetColumnBindings().size());
+	// we have a projection where every expression is a bound column ref, and they are in the same order as the
+	// bindings of the child. We can remove this projection
+	binding_index = 0;
+	for (auto &binding : plan->GetColumnBindings()) {
+		replacer.replacement_bindings.push_back(ReplacementBinding(binding, child_bindings[binding_index]));
+		binding_index++;
+	}
+	return std::move(plan->children[0]);
+}
+
+RemoveUnnecessaryProjections::RemoveUnnecessaryProjections(ClientContext &context, LogicalOperator &root)
+    : context(context), root(root) {
+	first_projection = true;
+}
+
 unique_ptr<LogicalOperator> JoinOrderOptimizer::Optimize(unique_ptr<LogicalOperator> plan,
                                                          optional_ptr<RelationStats> stats) {
 
 	// make sure query graph manager has not extracted a relation graph already
+	RemoveUnnecessaryProjections blah(context, *plan);
+	plan = blah.RemoveProjections(std::move(plan));
+	blah.replacer.VisitOperator(*plan);
+
 	LogicalOperator *op = plan.get();
 
 	// extract the relations that go into the hyper graph.

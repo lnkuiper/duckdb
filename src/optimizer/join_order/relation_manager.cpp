@@ -88,15 +88,15 @@ bool RelationManager::CrossProductWithRelationAllowed(idx_t relation_id) {
 	return no_cross_product_relations.find(relation_id) == no_cross_product_relations.end();
 }
 
-static bool OperatorNeedsRelation(LogicalOperatorType op_type) {
-	switch (op_type) {
-	case LogicalOperatorType::LOGICAL_PROJECTION:
+static bool OperatorNeedsRelation(LogicalOperator &op) {
+	switch (op.type) {
 	case LogicalOperatorType::LOGICAL_EXPRESSION_GET:
 	case LogicalOperatorType::LOGICAL_GET:
 	case LogicalOperatorType::LOGICAL_UNNEST:
 	case LogicalOperatorType::LOGICAL_DELIM_GET:
 	case LogicalOperatorType::LOGICAL_AGGREGATE_AND_GROUP_BY:
 	case LogicalOperatorType::LOGICAL_WINDOW:
+	case LogicalOperatorType::LOGICAL_PROJECTION:
 	case LogicalOperatorType::LOGICAL_SAMPLE:
 		return true;
 	default:
@@ -145,6 +145,7 @@ static bool JoinIsReorderable(LogicalOperator &op) {
 		switch (join.join_type) {
 		case JoinType::INNER:
 		case JoinType::SEMI:
+		// case JoinType::LEFT:
 		case JoinType::ANTI:
 			for (auto &cond : join.conditions) {
 				if (ExpressionContainsColumnRef(*cond.left) && ExpressionContainsColumnRef(*cond.right)) {
@@ -162,7 +163,7 @@ static bool JoinIsReorderable(LogicalOperator &op) {
 static bool HasNonReorderableChild(LogicalOperator &op) {
 	LogicalOperator *tmp = &op;
 	while (tmp->children.size() == 1) {
-		if (OperatorNeedsRelation(tmp->type) || OperatorIsNonReorderable(tmp->type)) {
+		if (OperatorNeedsRelation(*tmp) || OperatorIsNonReorderable(tmp->type)) {
 			return true;
 		}
 		tmp = tmp->children[0].get();
@@ -192,7 +193,7 @@ bool RelationManager::ExtractJoinRelations(JoinOrderOptimizer &optimizer, Logica
 	vector<reference<LogicalOperator>> datasource_filters;
 	optional_ptr<LogicalOperator> limit_op = nullptr;
 	// pass through single child operators
-	while (op->children.size() == 1 && !OperatorNeedsRelation(op->type)) {
+	while (op->children.size() == 1 && !OperatorNeedsRelation(*op)) {
 		if (op->type == LogicalOperatorType::LOGICAL_FILTER) {
 			if (HasNonReorderableChild(*op)) {
 				datasource_filters.push_back(*op);

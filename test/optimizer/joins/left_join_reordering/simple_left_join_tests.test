@@ -1,0 +1,18 @@
+# name: test/optimizer/joins/left_join_reordering/simple_left_join_tests.test
+# description: Reordering left joins produces still valid results
+# group: [left_join_reordering]
+
+statement ok
+create table t1 as select range a from range(100);
+
+statement ok
+insert into t1 values (NULL);
+
+statement ok
+create table t2 as select (range%100) b from range(4000);
+
+statement ok
+create table t3 as select range c from range(100);
+
+statement ok
+select * from t1 join (select * from t2, t3 where b = c) on a = b order by all nulls first;

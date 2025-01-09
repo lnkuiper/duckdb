@@ -20,6 +20,7 @@
 #include "duckdb/planner/logical_operator_visitor.hpp"
 
 #include <functional>
+#include "duckdb/optimizer/column_binding_replacer.hpp"
 
 namespace duckdb {
 
@@ -60,6 +61,19 @@ private:
 	unordered_map<idx_t, RelationStats> materialized_cte_stats;
 	//! Stats of Delim Scans of the Delim Join that is currently being optimized
 	optional_ptr<RelationStats> delim_scan_stats;
+};
+
+class RemoveUnnecessaryProjections {
+public:
+	explicit RemoveUnnecessaryProjections(ClientContext &context, LogicalOperator &root);
+	unique_ptr<LogicalOperator> RemoveProjections(unique_ptr<LogicalOperator> plan);
+	unique_ptr<LogicalOperator> RemoveProjectionsChildren(unique_ptr<LogicalOperator> plan);
+	ColumnBindingReplacer replacer;
+
+private:
+	ClientContext &context;
+	LogicalOperator &root;
+	bool first_projection;
 };
 
 } // namespace duckdb
