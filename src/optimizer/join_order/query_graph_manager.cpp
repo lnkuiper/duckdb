@@ -115,7 +115,8 @@ void QueryGraphManager::CreateHyperGraphEdges() {
 		} else if (filter->GetExpressionClass() == ExpressionClass::BOUND_CONJUNCTION) {
 			auto &conjunction = filter->Cast<BoundConjunctionExpression>();
 			if (conjunction.GetExpressionType() == ExpressionType::CONJUNCTION_OR ||
-			    filter_info->join_type == JoinType::INNER || filter_info->join_type == JoinType::INVALID) {
+			    filter_info->join_type == JoinType::INNER ||
+			    filter_info->join_type == JoinType::INVALID) {
 				// Currently we do not interpret Conjunction expressions as INNER joins
 				// for hyper graph edges. These are most likely OR conjunctions, and
 				// will be pushed down into a join later in the optimizer.
@@ -125,7 +126,7 @@ void QueryGraphManager::CreateHyperGraphEdges() {
 			unordered_set<idx_t> left_bindings, right_bindings;
 			D_ASSERT(filter_info->left_set);
 			D_ASSERT(filter_info->right_set);
-			D_ASSERT(filter_info->join_type == JoinType::SEMI || filter_info->join_type == JoinType::ANTI);
+			D_ASSERT(filter_info->join_type == JoinType::SEMI || filter_info->join_type == JoinType::ANTI || filter_info->join_type == JoinType::LEFT);
 			for (auto &child_comp : conjunction.children) {
 				if (child_comp->GetExpressionClass() != ExpressionClass::BOUND_COMPARISON) {
 					continue;

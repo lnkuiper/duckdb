@@ -101,7 +101,6 @@ const reference_map_t<JoinRelationSet, unique_ptr<DPJoinNode>> &PlanEnumerator::
 unique_ptr<DPJoinNode> PlanEnumerator::CreateJoinTree(JoinRelationSet &set,
                                                       const vector<reference<NeighborInfo>> &possible_connections,
                                                       DPJoinNode &left, DPJoinNode &right) {
-
 	// FIXME: should consider different join algorithms, should we pick a join algorithm here as well? (probably)
 	optional_ptr<NeighborInfo> best_connection = possible_connections.back().get();
 	// cross products are technically still connections, but the filter expression is a null_ptr
@@ -125,9 +124,6 @@ unique_ptr<DPJoinNode> PlanEnumerator::CreateJoinTree(JoinRelationSet &set,
 		}
 
 		join_type = filter_binding->join_type;
-		if (join_type == JoinType::LEFT) {
-			auto break_here = 0;
-		}
 		// prefer joining on semi and anti joins as they have a higher chance of being more
 		// selective
 		if (join_type == JoinType::SEMI || join_type == JoinType::ANTI) {

@@ -2,6 +2,37 @@
 # description: Reordering left joins produces still valid results
 # group: [left_join_reordering]
 
+
+statement ok
+create table t1 as select range%150 a1, range%150 a2 from range(100000);
+
+statement ok
+create table t2 as select range b1, range b2 from range(10000);
+
+statement ok
+create table t3 as select range c1, range c2 from range(150);
+
+statement ok
+select * from (
+	select * from t1 left join
+	t2 on (a1 = b1 and a2 = b2)
+	where b2 is null
+),
+ t3 where a2 = c2;
+
+mode skip
+
+statement ok
+attach 'duckdb_benchmark_data/tpcds_sf1.duckdb' as tpcds;
+
+statement ok
+use tpcds;
+
+statement ok
+explain select d_date_sk, ss_ticket_number, sr_ticket_number from date_dim, (select * from store_sales left join store_returns on (ss_ticket_number = sr_ticket_number and ss_item_sk = sr_item_sk) where sr_ticket_number IS NULL) wat where ss_sold_date_sk = d_date_sk;
+
+mode skip
+
 statement ok
 create table t1 as select range a from range(100);
 
@@ -15,4 +46,12 @@ statement ok
 create table t3 as select range c from range(100);
 
 statement ok
-select * from t1 left join (select * from t2, t3 where b = c) on a = c;
+pragma enable_verification;
+
+# statement ok
+# select * from t1 left join (select * from t2, t3 where b = c) on a = c order by all;
+
+statement ok
+select * from (t1 left join t2 on a = b) left_j join t3 on a = c;
+
+

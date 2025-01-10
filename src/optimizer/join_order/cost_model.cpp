@@ -9,19 +9,7 @@ CostModel::CostModel(QueryGraphManager &query_graph_manager)
 }
 
 double CostModel::ComputeCost(DPJoinNode &left, DPJoinNode &right, NeighborInfo &neighbor_info) {
-	bool has_left = false;
-	for (auto &filter : neighbor_info.filters) {
-		if (filter->join_type == JoinType::LEFT) {
-			has_left = true;
-		}
-		if (filter->join_type == JoinType::INNER) {
-			return ComputeInnerJoinCost(left, right);
-		}
-	}
-	if (has_left) {
-		return ComputeLeftJoinCost(left, right);
-	}
-	throw InternalException("umm what");
+	return ComputeInnerJoinCost(left, right);
 }
 
 double CostModel::ComputeInnerJoinCost(DPJoinNode &left, DPJoinNode &right) {

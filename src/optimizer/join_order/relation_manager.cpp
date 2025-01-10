@@ -309,14 +309,14 @@ bool RelationManager::ExtractJoinRelations(JoinOrderOptimizer &optimizer, Logica
 
 		// So we treat the right side of left join as its own relation so no relations
 		// are pushed into the right side, or taken out of the right side.
-		if (join.join_type == JoinType::SEMI || join.join_type == JoinType::ANTI) {
+		if (join.join_type == JoinType::SEMI || join.join_type == JoinType::ANTI || join.join_type == JoinType::LEFT) {
 			RelationStats child_stats;
 			// optimize the child and copy the stats
 			auto child_optimizer = optimizer.CreateChildOptimizer();
 			op->children[1] = child_optimizer.Optimize(std::move(op->children[1]), &child_stats);
 			AddRelation(*op->children[1], op, child_stats);
 			// remember that if a cross product needs to be forced, it cannot be forced
-			// across the children of a semi or anti join
+			// across the children of a semi/anti/left join
 			no_cross_product_relations.insert(relations.size() - 1);
 			auto right_child_bindings = op->children[1]->GetColumnBindings();
 			for (auto &bindings : right_child_bindings) {
@@ -551,7 +551,50 @@ vector<unique_ptr<FilterInfo>> RelationManager::ExtractEdges(LogicalOperator &op
 				filter_info->SetRightSet(right_set);
 
 				filters_and_bindings.push_back(std::move(filter_info));
+			} else if (join.join_type == JoinType::LEFT) {
+				auto conjunction_expression = make_uniq<BoundConjunctionExpression>(ExpressionType::CONJUNCTION_AND);
+				for (auto &cond : join.conditions) {
+					auto comparison = make_uniq<BoundComparisonExpression>(cond.comparison, std::move(cond.left),
+																		   std::move(cond.right));
+					conjunction_expression->children.push_back(std::move(comparison));
+				}
+				optional_ptr<JoinRelationSet> left_set;
+				optional_ptr<JoinRelationSet> right_set;
+				optional_ptr<JoinRelationSet> full_set;
+				for (auto &child : conjunction_expression->children) {
+					D_ASSERT(child->GetExpressionClass() == ExpressionClass::BOUND_COMPARISON);
+					auto &cond = child->Cast<BoundComparisonExpression>();
+
+					unordered_set<idx_t> right_bindings, left_bindings;
+					ExtractBindings(*cond.left, left_bindings);
+					ExtractBindings(*cond.right, right_bindings);
+					if (!left_set) {
+						left_set = set_manager.GetJoinRelation(left_bindings);
+					} else {
+						left_set = set_manager.Union(set_manager.GetJoinRelation(left_bindings), *left_set);
+					}
+					if (!right_set) {
+						right_set = set_manager.GetJoinRelation(right_bindings);
+					} else {
+						right_set = set_manager.Union(set_manager.GetJoinRelation(right_bindings), *right_set);
+					}
+				}
+				full_set = set_manager.Union(*left_set, *right_set);
+				for (auto &filter : filters_and_bindings) {
+					// if any filter filters on just the right set,
+					// if there is no right set, it is a single column filter?
+					if (!filter->right_set && JoinRelationSet::IsSubset(*right_set, filter->set)) {
+						// make sure it requires all relations from the left set.
+						filter->set = *full_set;
+					}
+				}
+				auto filter_info = make_uniq<FilterInfo>(std::move(conjunction_expression), *full_set,
+																 filters_and_bindings.size(), join.join_type);
+				filter_info->SetLeftSet(left_set);
+				filter_info->SetRightSet(right_set);
+				filters_and_bindings.push_back(std::move(filter_info));
 			} else {
+
 				// can extract every inner join condition individually.
 				for (auto &cond : join.conditions) {
 					auto comparison = make_uniq<BoundComparisonExpression>(cond.comparison, std::move(cond.left),
