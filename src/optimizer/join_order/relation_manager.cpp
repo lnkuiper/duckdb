@@ -581,11 +581,24 @@ vector<unique_ptr<FilterInfo>> RelationManager::ExtractEdges(LogicalOperator &op
 				}
 				full_set = set_manager.Union(*left_set, *right_set);
 				for (auto &filter : filters_and_bindings) {
+					if (filter->join_type == JoinType::LEFT) {
+						continue;
+					}
 					// if any filter filters on just the right set,
 					// if there is no right set, it is a single column filter?
-					if (!filter->right_set && JoinRelationSet::IsSubset(*right_set, filter->set)) {
+					if (!filter->right_set && JoinRelationSet::IsSubset(filter->set, *right_set)) {
 						// make sure it requires all relations from the left set.
+						// if the filter is a (T1.a = 9) where t1.a is in the RHS of the left join
+						// then the filter set needs the left relations of the left join filter
+						// if the filter is a (T1.a = T2.b) where T1.a is the RHS of the left join and t2.b is the LHS, then we are fine.
+						// join_typeLEFT
 						filter->set = *full_set;
+					}
+					if (filter->left_set && JoinRelationSet::IsSubset(*filter->left_set, *right_set)) {
+						filter->left_set = *full_set;
+					}
+					if (filter->right_set && JoinRelationSet::IsSubset(*filter->right_set, *right_set)) {
+						filter->right_set = *full_set;
 					}
 				}
 				auto filter_info = make_uniq<FilterInfo>(std::move(conjunction_expression), *full_set,
@@ -602,10 +615,19 @@ vector<unique_ptr<FilterInfo>> RelationManager::ExtractEdges(LogicalOperator &op
 					if (filter_set.find(*comparison) == filter_set.end()) {
 						filter_set.insert(*comparison);
 						unordered_set<idx_t> bindings;
+						unordered_set<idx_t> right_bindings, left_bindings;
+						optional_ptr<JoinRelationSet> left_set;
+						optional_ptr<JoinRelationSet> right_set;
 						ExtractBindings(*comparison, bindings);
+						ExtractBindings(*comparison->left, left_bindings);
+						ExtractBindings(*comparison->right, right_bindings);
+						left_set = set_manager.GetJoinRelation(left_bindings);
+						right_set = set_manager.GetJoinRelation(right_bindings);
 						auto &set = set_manager.GetJoinRelation(bindings);
 						auto filter_info = make_uniq<FilterInfo>(std::move(comparison), set,
 						                                         filters_and_bindings.size(), join.join_type);
+						filter_info->SetLeftSet(left_set);
+						filter_info->SetRightSet(right_set);
 						filters_and_bindings.push_back(std::move(filter_info));
 					}
 				}
@@ -626,6 +648,11 @@ vector<unique_ptr<FilterInfo>> RelationManager::ExtractEdges(LogicalOperator &op
 					}
 					auto &set = set_manager.GetJoinRelation(bindings);
 					auto filter_info = make_uniq<FilterInfo>(std::move(expression), set, filters_and_bindings.size());
+					filter_info->SetLeftSet(set);
+					// also need to set the right relation set.
+					// some filters look like T1.a = T2.b and sit above a left join
+					// in these cases I need to know left and right bindings to make sure this filter is not applied
+					// incorrectly as a left join condition, or below a left join
 					filters_and_bindings.push_back(std::move(filter_info));
 				}
 			}

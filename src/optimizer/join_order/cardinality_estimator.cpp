@@ -414,7 +414,6 @@ double CardinalityEstimator::EstimateCardinalityWithSet(JoinRelationSet &new_set
 
 	double result = numerator / denom.denominator;
 	auto new_entry = CardinalityHelper(result);
-	Printer::Print("estimating set card: " + new_set.ToString() + " = " + to_string(result));
 	relation_set_2_cardinality[new_set.ToString()] = new_entry;
 	return result;
 }

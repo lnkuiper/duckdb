@@ -31,7 +31,7 @@ public:
 
 public:
 	//! Perform join reordering inside a plan
-	unique_ptr<LogicalOperator> Optimize(unique_ptr<LogicalOperator> plan, optional_ptr<RelationStats> stats = nullptr);
+	unique_ptr<LogicalOperator> Optimize(unique_ptr<LogicalOperator> plan, optional_ptr<RelationStats> stats = nullptr, bool remove_projections = false);
 	//! Adds/gets materialized CTE stats
 	void AddMaterializedCTEStats(idx_t index, RelationStats &&stats);
 	RelationStats GetMaterializedCTEStats(idx_t index);

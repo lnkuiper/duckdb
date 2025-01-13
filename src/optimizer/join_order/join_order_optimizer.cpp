@@ -28,16 +28,21 @@ unique_ptr<LogicalOperator> RemoveUnnecessaryProjections::RemoveProjectionsChild
 	return plan;
 }
 unique_ptr<LogicalOperator> RemoveUnnecessaryProjections::RemoveProjections(unique_ptr<LogicalOperator> plan) {
+	if (plan->type == LogicalOperatorType::LOGICAL_UNION || plan->type == LogicalOperatorType::LOGICAL_EXCEPT || plan->type == LogicalOperatorType::LOGICAL_INTERSECT) {
+		// guaranteed to find a projection under this that is meant to keep the oclumn order in the presence of
+		// an optimization done by build side probe side.
+		for (idx_t i = 0; i < plan->children.size(); i++) {
+			first_projection = true;
+			plan->children[i] = RemoveProjections(std::move(plan->children[i]));
+		}
+		return plan;
+	}
 	if (plan->type != LogicalOperatorType::LOGICAL_PROJECTION) {
 		return RemoveProjectionsChildren(std::move(plan));
 	}
 	if (first_projection) {
 		first_projection = false;
 		return RemoveProjectionsChildren(std::move(plan));
-	}
-	// we only care about projections on top of joins
-	if (plan->children[0]->type != LogicalOperatorType::LOGICAL_COMPARISON_JOIN) {
-		return plan;
 	}
 	auto &proj = plan->Cast<LogicalProjection>();
 	auto child_bindings = plan->children[0]->GetColumnBindings();
@@ -63,7 +68,7 @@ unique_ptr<LogicalOperator> RemoveUnnecessaryProjections::RemoveProjections(uniq
 		replacer.replacement_bindings.push_back(ReplacementBinding(binding, child_bindings[binding_index]));
 		binding_index++;
 	}
-	return std::move(plan->children[0]);
+	return RemoveProjectionsChildren(std::move(plan->children[0]));
 }
 
 RemoveUnnecessaryProjections::RemoveUnnecessaryProjections(ClientContext &context, LogicalOperator &root)
@@ -72,12 +77,16 @@ RemoveUnnecessaryProjections::RemoveUnnecessaryProjections(ClientContext &contex
 }
 
 unique_ptr<LogicalOperator> JoinOrderOptimizer::Optimize(unique_ptr<LogicalOperator> plan,
-                                                         optional_ptr<RelationStats> stats) {
+                                                         optional_ptr<RelationStats> stats, bool remove_projections) {
 
 	// make sure query graph manager has not extracted a relation graph already
-	RemoveUnnecessaryProjections blah(context, *plan);
-	plan = blah.RemoveProjections(std::move(plan));
-	blah.replacer.VisitOperator(*plan);
+	if (remove_projections) {
+		RemoveUnnecessaryProjections blah(context, *plan);
+		plan = blah.RemoveProjections(std::move(plan));
+		blah.replacer.VisitOperator(*plan);
+
+		auto bindings = plan->GetColumnBindings();
+	}
 
 	LogicalOperator *op = plan.get();
 

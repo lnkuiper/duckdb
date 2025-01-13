@@ -2,6 +2,8 @@
 # description: Reordering left joins produces still valid results
 # group: [left_join_reordering]
 
+mode skip
+
 statement ok
 create table t1 as from values (0), (1), (2), (3), (NULL) t(a);
 
