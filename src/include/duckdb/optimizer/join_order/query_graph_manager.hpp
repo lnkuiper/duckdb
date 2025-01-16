@@ -37,13 +37,20 @@ struct GenerateJoinRelation {
 	unique_ptr<LogicalOperator> op;
 };
 
+
+enum class FilterInfoApplicationRule : uint8_t {
+	AS_JOIN = 0,                 // the join filter can join two relation sets
+	AS_STRICT_FILTER = 1         // the join filter is not allowed to join two relation sets (even though it may seem like it)
+	                             // needed for filters above left joins.
+};
+
 //! Filter info struct that is used by the cardinality estimator to set the initial cardinality
 //! but is also eventually transformed into a query edge.
 class FilterInfo {
 public:
 	FilterInfo(unique_ptr<Expression> filter, JoinRelationSet &set, idx_t filter_index,
 	           JoinType join_type = JoinType::INNER)
-	    : filter(std::move(filter)), set(set), filter_index(filter_index), join_type(join_type) {
+	    : filter(std::move(filter)), set(set), filter_index(filter_index), join_type(join_type), application_rule(FilterInfoApplicationRule::AS_JOIN) {
 	}
 
 public:
@@ -51,8 +58,13 @@ public:
 	reference<JoinRelationSet> set;
 	idx_t filter_index;
 	JoinType join_type;
-	optional_ptr<JoinRelationSet> left_set;
-	optional_ptr<JoinRelationSet> right_set;
+	optional_ptr<JoinRelationSet> left_relation_set;
+	optional_ptr<JoinRelationSet> right_relation_set;
+	//! required relations present in a join tree before applying
+	//! this FilterInfo. Needed to make sure filters above left joins
+	//! are applied above the left join
+	FilterInfoApplicationRule application_rule;
+	// TODO: change this to be a binding set
 	ColumnBinding left_binding;
 	ColumnBinding right_binding;
 

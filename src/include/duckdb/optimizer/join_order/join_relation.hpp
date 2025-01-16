@@ -39,6 +39,7 @@ public:
 	};
 
 public:
+	JoinRelationSet &GetEmptyJoinRelationSet();
 	//! Create or get a JoinRelationSet from a single node with the given index
 	JoinRelationSet &GetJoinRelation(idx_t index);
 	//! Create or get a JoinRelationSet from a set of relation bindings
@@ -54,6 +55,7 @@ public:
 
 private:
 	JoinRelationTreeNode root;
+	optional_ptr<JoinRelationSet> empty_relation_set;
 };
 
 } // namespace duckdb

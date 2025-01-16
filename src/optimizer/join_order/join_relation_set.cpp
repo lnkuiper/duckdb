@@ -66,6 +66,14 @@ JoinRelationSet &JoinRelationSetManager::GetJoinRelation(idx_t index) {
 	return GetJoinRelation(std::move(relations), count);
 }
 
+JoinRelationSet &JoinRelationSetManager::GetEmptyJoinRelationSet() {
+	if (!empty_relation_set) {
+		const unordered_set<idx_t> empty_bindings = {};
+		empty_relation_set = GetJoinRelation(empty_bindings);
+	}
+	return *empty_relation_set.get();
+}
+
 JoinRelationSet &JoinRelationSetManager::GetJoinRelation(const unordered_set<idx_t> &bindings) {
 	// create a sorted vector of the relations
 	unsafe_unique_array<idx_t> relations = bindings.empty() ? nullptr : make_unsafe_uniq_array<idx_t>(bindings.size());

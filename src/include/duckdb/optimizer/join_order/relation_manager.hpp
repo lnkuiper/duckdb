@@ -53,8 +53,8 @@ public:
 	                                            vector<reference<LogicalOperator>> &filter_operators,
 	                                            JoinRelationSetManager &set_manager);
 
-	//! Extract the set of relations referred to inside an expression
-	bool ExtractBindings(Expression &expression, unordered_set<idx_t> &bindings);
+	//! Extract the join relations used inside an expression
+	bool ExtractRelationsFromExpression(Expression &expression, unordered_set<idx_t> &bindings);
 	void AddRelation(LogicalOperator &op, optional_ptr<LogicalOperator> parent, const RelationStats &stats);
 
 	void AddAggregateOrWindowRelation(LogicalOperator &op, optional_ptr<LogicalOperator> parent,
