@@ -37,9 +37,6 @@ void CardinalityEstimator::AddRelationTdom(FilterInfo &filter_info) {
 }
 
 bool CardinalityEstimator::SingleColumnFilter(duckdb::FilterInfo &filter_info) {
-	if (filter_info.application_rule == FilterInfoApplicationRule::AS_STRICT_FILTER) {
-		return true;
-	}
 	if (filter_info.left_relation_set->count >= 1 && filter_info.right_relation_set->count >= 1 && filter_info.set.get().count >= 2) {
 		// Both set and are from different relations
 		return false;

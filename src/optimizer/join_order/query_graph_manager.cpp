@@ -35,22 +35,22 @@ bool QueryGraphManager::Build(JoinOrderOptimizer &optimizer, LogicalOperator &op
 	return true;
 }
 
-void QueryGraphManager::GetColumnBinding(Expression &expression, ColumnBinding &binding) {
-	if (expression.GetExpressionType() == ExpressionType::BOUND_COLUMN_REF) {
-		// Here you have a filter on a single column in a table. Return a binding for the column
-		// being filtered on so the filter estimator knows what HLL count to pull
-		auto &colref = expression.Cast<BoundColumnRefExpression>();
-		D_ASSERT(colref.depth == 0);
-		D_ASSERT(colref.binding.table_index != DConstants::INVALID_INDEX);
-		// map the base table index to the relation index used by the JoinOrderOptimizer
-		D_ASSERT(relation_manager.relation_mapping.find(colref.binding.table_index) !=
-		         relation_manager.relation_mapping.end());
-		binding =
-		    ColumnBinding(relation_manager.relation_mapping[colref.binding.table_index], colref.binding.column_index);
-	}
-	// TODO: handle inequality filters with functions.
-	ExpressionIterator::EnumerateChildren(expression, [&](Expression &expr) { GetColumnBinding(expr, binding); });
-}
+// void QueryGraphManager::GetColumnBinding(Expression &expression, ColumnBinding &binding) {
+// 	if (expression.GetExpressionType() == ExpressionType::BOUND_COLUMN_REF) {
+// 		// Here you have a filter on a single column in a table. Return a binding for the column
+// 		// being filtered on so the filter estimator knows what HLL count to pull
+// 		auto &colref = expression.Cast<BoundColumnRefExpression>();
+// 		D_ASSERT(colref.depth == 0);
+// 		D_ASSERT(colref.binding.table_index != DConstants::INVALID_INDEX);
+// 		// map the base table index to the relation index used by the JoinOrderOptimizer
+// 		D_ASSERT(relation_manager.relation_mapping.find(colref.binding.table_index) !=
+// 		         relation_manager.relation_mapping.end());
+// 		binding =
+// 		    ColumnBinding(relation_manager.relation_mapping[colref.binding.table_index], colref.binding.column_index);
+// 	}
+// 	// TODO: handle inequality filters with functions.
+// 	ExpressionIterator::EnumerateChildren(expression, [&](Expression &expr) { GetColumnBinding(expr, binding); });
+// }
 
 const vector<unique_ptr<FilterInfo>> &QueryGraphManager::GetFilterBindings() const {
 	return filters_and_bindings;
@@ -85,14 +85,15 @@ void QueryGraphManager::CreateHyperGraphEdges() {
 	for (auto &filter_info : filters_and_bindings) {
 		auto &filter = filter_info->filter;
 		// now check if it can be used as a join predicate
+		// A lot of this has already been done in RelationManager::ExtractEdges
 		if (filter->GetExpressionClass() == ExpressionClass::BOUND_COMPARISON) {
 			auto &comparison = filter->Cast<BoundComparisonExpression>();
 			// extract the bindings that are required for the left and right side of the comparison
 			unordered_set<idx_t> left_bindings, right_bindings;
 			relation_manager.ExtractRelationsFromExpression(*comparison.left, left_bindings);
 			relation_manager.ExtractRelationsFromExpression(*comparison.right, right_bindings);
-			GetColumnBinding(*comparison.left, filter_info->left_binding);
-			GetColumnBinding(*comparison.right, filter_info->right_binding);
+			relation_manager.GetColumnBinding(*comparison.left, filter_info->left_binding);
+			relation_manager.GetColumnBinding(*comparison.right, filter_info->right_binding);
 			if (!left_bindings.empty() && !right_bindings.empty()) {
 				// both the left and the right side have bindings
 				// first create the relation sets, if they do not exist
@@ -137,11 +138,11 @@ void QueryGraphManager::CreateHyperGraphEdges() {
 				relation_manager.ExtractRelationsFromExpression(*comparison.right, right_bindings);
 				if (filter_info->left_binding.table_index == DConstants::INVALID_INDEX &&
 				    filter_info->left_binding.column_index == DConstants::INVALID_INDEX) {
-					GetColumnBinding(*comparison.left, filter_info->left_binding);
+					relation_manager.GetColumnBinding(*comparison.left, filter_info->left_binding);
 				}
 				if (filter_info->right_binding.table_index == DConstants::INVALID_INDEX &&
 				    filter_info->right_binding.column_index == DConstants::INVALID_INDEX) {
-					GetColumnBinding(*comparison.right, filter_info->right_binding);
+					relation_manager.GetColumnBinding(*comparison.right, filter_info->right_binding);
 				}
 			}
 			if (!left_bindings.empty() && !right_bindings.empty()) {
@@ -158,7 +159,7 @@ void QueryGraphManager::CreateHyperGraphEdges() {
 		} else {
 			unordered_set<idx_t> left_bindings, right_bindings;
 			relation_manager.ExtractRelationsFromExpression(*filter, left_bindings);
-			GetColumnBinding(*filter, filter_info->left_binding);
+			relation_manager.GetColumnBinding(*filter, filter_info->left_binding);
 		}
 	}
 }
@@ -338,6 +339,11 @@ GenerateJoinRelation QueryGraphManager::GenerateJoins(vector<unique_ptr<LogicalO
 		if (filters_and_bindings[info.filter_index]->filter) {
 			// now check if the filter is a subset of the current relation
 			// note that infos with an empty relation set are a special case and we do not push them down
+			if (info.join_type == JoinType::LEFT) {
+				// any left join is most definitely a filter that joins two relations, so do not push the filter
+				// preemptively here
+				continue;
+			}
 			if (info.set.get().count > 0 && JoinRelationSet::IsSubset(*result_relation, info.set)) {
 				auto &filter_and_binding = filters_and_bindings[info.filter_index];
 				auto filter = std::move(filter_and_binding->filter);

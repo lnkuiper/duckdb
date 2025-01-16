@@ -55,6 +55,8 @@ public:
 
 	//! Extract the join relations used inside an expression
 	bool ExtractRelationsFromExpression(Expression &expression, unordered_set<idx_t> &bindings);
+	//! Extract the Column binding from an expression
+	void GetColumnBinding(Expression &expression, ColumnBinding &binding);
 	void AddRelation(LogicalOperator &op, optional_ptr<LogicalOperator> parent, const RelationStats &stats);
 
 	void AddAggregateOrWindowRelation(LogicalOperator &op, optional_ptr<LogicalOperator> parent,

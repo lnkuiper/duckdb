@@ -28,6 +28,23 @@ idx_t RelationManager::NumRelations() {
 	return relations.size();
 }
 
+void RelationManager::GetColumnBinding(Expression &expression, ColumnBinding &binding) {
+	if (expression.GetExpressionType() == ExpressionType::BOUND_COLUMN_REF) {
+		// Here you have a filter on a single column in a table. Return a binding for the column
+		// being filtered on so the filter estimator knows what HLL count to pull
+		auto &colref = expression.Cast<BoundColumnRefExpression>();
+		D_ASSERT(colref.depth == 0);
+		D_ASSERT(colref.binding.table_index != DConstants::INVALID_INDEX);
+		// map the base table index to the relation index used by the JoinOrderOptimizer
+		D_ASSERT(relation_mapping.find(colref.binding.table_index) !=
+				 relation_mapping.end());
+		binding =
+			ColumnBinding(relation_mapping[colref.binding.table_index], colref.binding.column_index);
+	}
+	// TODO: handle inequality filters with functions.
+	ExpressionIterator::EnumerateChildren(expression, [&](Expression &expr) { GetColumnBinding(expr, binding); });
+}
+
 void RelationManager::AddAggregateOrWindowRelation(LogicalOperator &op, optional_ptr<LogicalOperator> parent,
                                                    const RelationStats &stats, LogicalOperatorType op_type) {
 	auto relation = make_uniq<SingleJoinRelation>(op, parent, stats);
@@ -554,16 +571,20 @@ vector<unique_ptr<FilterInfo>> RelationManager::ExtractEdges(LogicalOperator &op
 							// if the filter is a (T1.a = 9) where t1.a is in the RHS of the left join
 							// then the filter set needs the left relations of the left join filter
 							// if the filter is a (T1.a = T2.b) where T1.a is the RHS of the left join and t2.b is the LHS, then we are fine.
-							// join_typeLEFT
-							filter->set = *all_relations;
+							// Union the two sets because if you have a join plan like so ((A LEFT JOIN B) JOIN C) with condition B.x = C.y
+							// the upper inner join has the total set (A, B, C).
+							filter->set = set_manager.Union(filter->set, *all_relations);
+							// not necessarily
 							filter->application_rule = FilterInfoApplicationRule::AS_STRICT_FILTER;
 						}
 						if (JoinRelationSet::IsSubset(*filter->left_relation_set, *right_relations)) {
 							filter->left_relation_set = *all_relations;
+							// not necessarily
 							filter->application_rule = FilterInfoApplicationRule::AS_STRICT_FILTER;
 						}
 						if (JoinRelationSet::IsSubset(*filter->right_relation_set, *right_relations)) {
 							filter->right_relation_set = *all_relations;
+							// not necessarily
 							filter->application_rule = FilterInfoApplicationRule::AS_STRICT_FILTER;
 						}
 					}
@@ -625,7 +646,7 @@ vector<unique_ptr<FilterInfo>> RelationManager::ExtractEdges(LogicalOperator &op
 					} else {
 						left_set = set_manager.GetJoinRelation(bindings);
 						right_set = set_manager.GetJoinRelation(bindings);
-
+						// GetColumnBinding(*expression, dumb);
 					}
 					if (bindings.empty()) {
 						// the filter is on a column that is not in our relational map. (example: limit_rownum)
@@ -635,6 +656,7 @@ vector<unique_ptr<FilterInfo>> RelationManager::ExtractEdges(LogicalOperator &op
 					}
 					auto &set = set_manager.GetJoinRelation(bindings);
 					auto filter_info = make_uniq<FilterInfo>(std::move(expression), set, filters_and_bindings.size());
+					// filter_info->left_binding = dumb;
 
 					filter_info->SetLeftSet(left_set);
 					filter_info->SetRightSet(right_set);

@@ -44,8 +44,10 @@ enum class FilterInfoApplicationRule : uint8_t {
 	                             // needed for filters above left joins.
 };
 
-//! Filter info struct that is used by the cardinality estimator to set the initial cardinality
-//! but is also eventually transformed into a query edge.
+
+//! FilterInfo models stores filter information so that edges between relations can be made
+//! with the original ColumnBinding information available so that the cardinality estimator can
+//! view the statistics of the underlying base tables.
 class FilterInfo {
 public:
 	FilterInfo(unique_ptr<Expression> filter, JoinRelationSet &set, idx_t filter_index,
@@ -118,7 +120,7 @@ private:
 
 	QueryGraphEdges query_graph;
 
-	void GetColumnBinding(Expression &expression, ColumnBinding &binding);
+	// void GetColumnBinding(Expression &expression, ColumnBinding &binding);
 
 	void CreateHyperGraphEdges();
 
