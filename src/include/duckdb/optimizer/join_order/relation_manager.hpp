@@ -18,6 +18,8 @@
 #include "duckdb/planner/logical_operator.hpp"
 #include "duckdb/planner/logical_operator_visitor.hpp"
 
+#include <duckdb/common/enums/join_type.hpp>
+
 namespace duckdb {
 
 class JoinOrderOptimizer;
@@ -57,6 +59,10 @@ public:
 	void ExtractColumnBindingsFromExpression(Expression &expression, unordered_set<idx_t> &bindings);
 	//! Extract the Column binding from an expression
 	void ExtractColumnBinding(Expression &expression, ColumnBinding &binding);
+	unique_ptr<FilterInfo> CreateFilterInfoFromExpression(BoundComparisonExpression &comparison,
+	                                                      JoinRelationSetManager &set_manager,
+	                                                      JoinType join_type = JoinType::INNER);
+
 	optional_ptr<JoinRelationSet> GetJoinRelations(column_binding_set_t column_bindings,
 	                                               JoinRelationSetManager &set_manager);
 	void GetColumnBindingsFromExpression(Expression &expression, column_binding_set_t &column_bindings);
