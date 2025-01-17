@@ -2,7 +2,6 @@
 # description: Reordering left joins produces still valid results
 # group: [left_join_reordering]
 
-
 statement ok
 create table t1 as select range%150 a1, range%150 a2 from range(100000);
 

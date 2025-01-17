@@ -53,10 +53,13 @@ public:
 	                                            vector<reference<LogicalOperator>> &filter_operators,
 	                                            JoinRelationSetManager &set_manager);
 
-	//! Extract the join relations used inside an expression
-	bool ExtractRelationsFromExpression(Expression &expression, unordered_set<idx_t> &bindings);
+	//! Extract all column bindings from an expression with the
+	void ExtractColumnBindingsFromExpression(Expression &expression, unordered_set<idx_t> &bindings);
 	//! Extract the Column binding from an expression
-	void GetColumnBinding(Expression &expression, ColumnBinding &binding);
+	void ExtractColumnBinding(Expression &expression, ColumnBinding &binding);
+	optional_ptr<JoinRelationSet> GetJoinRelations(column_binding_set_t column_bindings,
+	                                               JoinRelationSetManager &set_manager);
+	void GetColumnBindingsFromExpression(Expression &expression, column_binding_set_t &column_bindings);
 	void AddRelation(LogicalOperator &op, optional_ptr<LogicalOperator> parent, const RelationStats &stats);
 
 	void AddAggregateOrWindowRelation(LogicalOperator &op, optional_ptr<LogicalOperator> parent,

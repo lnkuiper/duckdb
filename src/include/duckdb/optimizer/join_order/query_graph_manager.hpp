@@ -37,22 +37,23 @@ struct GenerateJoinRelation {
 	unique_ptr<LogicalOperator> op;
 };
 
-
 enum class FilterInfoApplicationRule : uint8_t {
-	AS_JOIN = 0,                 // the join filter can join two relation sets
-	AS_STRICT_FILTER = 1         // the join filter is not allowed to join two relation sets (even though it may seem like it)
-	                             // needed for filters above left joins.
+	AS_JOIN = 0,         // the join filter can join two relation sets
+	AS_STRICT_FILTER = 1 // the join filter is not allowed to join two relation sets (even though it may seem like it)
+	                     // needed for filters above left joins.
 };
-
 
 //! FilterInfo models stores filter information so that edges between relations can be made
 //! with the original ColumnBinding information available so that the cardinality estimator can
 //! view the statistics of the underlying base tables.
 class FilterInfo {
 public:
-	FilterInfo(unique_ptr<Expression> filter, JoinRelationSet &set, idx_t filter_index,
-	           JoinType join_type = JoinType::INNER)
-	    : filter(std::move(filter)), set(set), filter_index(filter_index), join_type(join_type), application_rule(FilterInfoApplicationRule::AS_JOIN) {
+	FilterInfo(unique_ptr<Expression> filter, JoinRelationSet &set, idx_t filter_index, JoinType join_type,
+	           JoinRelationSet &left_relation_set, JoinRelationSet &right_relation_set, ColumnBinding left_binding,
+	           ColumnBinding right_binding)
+	    : filter(std::move(filter)), set(set), filter_index(filter_index), join_type(join_type),
+	      left_relation_set(left_relation_set), right_relation_set(right_relation_set), left_binding(left_binding),
+	      right_binding(right_binding) {
 	}
 
 public:
@@ -62,10 +63,6 @@ public:
 	JoinType join_type;
 	optional_ptr<JoinRelationSet> left_relation_set;
 	optional_ptr<JoinRelationSet> right_relation_set;
-	//! required relations present in a join tree before applying
-	//! this FilterInfo. Needed to make sure filters above left joins
-	//! are applied above the left join
-	FilterInfoApplicationRule application_rule;
 	// TODO: change this to be a binding set
 	ColumnBinding left_binding;
 	ColumnBinding right_binding;
@@ -108,7 +105,7 @@ public:
 	//! products to create edges.
 	void CreateQueryGraphCrossProduct(JoinRelationSet &left, JoinRelationSet &right);
 
-	//! A map to store the optimal join plan found for a specific JoinRelationSet*
+	//! A map to store the optimal join plan found for a specific JoinRelationSet
 	optional_ptr<const reference_map_t<JoinRelationSet, unique_ptr<DPJoinNode>>> plans;
 
 private:

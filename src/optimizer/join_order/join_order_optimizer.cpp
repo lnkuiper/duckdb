@@ -28,7 +28,8 @@ unique_ptr<LogicalOperator> RemoveUnnecessaryProjections::RemoveProjectionsChild
 	return plan;
 }
 unique_ptr<LogicalOperator> RemoveUnnecessaryProjections::RemoveProjections(unique_ptr<LogicalOperator> plan) {
-	if (plan->type == LogicalOperatorType::LOGICAL_UNION || plan->type == LogicalOperatorType::LOGICAL_EXCEPT || plan->type == LogicalOperatorType::LOGICAL_INTERSECT) {
+	if (plan->type == LogicalOperatorType::LOGICAL_UNION || plan->type == LogicalOperatorType::LOGICAL_EXCEPT ||
+	    plan->type == LogicalOperatorType::LOGICAL_INTERSECT) {
 		// guaranteed to find a projection under this that is meant to keep the oclumn order in the presence of
 		// an optimization done by build side probe side.
 		for (idx_t i = 0; i < plan->children.size(); i++) {
@@ -89,7 +90,7 @@ unique_ptr<LogicalOperator> JoinOrderOptimizer::Optimize(unique_ptr<LogicalOpera
 	}
 
 	LogicalOperator *op = plan.get();
-	
+
 	// extract the relations that go into the hyper graph.
 	// We optimize the children of any non-reorderable operations we come across.
 	bool reorderable = query_graph_manager.Build(*this, *op);

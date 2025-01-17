@@ -2,7 +2,6 @@
 # description: Test Filters Pull Up
 # group: [optimizer]
 
-
 # TODO fix this test. Now that unnecessary projections are removed,
 mode skip
 

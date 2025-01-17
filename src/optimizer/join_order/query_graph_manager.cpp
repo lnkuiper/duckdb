@@ -84,82 +84,13 @@ void QueryGraphManager::CreateHyperGraphEdges() {
 	// create potential edges from the comparisons
 	for (auto &filter_info : filters_and_bindings) {
 		auto &filter = filter_info->filter;
-		// now check if it can be used as a join predicate
-		// A lot of this has already been done in RelationManager::ExtractEdges
-		if (filter->GetExpressionClass() == ExpressionClass::BOUND_COMPARISON) {
-			auto &comparison = filter->Cast<BoundComparisonExpression>();
-			// extract the bindings that are required for the left and right side of the comparison
-			unordered_set<idx_t> left_bindings, right_bindings;
-			relation_manager.ExtractRelationsFromExpression(*comparison.left, left_bindings);
-			relation_manager.ExtractRelationsFromExpression(*comparison.right, right_bindings);
-			relation_manager.GetColumnBinding(*comparison.left, filter_info->left_binding);
-			relation_manager.GetColumnBinding(*comparison.right, filter_info->right_binding);
-			if (!left_bindings.empty() && !right_bindings.empty()) {
-				// both the left and the right side have bindings
-				// first create the relation sets, if they do not exist
-				if (!filter_info->left_relation_set) {
-					filter_info->left_relation_set = &set_manager.GetJoinRelation(left_bindings);
-				}
-				if (!filter_info->right_relation_set) {
-					filter_info->right_relation_set = &set_manager.GetJoinRelation(right_bindings);
-				}
-				// we can only create a meaningful edge if the sets are not exactly the same
-				if (filter_info->left_relation_set != filter_info->right_relation_set) {
-					// check if the sets are disjoint
-					if (Disjoint(left_bindings, right_bindings)) {
-						// they are disjoint, we only need to create one set of edges in the join graph
-						query_graph.CreateEdge(*filter_info->left_relation_set, *filter_info->right_relation_set, filter_info);
-						query_graph.CreateEdge(*filter_info->right_relation_set, *filter_info->left_relation_set, filter_info);
-					}
-				}
+		if (!filter_info->left_relation_set->IsEmpty() && !filter_info->right_relation_set->IsEmpty()) {
+			// we can only create a meaningful edge if the sets are not exactly the same
+			if (filter_info->left_relation_set != filter_info->right_relation_set) {
+				// they are disjoint, we only need to create one set of edges in the join graph
+				query_graph.CreateEdge(*filter_info->left_relation_set, *filter_info->right_relation_set, filter_info);
+				query_graph.CreateEdge(*filter_info->right_relation_set, *filter_info->left_relation_set, filter_info);
 			}
-		} else if (filter->GetExpressionClass() == ExpressionClass::BOUND_CONJUNCTION) {
-			auto &conjunction = filter->Cast<BoundConjunctionExpression>();
-			if (conjunction.GetExpressionType() == ExpressionType::CONJUNCTION_OR ||
-			    filter_info->join_type == JoinType::INNER ||
-			    filter_info->join_type == JoinType::INVALID) {
-				// Currently we do not interpret Conjunction expressions as INNER joins
-				// for hyper graph edges. These are most likely OR conjunctions, and
-				// will be pushed down into a join later in the optimizer.
-				// Conjunction filters are mostly to help plan semi and anti joins at the moment.
-				continue;
-			}
-			unordered_set<idx_t> left_bindings, right_bindings;
-			D_ASSERT(filter_info->left_relation_set);
-			D_ASSERT(filter_info->right_relation_set);
-			D_ASSERT(filter_info->join_type == JoinType::SEMI || filter_info->join_type == JoinType::ANTI || filter_info->join_type == JoinType::LEFT);
-			for (auto &child_comp : conjunction.children) {
-				if (child_comp->GetExpressionClass() != ExpressionClass::BOUND_COMPARISON) {
-					continue;
-				}
-				auto &comparison = child_comp->Cast<BoundComparisonExpression>();
-				// extract the bindings that are required for the left and right side of the comparison
-				relation_manager.ExtractRelationsFromExpression(*comparison.left, left_bindings);
-				relation_manager.ExtractRelationsFromExpression(*comparison.right, right_bindings);
-				if (filter_info->left_binding.table_index == DConstants::INVALID_INDEX &&
-				    filter_info->left_binding.column_index == DConstants::INVALID_INDEX) {
-					relation_manager.GetColumnBinding(*comparison.left, filter_info->left_binding);
-				}
-				if (filter_info->right_binding.table_index == DConstants::INVALID_INDEX &&
-				    filter_info->right_binding.column_index == DConstants::INVALID_INDEX) {
-					relation_manager.GetColumnBinding(*comparison.right, filter_info->right_binding);
-				}
-			}
-			if (!left_bindings.empty() && !right_bindings.empty()) {
-				// we can only create a meaningful edge if the sets are not exactly the same
-				if (filter_info->left_relation_set != filter_info->right_relation_set) {
-					// check if the sets are disjoint
-					if (Disjoint(left_bindings, right_bindings)) {
-						// they are disjoint, we only need to create one set of edges in the join graph
-						query_graph.CreateEdge(*filter_info->left_relation_set, *filter_info->right_relation_set, filter_info);
-						query_graph.CreateEdge(*filter_info->right_relation_set, *filter_info->left_relation_set, filter_info);
-					}
-				}
-			}
-		} else {
-			unordered_set<idx_t> left_bindings, right_bindings;
-			relation_manager.ExtractRelationsFromExpression(*filter, left_bindings);
-			relation_manager.GetColumnBinding(*filter, filter_info->left_binding);
 		}
 	}
 }
@@ -240,6 +171,22 @@ static JoinCondition MaybeInvertConditions(unique_ptr<Expression> condition, boo
 	return cond;
 }
 
+void GetColumnBindingsFromExpression(Expression &expression, column_binding_set_t &column_bindings) {
+	if (expression.GetExpressionType() == ExpressionType::BOUND_COLUMN_REF) {
+		// Here you have a filter on a single column in a table. Return a binding for the column
+		// being filtered on so the filter estimator knows what HLL count to pull
+		auto &colref = expression.Cast<BoundColumnRefExpression>();
+		D_ASSERT(colref.depth == 0);
+		D_ASSERT(colref.binding.table_index != DConstants::INVALID_INDEX);
+		// only add column bindings that map to relations.
+		// map the base table index to the relation index used by the JoinOrderOptimizer
+		column_bindings.insert(ColumnBinding(colref.binding.table_index, colref.binding.column_index));
+	}
+	// TODO: handle inequality filters with functions.
+	ExpressionIterator::EnumerateChildren(
+	    expression, [&](Expression &expr) { GetColumnBindingsFromExpression(expr, column_bindings); });
+}
+
 GenerateJoinRelation QueryGraphManager::GenerateJoins(vector<unique_ptr<LogicalOperator>> &extracted_relations,
                                                       JoinRelationSet &set) {
 	optional_ptr<JoinRelationSet> left_node;
@@ -273,8 +220,6 @@ GenerateJoinRelation QueryGraphManager::GenerateJoins(vector<unique_ptr<LogicalO
 			}
 
 			auto join = make_uniq<LogicalComparisonJoin>(chosen_filter->join_type);
-			// Here we optimize build side probe side. Our build side is the right side
-			// So the right plans should have lower cardinalities.
 			join->children.push_back(std::move(left.op));
 			join->children.push_back(std::move(right.op));
 
@@ -291,10 +236,43 @@ GenerateJoinRelation QueryGraphManager::GenerateJoins(vector<unique_ptr<LogicalO
 				         (JoinRelationSet::IsSubset(*left.set, *f->right_relation_set) &&
 				          JoinRelationSet::IsSubset(*right.set, *f->left_relation_set)));
 
+				auto left_bindings = join->children[0]->GetColumnBindings();
+				auto right_bindings = join->children[1]->GetColumnBindings();
 				bool invert = !JoinRelationSet::IsSubset(*left.set, *f->left_relation_set);
-				// If the left and right set are inverted AND it is a semi or anti join
-				// swap left and right children back.
-				if (invert && (f->join_type == JoinType::SEMI || f->join_type == JoinType::ANTI)) {
+
+				if (condition->expression_class == ExpressionClass::BOUND_COMPARISON) {
+					auto &comparison = condition->Cast<BoundComparisonExpression>();
+					column_binding_set_t left_condition_bindings, right_condition_bindings;
+					GetColumnBindingsFromExpression(*comparison.left, left_condition_bindings);
+					GetColumnBindingsFromExpression(*comparison.right, right_condition_bindings);
+					for (auto &expr_binding : left_condition_bindings) {
+						bool found = false;
+						for (auto &l_binding : left_bindings) {
+							if (l_binding == expr_binding) {
+								found = true;
+								break;
+							}
+						}
+						if (!found) {
+							auto break_here = 0;
+						}
+					}
+					for (auto &expr_binding : right_condition_bindings) {
+						bool found = false;
+						for (auto &r_binding : right_bindings) {
+							if (r_binding == expr_binding) {
+								found = true;
+								break;
+							}
+						}
+						if (!found) {
+							auto break_here = 0;
+						}
+					}
+				}
+
+				// If the left and right set are inverted swap them back
+				if (invert) {
 					std::swap(left, right);
 					invert = false;
 				}
