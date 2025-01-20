@@ -35,33 +35,8 @@ bool QueryGraphManager::Build(JoinOrderOptimizer &optimizer, LogicalOperator &op
 	return true;
 }
 
-// void QueryGraphManager::GetColumnBinding(Expression &expression, ColumnBinding &binding) {
-// 	if (expression.GetExpressionType() == ExpressionType::BOUND_COLUMN_REF) {
-// 		// Here you have a filter on a single column in a table. Return a binding for the column
-// 		// being filtered on so the filter estimator knows what HLL count to pull
-// 		auto &colref = expression.Cast<BoundColumnRefExpression>();
-// 		D_ASSERT(colref.depth == 0);
-// 		D_ASSERT(colref.binding.table_index != DConstants::INVALID_INDEX);
-// 		// map the base table index to the relation index used by the JoinOrderOptimizer
-// 		D_ASSERT(relation_manager.relation_mapping.find(colref.binding.table_index) !=
-// 		         relation_manager.relation_mapping.end());
-// 		binding =
-// 		    ColumnBinding(relation_manager.relation_mapping[colref.binding.table_index], colref.binding.column_index);
-// 	}
-// 	// TODO: handle inequality filters with functions.
-// 	ExpressionIterator::EnumerateChildren(expression, [&](Expression &expr) { GetColumnBinding(expr, binding); });
-// }
-
 const vector<unique_ptr<FilterInfo>> &QueryGraphManager::GetFilterBindings() const {
 	return filters_and_bindings;
-}
-
-void FilterInfo::SetLeftSet(optional_ptr<JoinRelationSet> left_set_new) {
-	left_relation_set = left_set_new;
-}
-
-void FilterInfo::SetRightSet(optional_ptr<JoinRelationSet> right_set_new) {
-	right_relation_set = right_set_new;
 }
 
 static unique_ptr<LogicalOperator> PushFilter(unique_ptr<LogicalOperator> node, unique_ptr<Expression> expr) {
@@ -324,7 +299,7 @@ GenerateJoinRelation QueryGraphManager::GenerateJoins(vector<unique_ptr<LogicalO
 				// preemptively here
 				continue;
 			}
-			if (info.set.get().count > 0 && JoinRelationSet::IsSubset(*result_relation, info.set)) {
+			if (info.set->count > 0 && JoinRelationSet::IsSubset(*result_relation, *info.set)) {
 				auto &filter_and_binding = filters_and_bindings[info.filter_index];
 				auto filter = std::move(filter_and_binding->filter);
 				// if it is, we can push the filter

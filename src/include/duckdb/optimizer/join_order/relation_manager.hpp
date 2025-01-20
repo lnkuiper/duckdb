@@ -11,19 +11,18 @@
 #include "duckdb/common/unordered_map.hpp"
 #include "duckdb/common/unordered_set.hpp"
 #include "duckdb/optimizer/join_order/cardinality_estimator.hpp"
-#include "duckdb/optimizer/join_order/join_node.hpp"
 #include "duckdb/optimizer/join_order/join_relation.hpp"
 #include "duckdb/optimizer/join_order/relation_statistics_helper.hpp"
 #include "duckdb/parser/expression_map.hpp"
 #include "duckdb/planner/logical_operator.hpp"
 #include "duckdb/planner/logical_operator_visitor.hpp"
 
-#include <duckdb/common/enums/join_type.hpp>
+#include "duckdb/common/enums/join_type.hpp"
+#include "duckdb/parser/expression/conjunction_expression.hpp"
 
 namespace duckdb {
 
 class JoinOrderOptimizer;
-class FilterInfo;
 
 //! Represents a single relation and any metadata accompanying that relation
 struct SingleJoinRelation {
@@ -36,6 +35,34 @@ struct SingleJoinRelation {
 	SingleJoinRelation(LogicalOperator &op, optional_ptr<LogicalOperator> parent, RelationStats stats)
 	    : op(op), parent(parent), stats(std::move(stats)) {
 	}
+};
+
+//! FilterInfo models strores filter information so that edges between relations can be made
+//! with the original ColumnBinding information available so that the cardinality estimator can
+//! view the statistics of the underlying base tables.
+class FilterInfo {
+public:
+	FilterInfo(unique_ptr<Expression> filter, optional_ptr<JoinRelationSet> set, idx_t filter_index, JoinType join_type,
+	           optional_ptr<JoinRelationSet> left_relation_set, optional_ptr<JoinRelationSet> right_relation_set,
+	           ColumnBinding left_binding, ColumnBinding right_binding)
+	    : filter(std::move(filter)), set(set), filter_index(filter_index), join_type(join_type),
+	      left_relation_set(left_relation_set), right_relation_set(right_relation_set), left_binding(left_binding),
+	      right_binding(right_binding) {
+	}
+
+public:
+	unique_ptr<Expression> filter;
+	optional_ptr<JoinRelationSet> set;
+	idx_t filter_index;
+	JoinType join_type;
+	optional_ptr<JoinRelationSet> left_relation_set;
+	optional_ptr<JoinRelationSet> right_relation_set;
+	// TODO: change this to be a binding set
+	ColumnBinding left_binding;
+	ColumnBinding right_binding;
+
+	void SetLeftSet(optional_ptr<JoinRelationSet> left_set_new);
+	void SetRightSet(optional_ptr<JoinRelationSet> right_set_new);
 };
 
 class RelationManager {
@@ -59,9 +86,15 @@ public:
 	void ExtractColumnBindingsFromExpression(Expression &expression, unordered_set<idx_t> &bindings);
 	//! Extract the Column binding from an expression
 	void ExtractColumnBinding(Expression &expression, ColumnBinding &binding);
-	unique_ptr<FilterInfo> CreateFilterInfoFromExpression(BoundComparisonExpression &comparison,
-	                                                      JoinRelationSetManager &set_manager,
-	                                                      JoinType join_type = JoinType::INNER);
+	// Inspects an expression and creates filter info instances that can connect two relations
+	// If the expreession (or conjunction expression children cannot create a FilterInfo), then
+	// they are returned to be added to the filter_op so they are pushed down at the end of reconstruction.
+	vector<unique_ptr<Expression>> CreateFilterInfoFromExpression(unique_ptr<Expression> expr,
+	                                                              JoinRelationSetManager &set_manager,
+	                                                              JoinType join_type = JoinType::INNER);
+	vector<unique_ptr<Expression>>
+	CreateFilterFromConjunctionChildren(unique_ptr<BoundConjunctionExpression> conjunction_expression,
+	                                    JoinRelationSetManager &set_manager, JoinType join_type);
 
 	optional_ptr<JoinRelationSet> GetJoinRelations(column_binding_set_t column_bindings,
 	                                               JoinRelationSetManager &set_manager);
@@ -85,6 +118,10 @@ private:
 	//! Set of all relations considered in the join optimizer
 	vector<unique_ptr<SingleJoinRelation>> relations;
 	unordered_set<idx_t> no_cross_product_relations;
+
+	//! used when extracting edges from the relations. They are then passed to the
+	//! query graph manager.
+	vector<unique_ptr<FilterInfo>> filter_infos_;
 };
 
 } // namespace duckdb
