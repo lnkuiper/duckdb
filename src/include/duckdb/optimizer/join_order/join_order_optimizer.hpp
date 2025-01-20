@@ -66,14 +66,12 @@ private:
 
 class RemoveUnnecessaryProjections {
 public:
-	explicit RemoveUnnecessaryProjections(ClientContext &context, LogicalOperator &root);
+	explicit RemoveUnnecessaryProjections();
 	unique_ptr<LogicalOperator> RemoveProjections(unique_ptr<LogicalOperator> plan);
 	unique_ptr<LogicalOperator> RemoveProjectionsChildren(unique_ptr<LogicalOperator> plan);
 	ColumnBindingReplacer replacer;
 
 private:
-	ClientContext &context;
-	LogicalOperator &root;
 	bool first_projection;
 };
 

@@ -104,11 +104,13 @@ void CardinalityEstimator::InitEquivalentRelations(const vector<unique_ptr<Filte
 	// For each filter, we fill keep track of the index of the equivalent relation set
 	// the left and right relation needs to be added to.
 	for (auto &filter : filter_infos) {
-		if (SingleColumnFilter(*filter)) {
+		if (SingleColumnFilter(*filter) || filter->SingleColumnFilter()) {
 			// Filter on one relation, (i.e. string or range filter on a column).
 			// Grab the first relation and add it to  the equivalence_relations
 			// Why am I adding this to equivalent relations?
-			AddRelationTdom(*filter);
+			// TODO: why is a single column filter getting added to Tdom?
+			//  some other column should eventually take care of it right?
+			// AddRelationTdom(*filter);
 			continue;
 		} else if (EmptyFilter(*filter)) {
 			continue;

@@ -72,8 +72,7 @@ unique_ptr<LogicalOperator> RemoveUnnecessaryProjections::RemoveProjections(uniq
 	return RemoveProjectionsChildren(std::move(plan->children[0]));
 }
 
-RemoveUnnecessaryProjections::RemoveUnnecessaryProjections(ClientContext &context, LogicalOperator &root)
-    : context(context), root(root) {
+RemoveUnnecessaryProjections::RemoveUnnecessaryProjections() {
 	first_projection = true;
 }
 
@@ -82,7 +81,7 @@ unique_ptr<LogicalOperator> JoinOrderOptimizer::Optimize(unique_ptr<LogicalOpera
 
 	// make sure query graph manager has not extracted a relation graph already
 	if (remove_projections) {
-		RemoveUnnecessaryProjections blah(context, *plan);
+		RemoveUnnecessaryProjections blah;
 		plan = blah.RemoveProjections(std::move(plan));
 		blah.replacer.VisitOperator(*plan);
 

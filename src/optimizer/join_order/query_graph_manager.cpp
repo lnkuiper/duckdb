@@ -58,7 +58,6 @@ static unique_ptr<LogicalOperator> PushFilter(unique_ptr<LogicalOperator> node, 
 void QueryGraphManager::CreateHyperGraphEdges() {
 	// create potential edges from the comparisons
 	for (auto &filter_info : filters_and_bindings) {
-		auto &filter = filter_info->filter;
 		if (!filter_info->left_relation_set->IsEmpty() && !filter_info->right_relation_set->IsEmpty()) {
 			// we can only create a meaningful edge if the sets are not exactly the same
 			if (filter_info->left_relation_set != filter_info->right_relation_set) {
@@ -215,41 +214,11 @@ GenerateJoinRelation QueryGraphManager::GenerateJoins(vector<unique_ptr<LogicalO
 				auto right_bindings = join->children[1]->GetColumnBindings();
 				bool invert = !JoinRelationSet::IsSubset(*left.set, *f->left_relation_set);
 
-				if (condition->expression_class == ExpressionClass::BOUND_COMPARISON) {
-					auto &comparison = condition->Cast<BoundComparisonExpression>();
-					column_binding_set_t left_condition_bindings, right_condition_bindings;
-					GetColumnBindingsFromExpression(*comparison.left, left_condition_bindings);
-					GetColumnBindingsFromExpression(*comparison.right, right_condition_bindings);
-					if (left_condition_bindings.find(ColumnBinding(20, 1)) != left_condition_bindings.end()) {
-						auto break_here = 0;
-					}
-					bool all_conditions_found = true;
-					for (auto &expr_binding : left_condition_bindings) {
-						bool condition_binding_found = false;
-						for (auto &l_binding : left_bindings) {
-							if (l_binding == expr_binding) {
-								condition_binding_found = true;
-								break;
-							}
-						}
-						all_conditions_found &= condition_binding_found;
-					}
-					for (auto &expr_binding : right_condition_bindings) {
-						bool condition_binding_found = false;
-						for (auto &r_binding : right_bindings) {
-							if (r_binding == expr_binding) {
-								condition_binding_found = true;
-								break;
-							}
-						}
-						all_conditions_found &= condition_binding_found;
-					}
-				}
-
 				// If the left and right set are inverted for LEFT/SEMI/ANTI joins then swap them back
 				// and set invert = false. This is to preserve left/rightedness of relations
 				if (invert && (f->join_type == JoinType::LEFT || f->join_type == JoinType::SEMI ||
 				               f->join_type == JoinType::ANTI)) {
+					std::swap(join->children[0], join->children[1]);
 					std::swap(left, right);
 					invert = false;
 				}

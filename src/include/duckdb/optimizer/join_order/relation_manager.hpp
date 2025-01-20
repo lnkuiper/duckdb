@@ -49,6 +49,11 @@ public:
 	      left_relation_set(left_relation_set), right_relation_set(right_relation_set), left_binding(left_binding),
 	      right_binding(right_binding) {
 	}
+	FilterInfo(unique_ptr<Expression> filter, optional_ptr<JoinRelationSet> set, idx_t filter_index, JoinType join_type,
+	           optional_ptr<JoinRelationSet> left_relation_set, optional_ptr<JoinRelationSet> right_relation_set)
+	    : filter(std::move(filter)), set(set), filter_index(filter_index), join_type(join_type),
+	      left_relation_set(left_relation_set), right_relation_set(right_relation_set) {
+	}
 
 public:
 	unique_ptr<Expression> filter;
@@ -63,6 +68,7 @@ public:
 
 	void SetLeftSet(optional_ptr<JoinRelationSet> left_set_new);
 	void SetRightSet(optional_ptr<JoinRelationSet> right_set_new);
+	bool SingleColumnFilter();
 };
 
 class RelationManager {
