@@ -20,7 +20,7 @@ struct JoinRelationSet {
 	}
 
 	string ToString() const;
-	bool IsEmpty() {
+	bool Empty() {
 		return count == 0;
 	}
 

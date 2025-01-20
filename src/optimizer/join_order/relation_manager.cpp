@@ -42,7 +42,7 @@ void FilterInfo::SetRightSet(optional_ptr<JoinRelationSet> right_set_new) {
 }
 
 bool FilterInfo::SingleColumnFilter() {
-	return left_relation_set->IsEmpty() || right_relation_set->IsEmpty();
+	return left_relation_set->Empty() || right_relation_set->Empty();
 }
 
 void RelationManager::AddAggregateOrWindowRelation(LogicalOperator &op, optional_ptr<LogicalOperator> parent,
@@ -527,9 +527,9 @@ RelationManager::CreateFilterFromConjunctionChildren(unique_ptr<BoundConjunction
 	column_binding_set_t left_bindings, right_bindings;
 	vector<unique_ptr<Expression>> leftover_expressions;
 	unique_ptr<FilterInfo> filter_info = nullptr;
-	// create new conjunction expression.
 	// gather all relations/bindings from left expressions and all relations/bindings from the right expression sides
-	// this allows a filter like (t1.a = t2.b OR t1.c = t2.d) to still be join conditions
+	// this encapsulates filters like (t1.a = t2.b OR t1.c = t2.d) to be a join condition
+	// also LEFT/SEMI/ANTI joins with multiple conditions.
 	for (auto &bound_expr : conjunction_expression->children) {
 		if (bound_expr->GetExpressionClass() == ExpressionClass::BOUND_COMPARISON) {
 			auto &comp = bound_expr->Cast<BoundComparisonExpression>();
@@ -554,7 +554,7 @@ RelationManager::CreateFilterFromConjunctionChildren(unique_ptr<BoundConjunction
 	auto right_relations = GetJoinRelations(right_bindings, set_manager);
 	optional_ptr<JoinRelationSet> all_relations = set_manager.Union(*left_relations, *right_relations);
 	D_ASSERT(left_relations && right_relations && all_relations && conjunction_expression);
-	if (left_relations->IsEmpty() || right_relations->IsEmpty()) {
+	if (left_relations->Empty() || right_relations->Empty()) {
 		filter_info = make_uniq<FilterInfo>(std::move(conjunction_expression), all_relations.get(),
 		                                    filter_infos_.size(), join_type, *left_relations, *right_relations);
 	} else {
@@ -569,8 +569,6 @@ RelationManager::CreateFilterFromConjunctionChildren(unique_ptr<BoundConjunction
 vector<unique_ptr<Expression>> RelationManager::CreateFilterInfoFromExpression(unique_ptr<Expression> expr,
                                                                                JoinRelationSetManager &set_manager,
                                                                                JoinType join_type) {
-	// what is the comparison is something like "T1.a = 'random_string'"
-	// This is not a join filter, so can't push it
 	// Given a filter expression operator, check the following
 	// if join_type == JoinType::LEFT, JoinType::ANTI, JoinType::SEMI,
 	// 	-> treat expression as conjunction OR so and conditions don't get split up.
@@ -653,7 +651,7 @@ vector<unique_ptr<Expression>> RelationManager::CreateFilterInfoFromExpression(u
 		D_ASSERT(leftover_expressions.empty());
 		break;
 	}
-	// for inner joins, the filter condition can come fromr regular filter operation
+	// for inner joins, the filter condition can come from regular filter operation
 	// so we want to extract each expressions individually (if it's a conjunction and)
 	case JoinType::INNER: {
 		if (expr->expression_class == ExpressionClass::BOUND_CONJUNCTION) {
@@ -715,7 +713,7 @@ vector<unique_ptr<Expression>> RelationManager::CreateFilterInfoFromExpression(u
 	} else if (new_expression) {
 		D_ASSERT(new_expression);
 		D_ASSERT(set && left_set && right_set);
-		if (left_set->IsEmpty() || right_set->IsEmpty()) {
+		if (left_set->Empty() || right_set->Empty()) {
 			new_filter = make_uniq<FilterInfo>(std::move(new_expression), set.get(), filter_infos_.size(), join_type,
 			                                   *left_set, *right_set);
 		} else {

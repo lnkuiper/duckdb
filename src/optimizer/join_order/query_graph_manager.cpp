@@ -58,7 +58,7 @@ static unique_ptr<LogicalOperator> PushFilter(unique_ptr<LogicalOperator> node, 
 void QueryGraphManager::CreateHyperGraphEdges() {
 	// create potential edges from the comparisons
 	for (auto &filter_info : filters_and_bindings) {
-		if (!filter_info->left_relation_set->IsEmpty() && !filter_info->right_relation_set->IsEmpty()) {
+		if (!filter_info->left_relation_set->Empty() && !filter_info->right_relation_set->Empty()) {
 			// we can only create a meaningful edge if the sets are not exactly the same
 			if (filter_info->left_relation_set != filter_info->right_relation_set) {
 				// they are disjoint, we only need to create one set of edges in the join graph
