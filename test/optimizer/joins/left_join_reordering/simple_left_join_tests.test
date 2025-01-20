@@ -2,22 +2,38 @@
 # description: Reordering left joins produces still valid results
 # group: [left_join_reordering]
 
-statement ok
-create table t1 as select range%150 a1, range%150 a2 from range(100000);
+# statement ok
+# create table t1 as select range%150 a1, range%150 a2 from range(100000);
+#
+# statement ok
+# create table t2 as select range b1, range b2 from range(10000);
+#
+# statement ok
+# create table t3 as select range c1, range c2 from range(150);
+#
+# statement ok
+# select * from (
+# 	select * from t1 left join
+# 	t2 on (a1 = b1 and a2 = b2)
+# 	where b2 is null
+# ),
+#  t3 where a2 = c2;
+
 
 statement ok
-create table t2 as select range b1, range b2 from range(10000);
+create or replace table t3 as select range c from range(200);
 
 statement ok
-create table t3 as select range c1, range c2 from range(150);
+create or replace table t1 as select range a from range(100);
 
 statement ok
-select * from (
-	select * from t1 left join
-	t2 on (a1 = b1 and a2 = b2)
-	where b2 is null
-),
- t3 where a2 = c2;
+create or replace table t2 as select range b from range(50);
+
+query II
+explain select * from t1 left join t2 on a = b, t3 where b is null and b = c;
+----
+physical_plan	<REGEX>:.*FILTER.*
+
 
 mode skip
 
