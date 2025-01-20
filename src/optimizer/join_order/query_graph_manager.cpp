@@ -29,7 +29,7 @@ bool QueryGraphManager::Build(JoinOrderOptimizer &optimizer, LogicalOperator &op
 		return false;
 	}
 	// extract the edges of the hypergraph, creating a list of filters and their associated bindings.
-	filters_and_bindings = relation_manager.ExtractEdges(op, filter_operators, set_manager);
+	filters_and_bindings = relation_manager.ExtractEdges(filter_operators, set_manager);
 	// Create the query_graph hyper edges
 	CreateHyperGraphEdges();
 	return true;

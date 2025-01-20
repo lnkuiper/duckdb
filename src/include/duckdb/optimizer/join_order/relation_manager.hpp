@@ -84,8 +84,7 @@ public:
 
 	//! for each join filter in the logical plan op, extract the relations that are referred to on
 	//! both sides of the join filter, along with the tables & indexes.
-	vector<unique_ptr<FilterInfo>> ExtractEdges(LogicalOperator &op,
-	                                            vector<reference<LogicalOperator>> &filter_operators,
+	vector<unique_ptr<FilterInfo>> ExtractEdges(vector<reference<LogicalOperator>> &filter_operators,
 	                                            JoinRelationSetManager &set_manager);
 
 	//! Extract all column bindings from an expression with the
