@@ -298,7 +298,6 @@ DenomInfo CardinalityEstimator::GetDenominator(JoinRelationSet &set) {
 
 	// edges are guaranteed to be in order of largest tdom to smallest tdom.
 	unordered_set<idx_t> unused_edge_tdoms;
-	auto LEFT_JOIN_COEFFICIENT = 0.3;
 	auto edges = GetEdges(relations_to_tdoms, set);
 	for (auto &edge : edges) {
 		if (subgraphs.size() == 1 && subgraphs.at(0).relations->ToString() == set.ToString()) {

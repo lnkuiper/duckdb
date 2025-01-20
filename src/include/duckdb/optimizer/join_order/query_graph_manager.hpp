@@ -77,8 +77,6 @@ private:
 
 	QueryGraphEdges query_graph;
 
-	// void GetColumnBinding(Expression &expression, ColumnBinding &binding);
-
 	void CreateHyperGraphEdges();
 
 	GenerateJoinRelation GenerateJoins(vector<unique_ptr<LogicalOperator>> &extracted_relations, JoinRelationSet &set);

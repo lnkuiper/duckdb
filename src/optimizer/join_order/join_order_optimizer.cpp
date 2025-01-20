@@ -41,6 +41,7 @@ unique_ptr<LogicalOperator> RemoveUnnecessaryProjections::RemoveProjections(uniq
 	if (plan->type != LogicalOperatorType::LOGICAL_PROJECTION) {
 		return RemoveProjectionsChildren(std::move(plan));
 	}
+	// operator is a projection. Remove if possible
 	if (first_projection) {
 		first_projection = false;
 		return RemoveProjectionsChildren(std::move(plan));
