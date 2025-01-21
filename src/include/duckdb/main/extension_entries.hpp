@@ -430,6 +430,7 @@ static constexpr ExtensionFunctionEntry EXTENSION_FUNCTIONS[] = {
     {"map_concat", "core_functions", CatalogType::SCALAR_FUNCTION_ENTRY},
     {"map_entries", "core_functions", CatalogType::SCALAR_FUNCTION_ENTRY},
     {"map_extract", "core_functions", CatalogType::SCALAR_FUNCTION_ENTRY},
+    {"map_extract_value", "core_functions", CatalogType::SCALAR_FUNCTION_ENTRY},
     {"map_from_entries", "core_functions", CatalogType::SCALAR_FUNCTION_ENTRY},
     {"map_keys", "core_functions", CatalogType::SCALAR_FUNCTION_ENTRY},
     {"map_values", "core_functions", CatalogType::SCALAR_FUNCTION_ENTRY},
@@ -645,6 +646,7 @@ static constexpr ExtensionFunctionEntry EXTENSION_FUNCTIONS[] = {
     {"st_zmax", "spatial", CatalogType::SCALAR_FUNCTION_ENTRY},
     {"st_zmflag", "spatial", CatalogType::SCALAR_FUNCTION_ENTRY},
     {"st_zmin", "spatial", CatalogType::SCALAR_FUNCTION_ENTRY},
+    {"start_ui", "motherduck", CatalogType::TABLE_FUNCTION_ENTRY},
     {"starts_with", "core_functions", CatalogType::SCALAR_FUNCTION_ENTRY},
     {"stats", "core_functions", CatalogType::SCALAR_FUNCTION_ENTRY},
     {"stddev", "core_functions", CatalogType::AGGREGATE_FUNCTION_ENTRY},
@@ -980,6 +982,7 @@ static constexpr ExtensionEntry EXTENSION_SETTINGS[] = {
     {"s3_use_ssl", "httpfs"},
     {"sqlite_all_varchar", "sqlite_scanner"},
     {"timezone", "icu"},
+    {"unsafe_enable_version_guessing", "iceberg"},
 }; // END_OF_EXTENSION_SETTINGS
 
 // Note: these are currently hardcoded in scripts/generate_extensions_function.py
@@ -1066,9 +1069,24 @@ static constexpr ExtensionEntry EXTENSION_SECRET_PROVIDERS[] = {
     {"mysql/config", "mysql_scanner"},
     {"postgres/config", "postgres_scanner"}}; // EXTENSION_SECRET_PROVIDERS
 
-static constexpr const char *AUTOLOADABLE_EXTENSIONS[] = {
-    "aws",   "azure", "autocomplete", "core_functions", "delta",   "excel",          "fts",      "httpfs",
-    "inet",  "icu",   "json",         "mysql_scanner",  "parquet", "sqlite_scanner", "sqlsmith", "postgres_scanner",
-    "tpcds", "tpch"}; // END_OF_AUTOLOADABLE_EXTENSIONS
+static constexpr const char *AUTOLOADABLE_EXTENSIONS[] = {"aws",
+                                                          "azure",
+                                                          "autocomplete",
+                                                          "core_functions",
+                                                          "delta",
+                                                          "excel",
+                                                          "fts",
+                                                          "httpfs",
+                                                          "inet",
+                                                          "icu",
+                                                          "json",
+                                                          "motherduck",
+                                                          "mysql_scanner",
+                                                          "parquet",
+                                                          "sqlite_scanner",
+                                                          "sqlsmith",
+                                                          "postgres_scanner",
+                                                          "tpcds",
+                                                          "tpch"}; // END_OF_AUTOLOADABLE_EXTENSIONS
 
 } // namespace duckdb
