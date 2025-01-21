@@ -469,12 +469,13 @@ void RelationManager::GetColumnBindingsFromExpression(Expression &expression, co
 		column_bindings.insert(
 		    ColumnBinding(relation_mapping[colref.binding.table_index], colref.binding.column_index));
 	}
+
 	// TODO: handle inequality filters with functions.
 	ExpressionIterator::EnumerateChildren(
 	    expression, [&](Expression &expr) { GetColumnBindingsFromExpression(expr, column_bindings); });
 }
 
-optional_ptr<JoinRelationSet> RelationManager::GetJoinRelations(column_binding_set_t column_bindings,
+optional_ptr<JoinRelationSet> RelationManager::GetJoinRelations(column_binding_set_t &column_bindings,
                                                                 JoinRelationSetManager &set_manager) {
 	optional_ptr<JoinRelationSet> ret = set_manager.GetEmptyJoinRelationSet();
 	for (auto &binding : column_bindings) {

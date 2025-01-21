@@ -101,7 +101,7 @@ public:
 	CreateFilterFromConjunctionChildren(unique_ptr<BoundConjunctionExpression> conjunction_expression,
 	                                    JoinRelationSetManager &set_manager, JoinType join_type);
 
-	optional_ptr<JoinRelationSet> GetJoinRelations(column_binding_set_t column_bindings,
+	optional_ptr<JoinRelationSet> GetJoinRelations(column_binding_set_t &column_bindings,
 	                                               JoinRelationSetManager &set_manager);
 	void GetColumnBindingsFromExpression(Expression &expression, column_binding_set_t &column_bindings);
 	void AddRelation(LogicalOperator &op, optional_ptr<LogicalOperator> parent, const RelationStats &stats);
