@@ -98,6 +98,7 @@ public:
 		}
 		if (new_size > alloc_len) {
 			alloc_len = NextPowerOfTwo(new_size);
+			allocated_data.Reset();
 			allocated_data = allocator.Allocate(alloc_len);
 			ptr = allocated_data.get();
 		}
