@@ -104,15 +104,7 @@ void CardinalityEstimator::InitEquivalentRelations(const vector<unique_ptr<Filte
 	// For each filter, we fill keep track of the index of the equivalent relation set
 	// the left and right relation needs to be added to.
 	for (auto &filter : filter_infos) {
-		if (SingleColumnFilter(*filter) || filter->SingleColumnFilter()) {
-			// Filter on one relation, (i.e. string or range filter on a column).
-			// Grab the first relation and add it to  the equivalence_relations
-			// Why am I adding this to equivalent relations?
-			// TODO: why is a single column filter getting added to Tdom?
-			//  some other column should eventually take care of it right?
-			// AddRelationTdom(*filter);
-			continue;
-		} else if (EmptyFilter(*filter)) {
+		if (EmptyFilter(*filter) || filter->SingleColumnFilter()) {
 			continue;
 		}
 		D_ASSERT(filter->left_relation_set->count >= 1);
@@ -322,7 +314,7 @@ DenomInfo CardinalityEstimator::GetDenominator(JoinRelationSet &set) {
 			if (edge.filter_info->join_type == JoinType::LEFT) {
 				auto denom =
 				    edge.has_tdom_hll ? static_cast<double>(edge.tdom_hll) : static_cast<double>(edge.tdom_no_hll);
-				D_ASSERT(denom >= 1);
+				denom = MaxValue<double>(denom, 1);
 				left_subgraph.numerator_relations_extra = 1 + LEFT_JOIN_COEFFICIENT * (denom - 1);
 			}
 			left_subgraph.relations = edge.filter_info->set;

@@ -24,11 +24,11 @@ create table t3 as from values (1), (2) t(c);
 query III
 select * from t1 left join (select * from t2, t3 where b = c) on a = c order by all;
 ----
-NULL	NULL	NULL
 0	NULL	NULL
 1	1	1
 2	NULL	NULL
 3	NULL	NULL
+NULL	NULL	NULL
 
 # illegal reordering of test above ((a ⟕ c) ⨝ b)
 query III
@@ -41,8 +41,7 @@ select * from (from t1 left join t3 on a=c), t2 where b = c order by all;
 query III
 select * from t1 join t2 on a = b left join t3 on b = c order by all;
 ----
+0	0	NULL
 1	1	1
-0	0
-
 
 # two && three left joins.

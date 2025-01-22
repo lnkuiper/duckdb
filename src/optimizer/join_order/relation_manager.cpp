@@ -11,6 +11,8 @@
 #include "duckdb/planner/expression_iterator.hpp"
 #include "duckdb/planner/operator/list.hpp"
 
+#include <valarray>
+
 namespace duckdb {
 
 const vector<RelationStats> RelationManager::GetRelationStats() {
@@ -587,7 +589,8 @@ vector<unique_ptr<Expression>> RelationManager::CreateFilterInfoFromExpression(u
 			auto unused_expressions = CreateFilterFromConjunctionChildren(std::move(conj), set_manager, join_type);
 			// there should not be any unused expressions here.
 			D_ASSERT(unused_expressions.empty());
-			// TODO: find out if I can guarantee the last added filter_info is what I need
+			D_ASSERT(!filter_infos_.empty());
+			// We can guarantee there is a filterr info since the filter is created from a semi anti condition.
 			auto &new_filter = *filter_infos_.back();
 			left_set = new_filter.left_relation_set;
 			right_set = new_filter.right_relation_set;
@@ -603,7 +606,7 @@ vector<unique_ptr<Expression>> RelationManager::CreateFilterInfoFromExpression(u
 			// filter can take place. This means the left join will be planned before the filter.
 			for (auto &filter : filter_infos_) {
 				if (filter->join_type == JoinType::LEFT) {
-					// TODO: how to handle nested left joins? Maybe already handled since RHS is a singular relation?
+					// don't inspect the filter we just created.
 					continue;
 				}
 				// if any filter filters on just the right set,
