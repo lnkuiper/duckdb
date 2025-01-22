@@ -12,7 +12,7 @@ statement ok
 create table t3 as select range c1, range c2 from range(150);
 
 statement ok
-pragma disabled_optimizers='build_side_probe_side';
+pragma disabled_optimizers='build_side_probe_side, compressed_materialization, column_lifetime';
 
 # subquery should be removed and INNER join should be pushed into the left
 query II

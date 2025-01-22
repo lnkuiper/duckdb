@@ -340,7 +340,7 @@ DenomInfo CardinalityEstimator::GetDenominator(JoinRelationSet &set) {
 			if (edge.filter_info->join_type == JoinType::LEFT) {
 				auto denom =
 				    edge.has_tdom_hll ? static_cast<double>(edge.tdom_hll) : static_cast<double>(edge.tdom_no_hll);
-				D_ASSERT(denom >= 1);
+				denom = MaxValue<double>(denom, 1);
 				left_subgraph->numerator_relations_extra = 1 + LEFT_JOIN_COEFFICIENT * (denom - 1);
 			}
 			left_subgraph->relations = &set_manager.Union(*left_subgraph->relations, *right_subgraph.relations);
