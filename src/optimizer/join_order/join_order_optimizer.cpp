@@ -29,8 +29,9 @@ unique_ptr<LogicalOperator> RemoveUnnecessaryProjections::RemoveProjectionsChild
 }
 unique_ptr<LogicalOperator> RemoveUnnecessaryProjections::RemoveProjections(unique_ptr<LogicalOperator> plan) {
 	if (plan->type == LogicalOperatorType::LOGICAL_UNION || plan->type == LogicalOperatorType::LOGICAL_EXCEPT ||
-	    plan->type == LogicalOperatorType::LOGICAL_INTERSECT) {
-		// guaranteed to find a projection under this that is meant to keep the oclumn order in the presence of
+	    plan->type == LogicalOperatorType::LOGICAL_INTERSECT || plan->type == LogicalOperatorType::LOGICAL_RECURSIVE_CTE ||
+	    plan->type == LogicalOperatorType::LOGICAL_MATERIALIZED_CTE) {
+		// guaranteed to find a projection under this that is meant to keep the column order in the presence of
 		// an optimization done by build side probe side.
 		for (idx_t i = 0; i < plan->children.size(); i++) {
 			first_projection = true;
@@ -82,9 +83,9 @@ unique_ptr<LogicalOperator> JoinOrderOptimizer::Optimize(unique_ptr<LogicalOpera
 
 	// make sure query graph manager has not extracted a relation graph already
 	if (remove_projections) {
-		RemoveUnnecessaryProjections blah;
-		plan = blah.RemoveProjections(std::move(plan));
-		blah.replacer.VisitOperator(*plan);
+		RemoveUnnecessaryProjections remover;
+		plan = remover.RemoveProjections(std::move(plan));
+		remover.replacer.VisitOperator(*plan);
 
 		auto bindings = plan->GetColumnBindings();
 	}
