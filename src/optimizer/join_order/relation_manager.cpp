@@ -768,9 +768,11 @@ vector<unique_ptr<FilterInfo>> RelationManager::ExtractEdges(vector<reference<Lo
 			f_op.expressions = std::move(leftover_expressions);
 		}
 	}
+#ifdef DEBUG // otherwise tidy thinks &filter is unused.
 	for (auto &filter : filter_infos_) {
 		D_ASSERT(!filter->set->Empty());
 	}
+#endif
 	return std::move(filter_infos_);
 }
 

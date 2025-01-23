@@ -29,7 +29,8 @@ unique_ptr<LogicalOperator> RemoveUnnecessaryProjections::RemoveProjectionsChild
 }
 unique_ptr<LogicalOperator> RemoveUnnecessaryProjections::RemoveProjections(unique_ptr<LogicalOperator> plan) {
 	if (plan->type == LogicalOperatorType::LOGICAL_UNION || plan->type == LogicalOperatorType::LOGICAL_EXCEPT ||
-	    plan->type == LogicalOperatorType::LOGICAL_INTERSECT || plan->type == LogicalOperatorType::LOGICAL_RECURSIVE_CTE ||
+	    plan->type == LogicalOperatorType::LOGICAL_INTERSECT ||
+	    plan->type == LogicalOperatorType::LOGICAL_RECURSIVE_CTE ||
 	    plan->type == LogicalOperatorType::LOGICAL_MATERIALIZED_CTE) {
 		// guaranteed to find a projection under this that is meant to keep the column order in the presence of
 		// an optimization done by build side probe side.
