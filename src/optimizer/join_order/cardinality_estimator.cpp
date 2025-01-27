@@ -152,7 +152,7 @@ vector<FilterInfoWithTotalDomains> GetEdges(vector<RelationsToTDom> &relations_t
 	vector<FilterInfoWithTotalDomains> res;
 	for (auto &relation_2_tdom : relations_to_tdom) {
 		for (auto &filter : relation_2_tdom.filters) {
-			if (JoinRelationSet::IsSubset(requested_set, *filter->set)) {
+			if (JoinRelationSet::IsSubset(requested_set, *filter->set) && filter->left_relation_set != filter->right_relation_set) {
 				FilterInfoWithTotalDomains new_edge(filter, relation_2_tdom);
 				res.push_back(new_edge);
 			}
