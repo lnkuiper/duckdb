@@ -108,9 +108,7 @@ public:
 
 	void Initialize(ArenaAllocator &allocator, const idx_t capacity_p) {
 		capacity = capacity_p;
-		auto ptr = allocator.AllocateAligned(capacity * sizeof(HeapEntry<T>));
-		memset(ptr, 0, capacity * sizeof(HeapEntry<T>));
-		heap = reinterpret_cast<HeapEntry<T> *>(ptr);
+		heap = reinterpret_cast<HeapEntry<T> *>(allocator.AllocateAligned(capacity * sizeof(HeapEntry<T>)));
 		size = 0;
 	}
 
@@ -129,6 +127,7 @@ public:
 
 		// If the heap is not full, insert the value into a new slot
 		if (size < capacity) {
+			heap[size] = HeapEntry<T>();
 			heap[size++].Assign(allocator, value);
 			std::push_heap(heap, heap + size, Compare);
 		}
@@ -180,9 +179,7 @@ public:
 
 	void Initialize(ArenaAllocator &allocator, const idx_t capacity_p) {
 		capacity = capacity_p;
-		auto ptr = allocator.AllocateAligned(capacity * sizeof(STORAGE_TYPE));
-		memset(ptr, 0, capacity * sizeof(STORAGE_TYPE));
-		heap = reinterpret_cast<STORAGE_TYPE *>(ptr);
+		heap = reinterpret_cast<STORAGE_TYPE *>(allocator.AllocateAligned(capacity * sizeof(STORAGE_TYPE)));
 		size = 0;
 	}
 
@@ -201,6 +198,7 @@ public:
 
 		// If the heap is not full, insert the value into a new slot
 		if (size < capacity) {
+			heap[size] = STORAGE_TYPE();
 			heap[size].first.Assign(allocator, key);
 			heap[size].second.Assign(allocator, value);
 			size++;
