@@ -195,6 +195,10 @@ bool JSONMultiFileInfo::ParseOption(ClientContext &context, const string &key, c
 		options.convert_strings_to_integers = BooleanValue::Get(value);
 		return true;
 	}
+	if (loption == "detect_json_type") {
+		options.detect_json_type = BooleanValue::Get(value);
+		return true;
+	}
 	return false;
 }
 

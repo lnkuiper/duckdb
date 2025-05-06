@@ -124,6 +124,8 @@ struct JSONReaderOptions {
 	//! Forced date/timestamp formats
 	string date_format;
 	string timestamp_format;
+	//! Whether the JSON type should be detected, converts to VARCHAR if false
+	bool detect_json_type = true;
 };
 
 } // namespace duckdb

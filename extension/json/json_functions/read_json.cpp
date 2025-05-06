@@ -6,6 +6,7 @@
 #include "json_transform.hpp"
 #include "json_multi_file_info.hpp"
 #include "duckdb/parallel/task_executor.hpp"
+#include "duckdb/common/type_visitor.hpp"
 
 namespace duckdb {
 
@@ -190,6 +191,11 @@ void JSONScan::AutoDetect(ClientContext &context, MultiFileBindData &bind_data, 
 	// Convert structure to logical type
 	auto type = JSONStructure::StructureToType(context, node, options.max_depth, options.field_appearance_threshold,
 	                                           options.map_inference_threshold);
+	if (!options.detect_json_type) {
+		type = TypeVisitor::VisitReplace(type, [](const LogicalType &child_type) {
+			return child_type.IsJSONType() ? LogicalType::VARCHAR : child_type;
+		});
+	}
 
 	// Auto-detect record type
 	if (json_data.options.record_type == JSONRecordType::AUTO_DETECT) {
@@ -253,6 +259,7 @@ TableFunctionSet CreateJSONFunctionInfo(string name, shared_ptr<JSONScanInfo> in
 	table_function.named_parameters["field_appearance_threshold"] = LogicalType::DOUBLE;
 	table_function.named_parameters["convert_strings_to_integers"] = LogicalType::BOOLEAN;
 	table_function.named_parameters["map_inference_threshold"] = LogicalType::BIGINT;
+	table_function.named_parameters["detect_json_type"] = LogicalType::BOOLEAN;
 	return MultiFileReader::CreateFunctionSet(table_function);
 }
 

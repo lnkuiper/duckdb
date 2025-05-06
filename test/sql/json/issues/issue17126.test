@@ -1,0 +1,34 @@
+# name: test/sql/json/issues/issue17126.test
+# description: Test issue 17126 - Parquet nullable strings converted to JSON
+# group: [issues]
+
+require json
+
+require parquet
+
+statement ok
+pragma enable_verification
+
+statement ok
+copy (select null duck from range(3)) to '__TEST_DIR__/17126_1.json'
+
+statement ok
+copy (select ['a','b','c'][range+1] duck from range(3)) to '__TEST_DIR__/17126_2.json'
+
+statement ok
+copy (select * from read_json('__TEST_DIR__/17126_1.json', detect_json_type=false)) to '__TEST_DIR__/17126_1.parquet'
+
+statement ok
+copy (select * from read_json('__TEST_DIR__/17126_2.json', detect_json_type=false)) to '__TEST_DIR__/17126_2.parquet'
+
+# should all be VARCHAR and unify properly
+query II
+select duck, typeof(duck) from '__TEST_DIR__/17126_*.parquet'
+----
+NULL	VARCHAR
+NULL	VARCHAR
+NULL	VARCHAR
+a	VARCHAR
+b	VARCHAR
+c	VARCHAR
+
