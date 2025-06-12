@@ -30,7 +30,7 @@ private:
 
 	mutex lock;
 	data_ptr_t allocation;
-	idx_t count;
+	atomic<idx_t> count;
 };
 
 class PageAllocator {
