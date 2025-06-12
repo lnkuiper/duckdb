@@ -53,6 +53,7 @@ add_library_unity(
   local_file_system.cpp
   error_data.cpp
   opener_file_system.cpp
+  page_allocator.cpp
   printer.cpp
   radix_partitioning.cpp
   re2_regex.cpp

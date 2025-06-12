@@ -7,6 +7,7 @@
 #include "duckdb/common/numeric_utils.hpp"
 #include "duckdb/common/operator/cast_operators.hpp"
 #include "duckdb/common/types/timestamp.hpp"
+#include "duckdb/common/page_allocator.hpp"
 
 #include <cstdint>
 
@@ -121,6 +122,7 @@ Allocator::Allocator(allocate_function_ptr_t allocate_function_p, free_function_
 	}
 	private_data->debug_info = make_uniq<AllocatorDebugInfo>();
 #endif
+	page_allocator = make_uniq<PageAllocator>(256);
 }
 
 Allocator::~Allocator() {
@@ -133,7 +135,12 @@ data_ptr_t Allocator::AllocateData(idx_t size) {
 		throw InternalException("Requested allocation size of %llu is out of range - maximum allocation size is %llu",
 		                        size, MAXIMUM_ALLOC_SIZE);
 	}
-	auto result = allocate_function(private_data.get(), size);
+	data_ptr_t result;
+	if (size == PageAllocator::PAGE_SIZE && page_allocator) {
+		result = page_allocator.get()->Allocate();
+	} else {
+		result = allocate_function(private_data.get(), size);
+	}
 #ifdef DEBUG
 	D_ASSERT(private_data);
 	if (private_data->free_type != AllocatorFreeType::DOES_NOT_REQUIRE_FREE) {
@@ -157,7 +164,11 @@ void Allocator::FreeData(data_ptr_t pointer, idx_t size) {
 		private_data->debug_info->FreeData(pointer, size);
 	}
 #endif
-	free_function(private_data.get(), pointer, size);
+	if (size == PageAllocator::PAGE_SIZE && page_allocator) {
+		page_allocator.get()->Free(pointer);
+	} else {
+		free_function(private_data.get(), pointer, size);
+	}
 }
 
 data_ptr_t Allocator::ReallocateData(data_ptr_t pointer, idx_t old_size, idx_t size) {

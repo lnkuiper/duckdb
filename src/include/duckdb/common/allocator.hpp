@@ -21,6 +21,7 @@ class ClientContext;
 class DatabaseInstance;
 class ExecutionContext;
 class ThreadContext;
+class PageAllocator;
 
 struct AllocatorDebugInfo;
 
@@ -132,6 +133,7 @@ private:
 	reallocate_function_ptr_t reallocate_function;
 
 	unique_ptr<PrivateAllocatorData> private_data;
+	unique_ptr<PageAllocator> page_allocator;
 };
 
 template <class T>
