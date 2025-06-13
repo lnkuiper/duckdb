@@ -69,7 +69,7 @@ void PageAllocatorArena::Free(const data_ptr_t &ptr) {
 		if (pool_idx > 0 && pool->GetMappedChunks() < pools[pool_idx - 1]->GetMappedChunks()) {
 			std::swap(pools[pool_idx], pools[pool_idx - 1]);
 		}
-		break;
+		return;
 	}
 	throw InternalException("Unable to free page!");
 }
@@ -112,16 +112,13 @@ data_ptr_t PageAllocatorPool::Allocate(PageAllocator &page_allocator, const uint
 	// Mark the first free page in this chunk as occupied
 	const auto page_idx = chunk_occupancy.GetFirstFreePage();
 	chunk_occupancy.SetPageOccupied(page_idx);
+	allocated_pages++;
 
 	if (chunk_occupancy.IsFull()) {
 		first_free_chunk++; // Chunk is full, increment free index
 	}
 
-	// Update statistics
-	allocated_pages++;
 	Verify();
-
-	// Return corresponding pointer
 	return chunk + page_idx * PageAllocator::PAGE_SIZE;
 }
 
@@ -138,6 +135,7 @@ bool PageAllocatorPool::Free(const data_ptr_t &ptr) {
 	// Derive page index in this chunk, then mark as unoccupied
 	const auto page_idx = NumericCast<idx_t>(ptr - chunk) / PageAllocator::PAGE_SIZE;
 	chunk_occupancy.SetPageFree(page_idx);
+	allocated_pages--;
 
 	if (chunk_occupancy.IsEmpty()) {
 		UnmapChunk(chunk_idx);
@@ -166,10 +164,8 @@ bool PageAllocatorPool::Free(const data_ptr_t &ptr) {
 		first_free_chunk = idx_in_order_after; // Update which chunk
 	}
 
-	// Update statistics
-	allocated_pages--;
-	Verify();
 
+	Verify();
 	return true;
 }
 
@@ -181,12 +177,20 @@ void PageAllocatorPool::MapChunk(const uint8_t &chunk_idx) {
 		return; // We already mapped this before, but told the OS that we don't need it
 	}
 
+	// Windows/Linux support huge pages, so the allocation should be aligned to 2 MiB
+	// MacOS does not support huge pages, so we have to align the allocation
 	void *allocation;
 #if defined(_WIN32)
-	allocation = VirtualAlloc(nullptr, largePageSize, MEM_RESERVE | MEM_COMMIT | MEM_LARGE_PAGES, PAGE_READWRITE);
+	allocation =
+	    VirtualAlloc(nullptr, PageAllocator::CHUNK_SIZE, MEM_RESERVE | MEM_COMMIT | MEM_LARGE_PAGES, PAGE_READWRITE);
+#elif defined(__APPLE__)
+	allocation =
+	    mmap(nullptr, PageAllocator::CHUNK_SIZE * 2, PROT_READ | PROT_WRITE, MAP_PRIVATE | MAP_ANONYMOUS, -1, 0);
+	allocation = AlignPointer<PageAllocator::CHUNK_SIZE>(allocation);
 #else
 	allocation = mmap(nullptr, PageAllocator::CHUNK_SIZE, PROT_READ | PROT_WRITE, MAP_PRIVATE | MAP_ANONYMOUS, -1, 0);
 #endif
+	D_ASSERT(allocation == AlignPointer<PageAllocator::CHUNK_SIZE>(allocation));
 
 	chunk = data_ptr_cast(allocation);
 	InsertHTEntry(chunk, chunk_idx);
@@ -261,7 +265,7 @@ void PageAllocatorPool::Verify() const {
 		allocated_pages_verification += chunk_occupancy.OccupiedPageCount();
 
 		// Verify that the first free chunk index actually points to the first non-full chunk
-		if (!first_free_chunk_found && !chunk_occupancies->IsFull()) {
+		if (!first_free_chunk_found && !chunk_occupancy.IsFull()) {
 			D_ASSERT(i == first_free_chunk);
 			first_free_chunk_found = true;
 		}
