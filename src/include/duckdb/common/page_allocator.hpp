@@ -40,6 +40,7 @@ public:
 	static constexpr idx_t CHUNK_SIZE = PAGE_SIZE * PAGES_PER_CHUNK;
 
 private:
+	mutex lock;
 	const FastMod<idx_t> fast_mod;
 
 	static constexpr idx_t MAX_ARENAS = 256;
@@ -57,7 +58,7 @@ public:
 
 public:
 	data_ptr_t Allocate(PageAllocator &page_allocator);
-	void Free(const data_ptr_t &ptr);
+	void Free(PageAllocator &page_allocator, const data_ptr_t &ptr);
 
 private:
 	const uint8_t arena_idx;
@@ -70,7 +71,7 @@ public:
 
 public:
 	data_ptr_t Allocate(PageAllocator &page_allocator, const uint8_t &arena_idx);
-	bool Free(const data_ptr_t &ptr);
+	bool Free(PageAllocator &page_allocator, const uint8_t &arena_idx, const data_ptr_t &ptr);
 	idx_t GetMappedChunks() const;
 
 private:
@@ -91,13 +92,15 @@ private:
 		}
 
 		void SetPageOccupied(const idx_t &page_idx) {
-			D_ASSERT(page_idx < PageAllocator::PAGES_PER_CHUNK);
+			D_ASSERT(!IsOccupied(page_idx));
 			bitmap |= static_cast<uint8_t>(1) << page_idx;
+			D_ASSERT(IsOccupied(page_idx));
 		}
 
 		void SetPageFree(const idx_t &page_idx) {
 			D_ASSERT(IsOccupied(page_idx));
 			bitmap &= ~(static_cast<uint8_t>(1) << page_idx);
+			D_ASSERT(!IsOccupied(page_idx));
 		}
 
 		idx_t GetFirstFreePage() const {
@@ -118,19 +121,18 @@ private:
 			return occupied;
 		}
 
-		bool IsFull() const {
-			return bitmap == 255;
-		}
-
 		bool IsEmpty() const {
-			return bitmap == 0;
+			return bitmap == EMPTY;
 		}
 
-		void SetEmpty() {
-			bitmap = 0;
+		bool IsFull() const {
+			return bitmap == FULL;
 		}
 
 	private:
+		static constexpr uint8_t EMPTY = 0;
+		static constexpr uint8_t FULL = 255;
+
 		uint8_t bitmap;
 	};
 
@@ -142,7 +144,7 @@ private:
 	void InsertHTEntry(const data_ptr_t &ptr, const uint8_t &chunk_idx);
 	const PoolHTEntry &GetHTEntry(const data_ptr_t &ptr) const;
 
-	void Verify() const;
+	void Verify(PageAllocator &page_allocator, const uint8_t &arena_idx) const;
 
 private:
 	static constexpr idx_t CHUNKS_PER_POOL = 256;

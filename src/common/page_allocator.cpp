@@ -34,7 +34,7 @@ uint8_t PageAllocator::GetThreadArenaIndex() const {
 }
 
 void PageAllocator::Free(const data_ptr_t &ptr) {
-	arenas[PointerToArenaIndex(ptr)]->Free(ptr);
+	arenas[PointerToArenaIndex(ptr)]->Free(*this, ptr);
 }
 
 idx_t PageAllocator::PointerArenaLookupTableIndex(const data_ptr_t &ptr) {
@@ -59,14 +59,14 @@ data_ptr_t PageAllocatorArena::Allocate(PageAllocator &page_allocator) {
 	return pools.back()->Allocate(page_allocator, arena_idx);
 }
 
-void PageAllocatorArena::Free(const data_ptr_t &ptr) {
+void PageAllocatorArena::Free(PageAllocator &page_allocator, const data_ptr_t &ptr) {
 	for (idx_t pool_idx = 0; pool_idx < pools.size(); pool_idx++) {
-		auto &pool = pools[pool_idx];
-		if (!pool->Free(ptr)) {
+		auto &pool = *pools[pool_idx];
+		if (!pool.Free(page_allocator, arena_idx, ptr)) {
 			continue; // Allocated in a different pool
 		}
 		// Move pool with most mapped chunks to the front to reduce fragmentation
-		if (pool_idx > 0 && pool->GetMappedChunks() < pools[pool_idx - 1]->GetMappedChunks()) {
+		if (pool_idx > 0 && pool.GetMappedChunks() < pools[pool_idx - 1]->GetMappedChunks()) {
 			std::swap(pools[pool_idx], pools[pool_idx - 1]);
 		}
 		return;
@@ -118,11 +118,11 @@ data_ptr_t PageAllocatorPool::Allocate(PageAllocator &page_allocator, const uint
 		first_free_chunk++; // Chunk is full, increment free index
 	}
 
-	Verify();
+	Verify(page_allocator, arena_idx);
 	return chunk + page_idx * PageAllocator::PAGE_SIZE;
 }
 
-bool PageAllocatorPool::Free(const data_ptr_t &ptr) {
+bool PageAllocatorPool::Free(PageAllocator &page_allocator, const uint8_t &arena_idx, const data_ptr_t &ptr) {
 	const auto &entry = GetHTEntry(ptr);
 	if (!entry.occupied) {
 		return false; // Pointer is not in this pool
@@ -164,8 +164,7 @@ bool PageAllocatorPool::Free(const data_ptr_t &ptr) {
 		first_free_chunk = idx_in_order_after; // Update which chunk
 	}
 
-
-	Verify();
+	Verify(page_allocator, arena_idx);
 	return true;
 }
 
@@ -250,8 +249,10 @@ const PageAllocatorPool::PoolHTEntry &PageAllocatorPool::GetHTEntry(const data_p
 	return hash_table[GetHTIndex(ptr, false)];
 }
 
-void PageAllocatorPool::Verify() const {
+void PageAllocatorPool::Verify(PageAllocator &page_allocator, const uint8_t &arena_idx) const {
 #ifdef DEBUG
+	lock_guard<mutex> guard(page_allocator.lock);
+	Printer::PrintF("##############################");
 	bool first_free_chunk_found = false;
 	idx_t mapped_chunks_verification = 0;
 	idx_t allocated_pages_verification = 0;
@@ -263,6 +264,7 @@ void PageAllocatorPool::Verify() const {
 		// Count statistics
 		mapped_chunks_verification += !chunk_occupancy.IsEmpty();
 		allocated_pages_verification += chunk_occupancy.OccupiedPageCount();
+		Printer::PrintF("%llu: %llu", chunk_idx, chunk_occupancy.OccupiedPageCount());
 
 		// Verify that the first free chunk index actually points to the first non-full chunk
 		if (!first_free_chunk_found && !chunk_occupancy.IsFull()) {
@@ -280,16 +282,20 @@ void PageAllocatorPool::Verify() const {
 			D_ASSERT(chunk_occupancy.OccupiedPageCount() >= next_chunk_occupancy.OccupiedPageCount());
 		}
 
-		// Verify the hash table
 		if (chunk) {
+			// Verify the hash table
 			const auto &entry = GetHTEntry(chunk);
 			D_ASSERT(entry.occupied && chunk_idx == entry.chunk_idx);
+
+			// Verify global table
+			D_ASSERT(page_allocator.PointerToArenaIndex(chunk) == arena_idx);
 		}
 	}
 
 	// The statistics should be valid
 	D_ASSERT(mapped_chunks_verification == mapped_chunks);
 	D_ASSERT(allocated_pages_verification == allocated_pages);
+	Printer::PrintF("##############################");
 #endif
 }
 
