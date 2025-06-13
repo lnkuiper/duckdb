@@ -122,7 +122,7 @@ Allocator::Allocator(allocate_function_ptr_t allocate_function_p, free_function_
 	}
 	private_data->debug_info = make_uniq<AllocatorDebugInfo>();
 #endif
-	page_allocator = make_uniq<PageAllocator>(256);
+	page_allocator = make_uniq<PageAllocator>(static_cast<idx_t>(256));
 }
 
 Allocator::~Allocator() {

@@ -76,6 +76,16 @@ struct CountZeros<uint32_t> {
 };
 
 template <>
+struct CountZeros<uint8_t> {
+	inline static idx_t Leading(uint8_t value) {
+		return CountZeros<uint64_t>::Leading(static_cast<uint64_t>(value)) - 56;
+	}
+	inline static idx_t Trailing(uint8_t value) {
+		return CountZeros<uint64_t>::Trailing(static_cast<uint64_t>(value));
+	}
+};
+
+template <>
 struct CountZeros<hugeint_t> {
 	inline static idx_t Leading(hugeint_t value) {
 		const uint64_t upper = static_cast<uint64_t>(value.upper);
