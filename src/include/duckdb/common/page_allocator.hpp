@@ -76,8 +76,31 @@ public:
 
 private:
 	struct PoolHTEntry {
-		bool occupied;
-		uint8_t chunk_idx;
+	public:
+		PoolHTEntry() : occupied(false), chunk_idx(0) {
+		}
+
+	public:
+		bool IsOccupied() const {
+			return occupied;
+		}
+
+		void SetOccupied(const bool &occupied_p) {
+			occupied = occupied_p;
+		}
+
+		uint16_t GetChunkIndex() const {
+			return chunk_idx;
+		}
+
+		void SetChunkIndex(const uint16_t &chunk_idx_p) {
+			D_ASSERT(chunk_idx_p < CHUNKS_PER_POOL);
+			chunk_idx = chunk_idx_p;
+		}
+
+	private:
+		bool occupied : 1;
+		uint16_t chunk_idx : 15;
 	};
 
 	struct ChunkOccupancy {
@@ -137,17 +160,17 @@ private:
 	};
 
 private:
-	void MapChunk(const uint8_t &chunk_idx);
-	void UnmapChunk(const uint8_t &chunk_idx);
+	void MapChunk(const uint16_t &chunk_idx);
+	void UnmapChunk(const uint16_t &chunk_idx);
 
 	idx_t GetHTIndex(const data_ptr_t &ptr, const bool &find_unoccupied) const;
-	void InsertHTEntry(const data_ptr_t &ptr, const uint8_t &chunk_idx);
+	void InsertHTEntry(const data_ptr_t &ptr, const uint16_t &chunk_idx);
 	const PoolHTEntry &GetHTEntry(const data_ptr_t &ptr) const;
 
-	void Verify(PageAllocator &page_allocator, const uint8_t &arena_idx) const;
+	void Verify(PageAllocator &page_allocator, const uint16_t &arena_idx) const;
 
 private:
-	static constexpr idx_t CHUNKS_PER_POOL = 256;
+	static constexpr idx_t CHUNKS_PER_POOL = 32768;
 
 	data_ptr_t chunks[CHUNKS_PER_POOL];
 	ChunkOccupancy chunk_occupancies[CHUNKS_PER_POOL];
@@ -155,15 +178,15 @@ private:
 	//! Index into "ordered_chunk_idxs" with the first free chunk
 	idx_t first_free_chunk;
 	//! Chunk indices ordered by occupancy (fullest first)
-	uint8_t ordered_chunk_idxs[CHUNKS_PER_POOL];
+	uint16_t ordered_chunk_idxs[CHUNKS_PER_POOL];
 	//! Reverse mapping of "ordered_chunk_idxs"
-	uint8_t chunk_idx_to_order[CHUNKS_PER_POOL];
+	uint16_t chunk_idx_to_order[CHUNKS_PER_POOL];
 
 	//! We use "chunk_occupancy" as a bitmap, where 0 means occupied, and 1 means free.
 	//! We do this instead of the other way around so we can use CountZeros<uint8_t>::Leading,
 	//! to find the first empty page slot in the chunk
-	static constexpr uint8_t CHUNK_EMPTY = CHUNKS_PER_POOL - 1;
-	static constexpr uint8_t CHUNK_FULL = 0;
+	static constexpr uint16_t CHUNK_EMPTY = CHUNKS_PER_POOL - 1;
+	static constexpr uint16_t CHUNK_FULL = 0;
 
 	//! Mapping from pointer to chunk index
 	static constexpr idx_t HASH_TABLE_SIZE = CHUNKS_PER_POOL * 2;
