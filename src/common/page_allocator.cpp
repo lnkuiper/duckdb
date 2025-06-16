@@ -9,7 +9,7 @@
 namespace duckdb {
 
 PageAllocator::PageAllocator(const idx_t &num_arenas)
-    : fast_mod(MinValue<idx_t>(num_arenas, MAX_ARENAS)), arenas(fast_mod.GetDivisor()) {
+    : fast_mod(MinValue<idx_t>(num_arenas, MAX_ARENAS)), next_arena_index(0), arenas(fast_mod.GetDivisor()) {
 }
 
 data_ptr_t PageAllocator::Allocate() {
@@ -22,13 +22,10 @@ data_ptr_t PageAllocator::Allocate() {
 	return arena.get()->Allocate(*this);
 }
 
-uint8_t PageAllocator::GetThreadArenaIndex() const {
-	static constexpr idx_t ARENA_INDEX_ALLOCATION_REFRESH_INTERVAL = 8;
-	thread_local idx_t allocation_count = ARENA_INDEX_ALLOCATION_REFRESH_INTERVAL - 1;
+uint8_t PageAllocator::GetThreadArenaIndex() {
 	thread_local idx_t cpu_id = DConstants::INVALID_INDEX;
-	if (++allocation_count == ARENA_INDEX_ALLOCATION_REFRESH_INTERVAL) {
-		cpu_id = TaskScheduler::GetEstimatedCPUId();
-		allocation_count = 0;
+	if (cpu_id == DConstants::INVALID_INDEX) {
+		cpu_id = next_arena_index++;
 	}
 	return UnsafeNumericCast<uint8_t>(fast_mod.Mod(cpu_id));
 }
@@ -159,8 +156,9 @@ bool PageAllocatorPool::Free(PageAllocator &page_allocator, const uint8_t &arena
 	idx_in_order_after--;
 
 	// Swap the indices
+	const auto chunk_idx_to_swap = ordered_chunk_idxs[idx_in_order_after];
 	std::swap(ordered_chunk_idxs[idx_in_order_before], ordered_chunk_idxs[idx_in_order_after]);
-	std::swap(chunk_idx_to_order[idx_in_order_before], chunk_idx_to_order[idx_in_order_after]);
+	std::swap(chunk_idx_to_order[chunk_idx], chunk_idx_to_order[chunk_idx_to_swap]);
 
 	if (first_free_chunk == CHUNKS_PER_POOL || idx_in_order_after < first_free_chunk) {
 		first_free_chunk = idx_in_order_after; // Update which chunk

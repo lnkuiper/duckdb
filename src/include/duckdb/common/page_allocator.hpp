@@ -8,6 +8,7 @@
 
 #pragma once
 
+#include "duckdb/common/atomic.hpp"
 #include "duckdb/common/mutex.hpp"
 #include "duckdb/storage/storage_info.hpp"
 #include "duckdb/common/numeric_utils.hpp"
@@ -30,7 +31,7 @@ public:
 	void Free(const data_ptr_t &ptr);
 
 private:
-	uint8_t GetThreadArenaIndex() const;
+	uint8_t GetThreadArenaIndex();
 	static idx_t PointerArenaLookupTableIndex(const data_ptr_t &ptr);
 	uint8_t PointerToArenaIndex(const data_ptr_t &ptr) const;
 
@@ -42,6 +43,7 @@ public:
 private:
 	mutex lock;
 	const FastMod<idx_t> fast_mod;
+	atomic<idx_t> next_arena_index;
 
 	static constexpr idx_t MAX_ARENAS = 256;
 	mutex arena_locks[MAX_ARENAS];
