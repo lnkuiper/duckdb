@@ -34,7 +34,9 @@ uint8_t PageAllocator::GetThreadArenaIndex() const {
 }
 
 void PageAllocator::Free(const data_ptr_t &ptr) {
-	arenas[PointerToArenaIndex(ptr)]->Free(*this, ptr);
+	const auto arena_idx = PointerToArenaIndex(ptr);
+	lock_guard<mutex> guard(arena_locks[arena_idx]);
+	arenas[arena_idx]->Free(*this, ptr);
 }
 
 idx_t PageAllocator::PointerArenaLookupTableIndex(const data_ptr_t &ptr) {
@@ -249,10 +251,8 @@ const PageAllocatorPool::PoolHTEntry &PageAllocatorPool::GetHTEntry(const data_p
 	return hash_table[GetHTIndex(ptr, false)];
 }
 
-void PageAllocatorPool::Verify(PageAllocator &page_allocator, const uint16_t &arena_idx) const {
+void PageAllocatorPool::Verify(const PageAllocator &page_allocator, const uint16_t &arena_idx) const {
 #ifdef DEBUG
-	lock_guard<mutex> guard(page_allocator.lock);
-	Printer::PrintF("##############################");
 	bool first_free_chunk_found = false;
 	idx_t mapped_chunks_verification = 0;
 	idx_t allocated_pages_verification = 0;
@@ -264,7 +264,6 @@ void PageAllocatorPool::Verify(PageAllocator &page_allocator, const uint16_t &ar
 		// Count statistics
 		mapped_chunks_verification += !chunk_occupancy.IsEmpty();
 		allocated_pages_verification += chunk_occupancy.OccupiedPageCount();
-		Printer::PrintF("%llu: %llu", chunk_idx, chunk_occupancy.OccupiedPageCount());
 
 		// Verify that the first free chunk index actually points to the first non-full chunk
 		if (!first_free_chunk_found && !chunk_occupancy.IsFull()) {
@@ -295,7 +294,6 @@ void PageAllocatorPool::Verify(PageAllocator &page_allocator, const uint16_t &ar
 	// The statistics should be valid
 	D_ASSERT(mapped_chunks_verification == mapped_chunks);
 	D_ASSERT(allocated_pages_verification == allocated_pages);
-	Printer::PrintF("##############################");
 #endif
 }
 

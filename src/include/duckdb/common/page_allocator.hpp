@@ -167,7 +167,7 @@ private:
 	void InsertHTEntry(const data_ptr_t &ptr, const uint16_t &chunk_idx);
 	const PoolHTEntry &GetHTEntry(const data_ptr_t &ptr) const;
 
-	void Verify(PageAllocator &page_allocator, const uint16_t &arena_idx) const;
+	void Verify(const PageAllocator &page_allocator, const uint16_t &arena_idx) const;
 
 private:
 	static constexpr idx_t CHUNKS_PER_POOL = 32768;
