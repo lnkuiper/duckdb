@@ -48,6 +48,8 @@ public:
 	unique_ptr<ProducerToken> CreateProducer();
 	//! Schedule a task to be executed by the task scheduler
 	void ScheduleTask(ProducerToken &producer, shared_ptr<Task> task);
+	//! Schedule many tasks to be executed by the task scheduler
+	void ScheduleManyTasks(ProducerToken &producer, vector<shared_ptr<Task>> &tasks);
 	//! Fetches a task from a specific producer, returns true if successful or false if no tasks were available
 	bool GetTaskFromProducer(ProducerToken &token, shared_ptr<Task> &task);
 	//! Run tasks forever until "marker" is set to false, "marker" must remain valid until the thread is joined

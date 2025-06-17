@@ -43,6 +43,7 @@ struct ConcurrentQueue {
 	lightweight_semaphore_t semaphore;
 
 	void Enqueue(ProducerToken &token, shared_ptr<Task> task);
+	void EnqueueBulk(ProducerToken &token, vector<shared_ptr<Task>> &tasks);
 	bool DequeueFromProducer(ProducerToken &token, shared_ptr<Task> &task);
 };
 
@@ -60,6 +61,18 @@ void ConcurrentQueue::Enqueue(ProducerToken &token, shared_ptr<Task> task) {
 		semaphore.signal();
 	} else {
 		throw InternalException("Could not schedule task!");
+	}
+}
+
+void ConcurrentQueue::EnqueueBulk(ProducerToken &token, vector<shared_ptr<Task>> &tasks) {
+	lock_guard<mutex> producer_lock(token.producer_lock);
+	for (auto &task : tasks) {
+		task->token = token;
+	}
+	if (q.enqueue_bulk(token.token->queue_token, std::make_move_iterator(tasks.begin()), tasks.size())) {
+		semaphore.signal(NumericCast<ssize_t>(tasks.size()));
+	} else {
+		throw InternalException("Could not schedule tasks!");
 	}
 }
 
@@ -153,6 +166,10 @@ unique_ptr<ProducerToken> TaskScheduler::CreateProducer() {
 void TaskScheduler::ScheduleTask(ProducerToken &token, shared_ptr<Task> task) {
 	// Enqueue a task for the given producer token and signal any sleeping threads
 	queue->Enqueue(token, std::move(task));
+}
+
+void TaskScheduler::ScheduleManyTasks(ProducerToken &producer, vector<shared_ptr<Task>> &tasks) {
+	queue->EnqueueBulk(producer, tasks);
 }
 
 bool TaskScheduler::GetTaskFromProducer(ProducerToken &token, shared_ptr<Task> &task) {
