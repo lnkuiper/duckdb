@@ -13,6 +13,7 @@
 #include "duckdb/common/mutex.hpp"
 #include "duckdb/common/vector.hpp"
 #include "duckdb/parallel/task.hpp"
+#include "duckdb/common/optional_idx.hpp"
 
 namespace duckdb {
 
