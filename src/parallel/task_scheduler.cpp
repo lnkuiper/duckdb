@@ -39,12 +39,20 @@ typedef duckdb_moodycamel::ConcurrentQueue<shared_ptr<Task>> concurrent_queue_t;
 typedef duckdb_moodycamel::LightweightSemaphore lightweight_semaphore_t;
 
 struct ConcurrentQueue {
-	concurrent_queue_t q;
-	lightweight_semaphore_t semaphore;
-
+public:
 	void Enqueue(ProducerToken &token, shared_ptr<Task> task);
 	void EnqueueBulk(ProducerToken &token, vector<shared_ptr<Task>> &tasks);
 	bool DequeueFromProducer(ProducerToken &token, shared_ptr<Task> &task);
+
+	bool Wait(const optional_idx &thread_idx = optional_idx());
+	bool Wait(const int64_t &timeout_usecs, const optional_idx &thread_idx = optional_idx());
+	void Signal(const idx_t &n = 1);
+
+public:
+	concurrent_queue_t q;
+
+private:
+	lightweight_semaphore_t semaphore;
 };
 
 struct QueueProducerToken {
@@ -58,7 +66,7 @@ void ConcurrentQueue::Enqueue(ProducerToken &token, shared_ptr<Task> task) {
 	lock_guard<mutex> producer_lock(token.producer_lock);
 	task->token = token;
 	if (q.enqueue(token.token->queue_token, std::move(task))) {
-		semaphore.signal();
+		Signal();
 	} else {
 		throw InternalException("Could not schedule task!");
 	}
@@ -70,7 +78,7 @@ void ConcurrentQueue::EnqueueBulk(ProducerToken &token, vector<shared_ptr<Task>>
 		task->token = token;
 	}
 	if (q.enqueue_bulk(token.token->queue_token, std::make_move_iterator(tasks.begin()), tasks.size())) {
-		semaphore.signal(NumericCast<ssize_t>(tasks.size()));
+		Signal(tasks.size());
 	} else {
 		throw InternalException("Could not schedule tasks!");
 	}
@@ -81,12 +89,42 @@ bool ConcurrentQueue::DequeueFromProducer(ProducerToken &token, shared_ptr<Task>
 	return q.try_dequeue_from_producer(token.token->queue_token, task);
 }
 
+bool ConcurrentQueue::Wait(const optional_idx &thread_idx) {
+	if (!thread_idx.IsValid()) {
+		return semaphore.wait();
+	}
+	// TODO threaded wait
+
+	return semaphore.wait();
+}
+
+bool ConcurrentQueue::Wait(const int64_t &timeout_usecs, const optional_idx &thread_idx) {
+	if (!thread_idx.IsValid()) {
+		return semaphore.wait(timeout_usecs);
+	}
+	// TODO threaded wait
+
+	return semaphore.wait(timeout_usecs);
+}
+
+void ConcurrentQueue::Signal(const idx_t &n) {
+	typedef std::make_signed<std::size_t>::type ssize_t;
+	semaphore.signal(NumericCast<ssize_t>(n));
+
+	// TODO threaded signals
+	//  if we don't have a thread index, signal ALL of the threads with N
+	//  we have to be careful here, because the number of threads may be lowered during a query
+	//  we don't want to signal a semaphore that NO threads are waiting on
+	//  so, we need to signal EVERYTHING PLENTY to make sure all threads get through
+}
+
 #else
 struct ConcurrentQueue {
 	reference_map_t<QueueProducerToken, std::queue<shared_ptr<Task>>> q;
 	mutex qlock;
 
 	void Enqueue(ProducerToken &token, shared_ptr<Task> task);
+	void EnqueueBulk(ProducerToken &token, vector<shared_ptr<Task>> &tasks);
 	bool DequeueFromProducer(ProducerToken &token, shared_ptr<Task> &task);
 };
 
@@ -94,6 +132,14 @@ void ConcurrentQueue::Enqueue(ProducerToken &token, shared_ptr<Task> task) {
 	lock_guard<mutex> lock(qlock);
 	task->token = token;
 	q[std::ref(*token.token)].push(std::move(task));
+}
+
+void ConcurrentQueue::EnqueueBulk(ProducerToken &token, vector<shared_ptr<Task>> &tasks) {
+	lock_guard<mutex> lock(qlock);
+	for (auto &task : tasks) {
+		task->token = token;
+		q[std::ref(*token.token)].push(std::move(task));
+	}
 }
 
 bool ConcurrentQueue::DequeueFromProducer(ProducerToken &token, shared_ptr<Task> &task) {
@@ -176,7 +222,7 @@ bool TaskScheduler::GetTaskFromProducer(ProducerToken &token, shared_ptr<Task> &
 	return queue->DequeueFromProducer(token, task);
 }
 
-void TaskScheduler::ExecuteForever(atomic<bool> *marker) {
+void TaskScheduler::ExecuteForever(atomic<bool> *marker, const optional_idx &thread_idx) {
 #ifndef DUCKDB_NO_THREADS
 	static constexpr const int64_t INITIAL_FLUSH_WAIT = 500000; // initial wait time of 0.5s (in mus) before flushing
 
@@ -186,22 +232,22 @@ void TaskScheduler::ExecuteForever(atomic<bool> *marker) {
 	while (*marker) {
 		if (!Allocator::SupportsFlush()) {
 			// allocator can't flush, just start an untimed wait
-			queue->semaphore.wait();
-		} else if (!queue->semaphore.wait(INITIAL_FLUSH_WAIT)) {
+			queue->Wait(thread_idx);
+		} else if (!queue->Wait(INITIAL_FLUSH_WAIT, thread_idx)) {
 			// allocator can flush, we flush this threads outstanding allocations after it was idle for 0.5s
 			Allocator::ThreadFlush(allocator_background_threads, allocator_flush_threshold,
 			                       NumericCast<idx_t>(requested_thread_count.load()));
 			auto decay_delay = Allocator::DecayDelay();
 			if (!decay_delay.IsValid()) {
 				// no decay delay specified - just wait
-				queue->semaphore.wait();
+				queue->Wait(thread_idx);
 			} else {
-				if (!queue->semaphore.wait(UnsafeNumericCast<int64_t>(decay_delay.GetIndex()) * 1000000 -
-				                           INITIAL_FLUSH_WAIT)) {
+				if (!queue->Wait(UnsafeNumericCast<int64_t>(decay_delay.GetIndex()) * 1000000 - INITIAL_FLUSH_WAIT,
+				                 thread_idx)) {
 					// in total, the thread was idle for the entire decay delay (note: seconds converted to mus)
 					// mark it as idle and start an untimed wait
 					Allocator::ThreadIdle();
-					queue->semaphore.wait();
+					queue->Wait(thread_idx);
 				}
 			}
 		}
@@ -273,7 +319,7 @@ void TaskScheduler::ExecuteTasks(idx_t max_tasks) {
 #ifndef DUCKDB_NO_THREADS
 	shared_ptr<Task> task;
 	for (idx_t i = 0; i < max_tasks; i++) {
-		queue->semaphore.wait(TASK_TIMEOUT_USECS);
+		queue->Wait(TASK_TIMEOUT_USECS);
 		if (!queue->q.try_dequeue(task)) {
 			return;
 		}
@@ -301,8 +347,8 @@ void TaskScheduler::ExecuteTasks(idx_t max_tasks) {
 }
 
 #ifndef DUCKDB_NO_THREADS
-static void ThreadExecuteTasks(TaskScheduler *scheduler, atomic<bool> *marker) {
-	scheduler->ExecuteForever(marker);
+static void ThreadExecuteTasks(TaskScheduler *scheduler, atomic<bool> *marker, const idx_t &thread_idx) {
+	scheduler->ExecuteForever(marker, thread_idx);
 }
 #endif
 
@@ -371,8 +417,7 @@ void TaskScheduler::SetAllocatorBackgroundThreads(bool enable) {
 
 void TaskScheduler::Signal(idx_t n) {
 #ifndef DUCKDB_NO_THREADS
-	typedef std::make_signed<std::size_t>::type ssize_t;
-	queue->semaphore.signal(NumericCast<ssize_t>(n));
+	queue->Signal(n);
 #endif
 }
 
@@ -455,7 +500,7 @@ void TaskScheduler::RelaunchThreadsInternal(int32_t n) {
 			auto marker = unique_ptr<atomic<bool>>(new atomic<bool>(true));
 			unique_ptr<thread> worker_thread;
 			try {
-				worker_thread = make_uniq<thread>(ThreadExecuteTasks, this, marker.get());
+				worker_thread = make_uniq<thread>(ThreadExecuteTasks, this, marker.get(), threads.size());
 			} catch (std::exception &ex) {
 				// thread constructor failed - this can happen when the system has too many threads allocated
 				// in this case we cannot allocate more threads - stop launching them
