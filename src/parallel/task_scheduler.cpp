@@ -39,37 +39,50 @@ typedef duckdb_moodycamel::ProducerToken producer_token_t;
 typedef duckdb_moodycamel::ConcurrentQueue<shared_ptr<Task>> concurrent_queue_t;
 typedef duckdb_moodycamel::LightweightSemaphore lightweight_semaphore_t;
 
+struct PartitionedQueue {
+	PartitionedQueue() : queue(), semaphore(), is_stealing(false) {
+	}
+	concurrent_queue_t queue;
+	lightweight_semaphore_t semaphore;
+	atomic<bool> is_stealing;
+};
+
 struct ConcurrentQueue {
+private:
+	typedef std::make_signed<std::size_t>::type ssize_t;
+
 public:
 	producer_token_t CreateProducerToken();
+
+	void SetThreads(const idx_t &num_threads);
 
 	void Enqueue(ProducerToken &token, shared_ptr<Task> task);
 	void EnqueueBulk(ProducerToken &token, vector<shared_ptr<Task>> &tasks);
 	bool DequeueFromProducer(ProducerToken &token, shared_ptr<Task> &task);
-	bool TryDequeue(shared_ptr<Task> &task, const optional_idx &thread_idx = optional_idx());
+	bool TryDequeue(shared_ptr<Task> &task);
 
 	idx_t GetNumberOfTasks() const;
 	idx_t GetProducerCount() const;
 	idx_t GetTaskCountForProducer(ProducerToken &token) const;
 
-	bool Wait(const optional_idx &thread_idx = optional_idx());
-	bool Wait(const int64_t &timeout_usecs, const optional_idx &thread_idx = optional_idx());
+	bool Wait();
+	bool Wait(int64_t timeout_usecs);
 	void Signal(const idx_t &n = 1);
 
-private:
-	static idx_t ThreadIndexToGroupIndex(const idx_t &thread_idx);
+	bool WaitForTask(const bool &allocator_background_threads, const idx_t &allocator_flush_threshold,
+	                 shared_ptr<Task> &task, const optional_idx &thread_idx);
 
 private:
-	concurrent_queue_t global_queue;
-	lightweight_semaphore_t global_semaphore;
+	atomic<idx_t> num_threads;
+
+	PartitionedQueue global;
 
 	//! To reduce contention, threads do single access within their group,
-	//! and the group only does bulk access with the globals
-	static constexpr idx_t GROUPS = 16;
-	static constexpr idx_t THREADS_PER_GROUP = 8;
+	//! and the partition only does bulk access with the globals
+	static constexpr idx_t PARTITIONS = 16;
+	static constexpr idx_t THREADS_PER_PARTITION = 8;
 
-	array<concurrent_queue_t, GROUPS> group_queues;
-	array<lightweight_semaphore_t, GROUPS> group_semaphores;
+	array<PartitionedQueue, PARTITIONS> partitions;
 };
 
 struct QueueProducerToken {
@@ -80,21 +93,26 @@ struct QueueProducerToken {
 };
 
 producer_token_t ConcurrentQueue::CreateProducerToken() {
-	return producer_token_t(global_queue);
+	return producer_token_t(global.queue);
 }
 
-idx_t ConcurrentQueue::ThreadIndexToGroupIndex(const idx_t &thread_idx) {
-	return (thread_idx / THREADS_PER_GROUP) % GROUPS;
+void ConcurrentQueue::SetThreads(const idx_t &num_threads_p) {
+	num_threads = num_threads_p;
+
+	// Move group tasks to the global queue again
+	// Note that we have lost producer information
+	// This is unfortunate, but only happens when the number of threads changes,
+	// which should be infrequent WHILE queries are being executed
+	vector<shared_ptr<Task>> tasks(THREADS_PER_PARTITION);
+	for (auto &partition : partitions) {
+		const auto num_tasks = partition.queue.try_dequeue_bulk(tasks.begin(), THREADS_PER_PARTITION);
+		global.queue.enqueue_bulk(std::make_move_iterator(tasks.begin()), num_tasks);
+	}
 }
 
 void ConcurrentQueue::Enqueue(ProducerToken &token, shared_ptr<Task> task) {
-	lock_guard<mutex> producer_lock(token.producer_lock);
-	task->token = token;
-	if (global_queue.enqueue(token.token->queue_token, std::move(task))) {
-		Signal();
-	} else {
-		throw InternalException("Could not schedule task!");
-	}
+	vector<shared_ptr<Task>> tasks {std::move(task)};
+	EnqueueBulk(token, tasks);
 }
 
 void ConcurrentQueue::EnqueueBulk(ProducerToken &token, vector<shared_ptr<Task>> &tasks) {
@@ -102,67 +120,138 @@ void ConcurrentQueue::EnqueueBulk(ProducerToken &token, vector<shared_ptr<Task>>
 	for (const auto &task : tasks) {
 		task->token = token;
 	}
-	if (global_queue.enqueue_bulk(token.token->queue_token, std::make_move_iterator(tasks.begin()), tasks.size())) {
+	if (global.queue.enqueue_bulk(token.token->queue_token, std::make_move_iterator(tasks.begin()), tasks.size())) {
 		Signal(tasks.size());
 	} else {
-		throw InternalException("Could not schedule tasks!");
+		throw InternalException("Could not schedule task!");
 	}
 }
 
 bool ConcurrentQueue::DequeueFromProducer(ProducerToken &token, shared_ptr<Task> &task) {
 	lock_guard<mutex> producer_lock(token.producer_lock);
-	return global_queue.try_dequeue_from_producer(token.token->queue_token, task);
+	return global.queue.try_dequeue_from_producer(token.token->queue_token, task);
 }
 
-bool ConcurrentQueue::TryDequeue(shared_ptr<Task> &task, const optional_idx &thread_idx) {
-	if (!thread_idx.IsValid()) {
-		return global_queue.try_dequeue(task);
+bool ConcurrentQueue::TryDequeue(shared_ptr<Task> &task) {
+	return global.queue.try_dequeue(task);
+}
+
+bool ConcurrentQueue::WaitForTask(const bool &allocator_background_threads, const idx_t &allocator_flush_threshold,
+                                  shared_ptr<Task> &task, const optional_idx &thread_idx) {
+	// Initial wait time of 0.5s (in mu s) before flushing
+	static constexpr int64_t INITIAL_WAIT = 500000;
+
+	const auto num_threads_local = num_threads.load();
+	auto &partition =
+	    thread_idx.IsValid() ? partitions[(thread_idx.GetIndex() / THREADS_PER_PARTITION) % PARTITIONS] : global;
+
+	// Wait for the semaphore, doing some memory management while waiting
+	if (!Allocator::SupportsFlush()) {
+		// allocator can't flush, start an untimed wait
+		partition.semaphore.wait();
+	} else if (!partition.semaphore.wait(INITIAL_WAIT)) {
+		// allocator can flush, we flush this threads outstanding allocations after it was idle for 0.5s
+		Allocator::ThreadFlush(allocator_background_threads, allocator_flush_threshold, num_threads_local);
+		const auto decay_delay = Allocator::DecayDelay();
+		if (!decay_delay.IsValid()) {
+			partition.semaphore.wait(); // no decay delay specified - untimed wait
+		} else {
+			const auto remaining_wait = UnsafeNumericCast<int64_t>(decay_delay.GetIndex()) * 1000000 - INITIAL_WAIT;
+			if (!partition.semaphore.wait(remaining_wait)) {
+				// in total, the thread was idle for the entire decay delay (note: seconds converted to mus)
+				// mark it as idle and start an untimed wait
+				Allocator::ThreadIdle();
+				partition.semaphore.wait();
+			}
+		}
 	}
 
-	// TODO threaded dequeue
-	return global_queue.try_dequeue(task);
+	if (thread_idx.IsValid()) {
+		// We have a thread index, try to get a task from the partition
+		auto expected = false;
+		if (partition.is_stealing.compare_exchange_strong(expected, true, std::memory_order_acquire)) {
+			// Value was false before exchanging, this thread is the only thread in here
+			bool got_task = partition.queue.try_dequeue(task);
+			if (!got_task) {
+				// No tasks left in the partition queue, steal up to THREADS_PER_PARTITION from global
+				const auto num_threads_aligned = AlignValueFloor<idx_t, THREADS_PER_PARTITION>(num_threads_local);
+				auto num_tasks = THREADS_PER_PARTITION;
+				if (num_threads_local != num_threads_aligned && thread_idx.GetIndex() >= num_threads_aligned) {
+					// Round down if we're the last partition
+					num_tasks = thread_idx.GetIndex() - num_threads_aligned + 1;
+				}
+
+				// Try to get this number of tasks from the global semaphore/queue
+				num_tasks = NumericCast<idx_t>(global.semaphore.tryWaitMany(NumericCast<ssize_t>(num_tasks)));
+				vector<shared_ptr<Task>> tasks(num_tasks);
+				num_tasks = global.queue.try_dequeue_bulk(tasks.begin(), num_tasks);
+
+				// Get a task for this thread (if any)
+				if (num_tasks != 0) {
+					task = std::move(tasks[--num_tasks]);
+					got_task = true;
+				}
+
+				// Bulk enqueue in the partition and mark that we're done stealing so other threads can grab a task
+				partition.queue.enqueue_bulk(std::make_move_iterator(tasks.begin()), num_tasks);
+			}
+
+			// We are done stealing
+			partition.is_stealing.store(false, std::memory_order_release);
+
+			// If we got a task, immediately return
+			if (got_task) {
+				return true;
+			}
+		} else {
+			// Another thread is currently stealing, wait
+			while (partition.is_stealing.load(std::memory_order_acquire)) {
+				TaskScheduler::YieldThread();
+			}
+
+			// Try to get one from this partition
+			if (partition.queue.try_dequeue(task)) {
+				return true;
+			}
+		}
+	}
+
+	// We got here if we had a thread index but did not get a task,
+	// or if we did not have a thread index. In both cases we try to get a task from the global queue
+	return global.queue.try_dequeue(task);
 }
 
 idx_t ConcurrentQueue::GetNumberOfTasks() const {
-	return global_queue.size_approx();
+	return global.queue.size_approx();
 }
 
 idx_t ConcurrentQueue::GetProducerCount() const {
-	return global_queue.size_producers_approx();
+	return global.queue.size_producers_approx();
 }
 
 idx_t ConcurrentQueue::GetTaskCountForProducer(ProducerToken &token) const {
 	lock_guard<mutex> producer_lock(token.producer_lock);
-	return global_queue.size_producer_approx(token.token->queue_token);
+	return global.queue.size_producer_approx(token.token->queue_token);
 }
 
-bool ConcurrentQueue::Wait(const optional_idx &thread_idx) {
-	if (!thread_idx.IsValid()) {
-		return global_semaphore.wait();
-	}
-	// TODO threaded wait
-
-	return global_semaphore.wait();
+bool ConcurrentQueue::Wait() {
+	return global.semaphore.wait();
 }
 
-bool ConcurrentQueue::Wait(const int64_t &timeout_usecs, const optional_idx &thread_idx) {
-	if (!thread_idx.IsValid()) {
-		return global_semaphore.wait(timeout_usecs);
-	}
-	// TODO threaded wait
-
-	return global_semaphore.wait(timeout_usecs);
+bool ConcurrentQueue::Wait(int64_t timeout_usecs) {
+	return global.semaphore.wait(timeout_usecs);
 }
 
 void ConcurrentQueue::Signal(const idx_t &n) {
-	typedef std::make_signed<std::size_t>::type ssize_t;
-	global_semaphore.signal(NumericCast<ssize_t>(n));
+	const auto count = NumericCast<ssize_t>(n);
 
-	// TODO threaded signals
-	//  if we don't have a thread index, signal ALL of the threads with N
-	//  we have to be careful here, because the number of threads may be lowered during a query
-	//  we don't want to signal a semaphore that NO threads are waiting on
-	//  so, we need to signal EVERYTHING PLENTY to make sure all threads get through
+	// Signal the global semaphore with the appropriate amount
+	global.semaphore.signal(count);
+
+	// Give each group a single dequeue signal
+	for (auto &partition : partitions) {
+		partition.semaphore.signal(THREADS_PER_PARTITION);
+	}
 }
 
 #else
@@ -271,34 +360,11 @@ bool TaskScheduler::GetTaskFromProducer(ProducerToken &token, shared_ptr<Task> &
 
 void TaskScheduler::ExecuteForever(atomic<bool> *marker, const optional_idx &thread_idx) {
 #ifndef DUCKDB_NO_THREADS
-	static constexpr const int64_t INITIAL_FLUSH_WAIT = 500000; // initial wait time of 0.5s (in mus) before flushing
-
 	auto &config = DBConfig::GetConfig(db);
 	shared_ptr<Task> task;
 	// loop until the marker is set to false
 	while (*marker) {
-		if (!Allocator::SupportsFlush()) {
-			// allocator can't flush, just start an untimed wait
-			queue->Wait(thread_idx);
-		} else if (!queue->Wait(INITIAL_FLUSH_WAIT, thread_idx)) {
-			// allocator can flush, we flush this threads outstanding allocations after it was idle for 0.5s
-			Allocator::ThreadFlush(allocator_background_threads, allocator_flush_threshold,
-			                       NumericCast<idx_t>(requested_thread_count.load()));
-			auto decay_delay = Allocator::DecayDelay();
-			if (!decay_delay.IsValid()) {
-				// no decay delay specified - just wait
-				queue->Wait(thread_idx);
-			} else {
-				if (!queue->Wait(UnsafeNumericCast<int64_t>(decay_delay.GetIndex()) * 1000000 - INITIAL_FLUSH_WAIT,
-				                 thread_idx)) {
-					// in total, the thread was idle for the entire decay delay (note: seconds converted to mus)
-					// mark it as idle and start an untimed wait
-					Allocator::ThreadIdle();
-					queue->Wait(thread_idx);
-				}
-			}
-		}
-		if (queue->TryDequeue(task, thread_idx)) {
+		if (queue->WaitForTask(allocator_background_threads, allocator_flush_threshold, task, thread_idx)) {
 			auto process_mode = config.options.scheduler_process_partial ? TaskExecutionMode::PROCESS_PARTIAL
 			                                                             : TaskExecutionMode::PROCESS_ALL;
 			auto execute_result = task->Execute(process_mode);
@@ -562,6 +628,9 @@ void TaskScheduler::RelaunchThreadsInternal(int32_t n) {
 	if (Allocator::SupportsFlush()) {
 		Allocator::FlushAll();
 	}
+	// notify the task queue with the new number of threads
+	// this causes it to move all group tasks to the global queue again
+	queue->SetThreads(threads.size());
 #endif
 }
 
