@@ -24,11 +24,13 @@ enum class MacroType : uint8_t { VOID_MACRO = 0, TABLE_MACRO = 1, SCALAR_MACRO =
 struct MacroBindResult {
 	explicit MacroBindResult(string error_p) : error(std::move(error_p)) {
 	}
-	explicit MacroBindResult(idx_t function_idx) : function_idx(function_idx) {
+	explicit MacroBindResult(idx_t function_idx, vector<unique_ptr<Expression>> bound_arguments)
+	    : function_idx(function_idx), bound_arguments(std::move(bound_arguments)) {
 	}
 
 	optional_idx function_idx;
 	string error;
+	vector<unique_ptr<Expression>> bound_arguments;
 };
 
 class MacroFunction {
@@ -63,7 +65,8 @@ public:
 	static unique_ptr<DummyBinding>
 	CreateDummyBinding(const MacroFunction &macro_def, const string &name,
 	                   vector<unique_ptr<ParsedExpression>> &positional_arguments,
-	                   InsertionOrderPreservingMap<unique_ptr<ParsedExpression>> &named_arguments);
+	                   InsertionOrderPreservingMap<unique_ptr<ParsedExpression>> &named_arguments,
+	                   vector<unique_ptr<Expression>> &bound_arguments);
 
 	virtual string ToSQL() const;
 

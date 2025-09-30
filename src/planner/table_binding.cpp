@@ -299,7 +299,17 @@ unique_ptr<ParsedExpression> DummyBinding::ParamToArg(ColumnRefExpression &colre
 	if (!TryGetBindingIndex(colref.GetColumnName(), column_index)) {
 		throw InternalException("Column %s not found in macro", colref.GetColumnName());
 	}
-	auto arg = (*arguments)[column_index]->Copy();
+	unique_ptr<ParsedExpression> arg;
+	if (bound_arguments && (*bound_arguments)[column_index]) {
+		auto &bound_arg = (*bound_arguments)[column_index];
+		try {
+			arg = make_uniq<BoundExpression>(bound_arg->Copy());
+		} catch (...) {
+			arg = make_uniq<BoundExpression>(std::move(bound_arg));
+		}
+	} else {
+		arg = (*arguments)[column_index]->Copy();
+	}
 	arg->SetAlias(colref.GetAlias());
 	return arg;
 }

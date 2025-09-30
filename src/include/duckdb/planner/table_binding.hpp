@@ -138,6 +138,8 @@ public:
 	vector<unique_ptr<ParsedExpression>> *arguments;
 	//! The name of the dummy binding
 	string dummy_name;
+	//! Optionally, bound arguments, to prevent rebinding
+	optional_ptr<vector<unique_ptr<Expression>>> bound_arguments;
 
 public:
 	//! Binding macros

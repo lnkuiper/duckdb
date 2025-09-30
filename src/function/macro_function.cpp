@@ -48,13 +48,21 @@ MacroBindResult MacroFunction::BindMacroFunction(
 
 	ExpressionBinder expr_binder(binder, binder.context);
 
+	vector<unique_ptr<Expression>> bound_arguments;
+
 	// Find argument types and separate positional and default arguments
 	vector<LogicalType> positional_arg_types;
 	InsertionOrderPreservingMap<LogicalType> named_arg_types;
 	for (auto &arg : function_expr.children) {
 		auto arg_copy = arg->Copy();
-		const auto arg_bind_result = expr_binder.BindExpression(arg_copy, depth + 1);
-		auto arg_type = arg_bind_result.HasError() ? LogicalType::UNKNOWN : arg_bind_result.expression->return_type;
+		auto arg_bind_result = expr_binder.BindExpression(arg_copy, depth + 1);
+		LogicalType arg_type = LogicalType::UNKNOWN;
+		if (!arg_bind_result.HasError()) {
+			arg_type = arg_bind_result.expression->return_type;
+			bound_arguments.emplace_back(std::move(arg_bind_result.expression));
+		} else {
+			bound_arguments.emplace_back(nullptr);
+		}
 		if (!arg->GetAlias().empty()) {
 			// Default argument
 			if (named_arguments.find(arg->GetAlias()) != named_arguments.end()) {
@@ -234,13 +242,14 @@ MacroBindResult MacroFunction::BindMacroFunction(
 		}
 	}
 
-	return MacroBindResult(macro_idx);
+	return MacroBindResult(macro_idx, std::move(bound_arguments));
 }
 
 unique_ptr<DummyBinding>
 MacroFunction::CreateDummyBinding(const MacroFunction &macro_def, const string &name,
                                   vector<unique_ptr<ParsedExpression>> &positional_arguments,
-                                  InsertionOrderPreservingMap<unique_ptr<ParsedExpression>> &named_arguments) {
+                                  InsertionOrderPreservingMap<unique_ptr<ParsedExpression>> &named_arguments,
+                                  vector<unique_ptr<Expression>> &bound_arguments) {
 	// create a MacroBinding to bind this macro's parameters to its arguments
 	vector<LogicalType> types = macro_def.types;
 	types.resize(macro_def.parameters.size(), LogicalType::UNKNOWN);
@@ -255,6 +264,7 @@ MacroFunction::CreateDummyBinding(const MacroFunction &macro_def, const string &
 
 	auto res = make_uniq<DummyBinding>(types, names, name);
 	res->arguments = &positional_arguments;
+	res->bound_arguments = &bound_arguments;
 	return res;
 }
 

@@ -29,8 +29,8 @@ unique_ptr<QueryNode> Binder::BindTableMacro(FunctionExpression &function, Table
 	}
 	auto &macro_def = *macro_func.macros[bind_result.function_idx.GetIndex()];
 
-	auto new_macro_binding =
-	    MacroFunction::CreateDummyBinding(macro_def, macro_func.name, positional_arguments, named_arguments);
+	auto new_macro_binding = MacroFunction::CreateDummyBinding(macro_def, macro_func.name, positional_arguments,
+	                                                           named_arguments, bind_result.bound_arguments);
 	new_macro_binding->arguments = &positional_arguments;
 
 	// We need an ExpressionBinder so that we can call ExpressionBinder::ReplaceMacroParametersRecursive()
