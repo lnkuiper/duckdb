@@ -9,6 +9,7 @@
 #include "duckdb/planner/binder.hpp"
 #include "duckdb/planner/expression/bound_constant_expression.hpp"
 #include "duckdb/planner/expression/bound_function_expression.hpp"
+#include "duckdb/planner/expression/bound_cast_expression.hpp"
 #include "duckdb/planner/expression_iterator.hpp"
 #include "duckdb/planner/operator/logical_projection.hpp"
 
@@ -342,6 +343,46 @@ static Value GetIntegralRangeValue(ClientContext &context, const LogicalType &ty
 	}
 }
 
+static LogicalType GetDowncastType(ClientContext &context, const LogicalType &type, const BaseStatistics &stats) {
+	if (GetTypeIdSize(type.InternalType()) > GetTypeIdSize(PhysicalType::INT64)) {
+		return type; // Only do this for (u)bigint and smaller
+	}
+
+	// We'll compute everything in the hugeint domain for simplicity
+	const auto min = IntegralValue::Get(NumericStats::Min(stats));
+	const auto max = IntegralValue::Get(NumericStats::Max(stats));
+
+	if (type.IsSigned()) {
+		if (min >= NumericLimits<int8_t>::Minimum() && max <= NumericLimits<int8_t>::Maximum()) {
+			return LogicalType::TINYINT;
+		}
+		if (min >= NumericLimits<int16_t>::Minimum() && max <= NumericLimits<int16_t>::Maximum()) {
+			return LogicalType::SMALLINT;
+		}
+		if (min >= NumericLimits<int32_t>::Minimum() && max <= NumericLimits<int32_t>::Maximum()) {
+			return LogicalType::INTEGER;
+		}
+		if (min >= NumericLimits<int64_t>::Minimum() && max <= NumericLimits<int64_t>::Maximum()) {
+			return LogicalType::BIGINT;
+		}
+
+	} else {
+		if (min >= NumericLimits<uint8_t>::Minimum() && max <= NumericLimits<uint8_t>::Maximum()) {
+			return LogicalType::UTINYINT;
+		}
+		if (min >= NumericLimits<uint16_t>::Minimum() && max <= NumericLimits<uint16_t>::Maximum()) {
+			return LogicalType::USMALLINT;
+		}
+		if (min >= NumericLimits<uint32_t>::Minimum() && max <= NumericLimits<uint32_t>::Maximum()) {
+			return LogicalType::UINTEGER;
+		}
+		if (min >= NumericLimits<uint64_t>::Minimum() && max <= NumericLimits<uint64_t>::Maximum()) {
+			return LogicalType::UBIGINT;
+		}
+	}
+	return type;
+}
+
 unique_ptr<CompressExpression> CompressedMaterialization::GetIntegralCompress(unique_ptr<Expression> input,
                                                                               const BaseStatistics &stats) {
 	const auto &type = input->return_type;
@@ -366,14 +407,14 @@ unique_ptr<CompressExpression> CompressedMaterialization::GetIntegralCompress(un
 
 		// Get the smallest type that the range can fit into
 		const auto range = UBigIntValue::Get(range_value);
-		if (range <= NumericLimits<uint8_t>().Maximum()) {
+		if (range <= NumericLimits<uint8_t>::Maximum()) {
 			cast_type = LogicalType::UTINYINT;
-		} else if (range <= NumericLimits<uint16_t>().Maximum()) {
+		} else if (range <= NumericLimits<uint16_t>::Maximum()) {
 			cast_type = LogicalType::USMALLINT;
-		} else if (range <= NumericLimits<uint32_t>().Maximum()) {
+		} else if (range <= NumericLimits<uint32_t>::Maximum()) {
 			cast_type = LogicalType::UINTEGER;
 		} else {
-			D_ASSERT(range <= NumericLimits<uint64_t>().Maximum());
+			D_ASSERT(range <= NumericLimits<uint64_t>::Maximum());
 			cast_type = LogicalType::UBIGINT;
 		}
 
@@ -387,22 +428,38 @@ unique_ptr<CompressExpression> CompressedMaterialization::GetIntegralCompress(un
 	if (GetTypeIdSize(cast_type.InternalType()) == GetTypeIdSize(type.InternalType())) {
 		return nullptr;
 	}
+	// Compressing will yield a benefit
 	D_ASSERT(GetTypeIdSize(cast_type.InternalType()) < GetTypeIdSize(type.InternalType()));
 
-	// Compressing will yield a benefit
-	auto compress_function = CMIntegralCompressFun::GetFunction(type, cast_type);
-	vector<unique_ptr<Expression>> arguments;
-	arguments.emplace_back(std::move(input));
-	arguments.emplace_back(make_uniq<BoundConstantExpression>(min));
-	auto compress_expr =
-	    make_uniq<BoundFunctionExpression>(cast_type, compress_function, std::move(arguments), nullptr);
+	unique_ptr<Expression> compress_expr;
+	unique_ptr<BaseStatistics> compress_stats;
 
-	auto compress_stats = BaseStatistics::CreateEmpty(cast_type);
-	compress_stats.CopyBase(stats);
-	NumericStats::SetMin(compress_stats, Value(0).DefaultCastAs(cast_type));
-	NumericStats::SetMax(compress_stats, range_value.DefaultCastAs(cast_type));
+	// Check if a simple downcast will compress by just as much
+	// If it does, we prefer that, because it allows JoinFilterPushdown to go through
+	const auto downcast_type = GetDowncastType(context, cast_type, stats);
+	if (GetTypeIdSize(cast_type.InternalType()) <= GetTypeIdSize(cast_type.InternalType())) {
+		compress_expr = BoundCastExpression::AddCastToType(context, std::move(input), downcast_type, false);
 
-	return make_uniq<CompressExpression>(std::move(compress_expr), compress_stats.ToUnique());
+		auto stats_temp = BaseStatistics::CreateEmpty(downcast_type);
+		stats_temp.CopyBase(stats);
+		NumericStats::SetMin(stats_temp, NumericStats::Min(stats).DefaultCastAs(downcast_type));
+		NumericStats::SetMax(stats_temp, NumericStats::Max(stats).DefaultCastAs(downcast_type));
+		compress_stats = stats_temp.ToUnique();
+	} else {
+		auto compress_function = CMIntegralCompressFun::GetFunction(type, cast_type);
+		vector<unique_ptr<Expression>> arguments;
+		arguments.emplace_back(std::move(input));
+		arguments.emplace_back(make_uniq<BoundConstantExpression>(min));
+		compress_expr = make_uniq<BoundFunctionExpression>(cast_type, compress_function, std::move(arguments), nullptr);
+
+		auto stats_temp = BaseStatistics::CreateEmpty(cast_type);
+		stats_temp.CopyBase(stats);
+		NumericStats::SetMin(stats_temp, Value(0).DefaultCastAs(cast_type));
+		NumericStats::SetMax(stats_temp, range_value.DefaultCastAs(cast_type));
+		compress_stats = stats_temp.ToUnique();
+	}
+
+	return make_uniq<CompressExpression>(std::move(compress_expr), std::move(compress_stats));
 }
 
 unique_ptr<CompressExpression> CompressedMaterialization::GetStringCompress(unique_ptr<Expression> input,
