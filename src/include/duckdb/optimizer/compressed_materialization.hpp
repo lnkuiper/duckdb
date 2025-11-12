@@ -43,6 +43,7 @@ public:
 	//! Type before compressing
 	LogicalType type;
 	bool needs_decompression;
+	bool is_cast;
 	unique_ptr<BaseStatistics> stats;
 };
 
@@ -103,7 +104,8 @@ private:
 	//! Adds bindings referenced in expression to referenced_bindings
 	static void GetReferencedBindings(const Expression &expression, column_binding_set_t &referenced_bindings);
 	//! Updates CMBindingInfo in the binding_map in info
-	void UpdateBindingInfo(CompressedMaterializationInfo &info, const ColumnBinding &binding, bool needs_decompression);
+	void UpdateBindingInfo(CompressedMaterializationInfo &info, const ColumnBinding &binding, bool needs_decompression,
+	                       bool is_cast);
 
 	//! Create (de)compress projections around the operator
 	void CreateProjections(unique_ptr<LogicalOperator> &op, CompressedMaterializationInfo &info);

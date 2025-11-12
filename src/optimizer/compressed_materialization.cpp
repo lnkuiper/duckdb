@@ -55,7 +55,7 @@ void CompressedMaterialization::GetReferencedBindings(const Expression &root_exp
 }
 
 void CompressedMaterialization::UpdateBindingInfo(CompressedMaterializationInfo &info, const ColumnBinding &binding,
-                                                  bool needs_decompression) {
+                                                  bool needs_decompression, bool is_cast) {
 	auto &binding_map = info.binding_map;
 	auto binding_it = binding_map.find(binding);
 	if (binding_it == binding_map.end()) {
@@ -64,6 +64,7 @@ void CompressedMaterialization::UpdateBindingInfo(CompressedMaterializationInfo 
 
 	auto &binding_info = binding_it->second;
 	binding_info.needs_decompression = needs_decompression;
+	binding_info.is_cast = is_cast;
 	auto stats_it = statistics_map.find(binding);
 	if (stats_it != statistics_map.end()) {
 		binding_info.stats = statistics_map[binding]->ToUnique();
@@ -145,7 +146,8 @@ bool CompressedMaterialization::TryCompressChild(CompressedMaterializationInfo &
 			unique_ptr<BaseStatistics> colref_stats = it != statistics_map.end() ? it->second->ToUnique() : nullptr;
 			compress_exprs.emplace_back(make_uniq<CompressExpression>(std::move(colref_expr), std::move(colref_stats)));
 		}
-		UpdateBindingInfo(info, child_binding, compressed);
+		UpdateBindingInfo(info, child_binding, compressed,
+		                  compress_exprs.back()->expression->GetExpressionClass() == ExpressionClass::BOUND_CAST);
 		compressed_anything = compressed_anything || compressed;
 	}
 	if (!compressed_anything) {
@@ -247,7 +249,12 @@ void CompressedMaterialization::CreateDecompressProjection(unique_ptr<LogicalOpe
 			}
 			stats = binding_info.stats.get();
 			if (binding_info.needs_decompression) {
-				decompress_expr = GetDecompressExpression(std::move(decompress_expr), binding_info.type, *stats);
+				if (binding_info.is_cast) {
+					decompress_expr = BoundCastExpression::AddCastToType(context, std::move(decompress_expr),
+					                                                     binding_info.type, false);
+				} else {
+					decompress_expr = GetDecompressExpression(std::move(decompress_expr), binding_info.type, *stats);
+				}
 			}
 		}
 		statistics.push_back(stats);
@@ -343,16 +350,15 @@ static Value GetIntegralRangeValue(ClientContext &context, const LogicalType &ty
 	}
 }
 
-static LogicalType GetDowncastType(ClientContext &context, const LogicalType &type, const BaseStatistics &stats) {
+static LogicalType GetDowncastType(const LogicalType &type, const BaseStatistics &stats) {
 	if (GetTypeIdSize(type.InternalType()) > GetTypeIdSize(PhysicalType::INT64)) {
 		return type; // Only do this for (u)bigint and smaller
 	}
 
-	// We'll compute everything in the hugeint domain for simplicity
-	const auto min = IntegralValue::Get(NumericStats::Min(stats));
-	const auto max = IntegralValue::Get(NumericStats::Max(stats));
-
+	// We'll compute everything in the (u)hugeint domain for simplicity
 	if (type.IsSigned()) {
+		const auto min = IntegralValue::Get(NumericStats::Min(stats));
+		const auto max = IntegralValue::Get(NumericStats::Max(stats));
 		if (min >= NumericLimits<int8_t>::Minimum() && max <= NumericLimits<int8_t>::Maximum()) {
 			return LogicalType::TINYINT;
 		}
@@ -365,8 +371,9 @@ static LogicalType GetDowncastType(ClientContext &context, const LogicalType &ty
 		if (min >= NumericLimits<int64_t>::Minimum() && max <= NumericLimits<int64_t>::Maximum()) {
 			return LogicalType::BIGINT;
 		}
-
 	} else {
+		const auto min = NumericCast<uhugeint_t>(IntegralValue::Get(NumericStats::Min(stats)));
+		const auto max = NumericCast<uhugeint_t>(IntegralValue::Get(NumericStats::Max(stats)));
 		if (min >= NumericLimits<uint8_t>::Minimum() && max <= NumericLimits<uint8_t>::Maximum()) {
 			return LogicalType::UTINYINT;
 		}
@@ -436,8 +443,8 @@ unique_ptr<CompressExpression> CompressedMaterialization::GetIntegralCompress(un
 
 	// Check if a simple downcast will compress by just as much
 	// If it does, we prefer that, because it allows JoinFilterPushdown to go through
-	const auto downcast_type = GetDowncastType(context, cast_type, stats);
-	if (GetTypeIdSize(cast_type.InternalType()) <= GetTypeIdSize(cast_type.InternalType())) {
+	const auto downcast_type = GetDowncastType(type, stats);
+	if (GetTypeIdSize(downcast_type.InternalType()) <= GetTypeIdSize(cast_type.InternalType())) {
 		compress_expr = BoundCastExpression::AddCastToType(context, std::move(input), downcast_type, false);
 
 		auto stats_temp = BaseStatistics::CreateEmpty(downcast_type);
