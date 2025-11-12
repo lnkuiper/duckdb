@@ -27,7 +27,7 @@ CMChildInfo::CMChildInfo(LogicalOperator &op, const column_binding_set_t &refere
 }
 
 CMBindingInfo::CMBindingInfo(ColumnBinding binding_p, const LogicalType &type_p)
-    : binding(binding_p), type(type_p), needs_decompression(false) {
+    : binding(binding_p), type(type_p), needs_decompression(false), is_cast(false) {
 }
 
 CompressedMaterializationInfo::CompressedMaterializationInfo(LogicalOperator &op, vector<idx_t> &&child_idxs_p,
@@ -137,17 +137,18 @@ bool CompressedMaterialization::TryCompressChild(CompressedMaterializationInfo &
 		const auto &can_compress = child_info.can_compress[child_i];
 		auto compress_expr = GetCompressExpression(child_binding, child_type, can_compress);
 		bool compressed = false;
+		bool is_cast = false;
 		if (compress_expr) { // We compressed, mark the outgoing binding in need of decompression
 			compress_exprs.emplace_back(std::move(compress_expr));
 			compressed = true;
+			is_cast = compress_exprs.back()->expression->GetExpressionClass() == ExpressionClass::BOUND_CAST;
 		} else { // We did not compress, just push a colref
 			auto colref_expr = make_uniq<BoundColumnRefExpression>(child_type, child_binding);
 			auto it = statistics_map.find(colref_expr->binding);
 			unique_ptr<BaseStatistics> colref_stats = it != statistics_map.end() ? it->second->ToUnique() : nullptr;
 			compress_exprs.emplace_back(make_uniq<CompressExpression>(std::move(colref_expr), std::move(colref_stats)));
 		}
-		UpdateBindingInfo(info, child_binding, compressed,
-		                  compress_exprs.back()->expression->GetExpressionClass() == ExpressionClass::BOUND_CAST);
+		UpdateBindingInfo(info, child_binding, compressed, is_cast);
 		compressed_anything = compressed_anything || compressed;
 	}
 	if (!compressed_anything) {
