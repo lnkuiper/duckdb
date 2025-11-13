@@ -352,12 +352,18 @@ static Value GetIntegralRangeValue(ClientContext &context, const LogicalType &ty
 }
 
 static LogicalType GetDowncastType(const LogicalType &type, const BaseStatistics &stats) {
+	if (!NumericStats::HasMinMax(stats)) {
+		return type;
+	}
 	if (GetTypeIdSize(type.InternalType()) > GetTypeIdSize(PhysicalType::INT64)) {
 		return type; // Only do this for (u)bigint and smaller
 	}
 
 	// We'll compute everything in the (u)hugeint domain for simplicity
 	if (type.IsSigned()) {
+		if (!stats.CanHaveNoNull()) {
+			return LogicalType::TINYINT;
+		}
 		const auto min = IntegralValue::Get(NumericStats::Min(stats));
 		const auto max = IntegralValue::Get(NumericStats::Max(stats));
 		if (min >= NumericLimits<int8_t>::Minimum() && max <= NumericLimits<int8_t>::Maximum()) {
@@ -373,6 +379,9 @@ static LogicalType GetDowncastType(const LogicalType &type, const BaseStatistics
 			return LogicalType::BIGINT;
 		}
 	} else {
+		if (!stats.CanHaveNoNull()) {
+			return LogicalType::UTINYINT;
+		}
 		const auto min = NumericCast<uhugeint_t>(IntegralValue::Get(NumericStats::Min(stats)));
 		const auto max = NumericCast<uhugeint_t>(IntegralValue::Get(NumericStats::Max(stats)));
 		if (min >= NumericLimits<uint8_t>::Minimum() && max <= NumericLimits<uint8_t>::Maximum()) {
