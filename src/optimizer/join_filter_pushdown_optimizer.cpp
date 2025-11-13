@@ -7,6 +7,7 @@
 #include "duckdb/optimizer/optimizer.hpp"
 #include "duckdb/planner/expression/bound_aggregate_expression.hpp"
 #include "duckdb/planner/expression/bound_columnref_expression.hpp"
+#include "duckdb/planner/expression/bound_cast_expression.hpp"
 #include "duckdb/planner/operator/logical_aggregate.hpp"
 #include "duckdb/planner/operator/logical_comparison_join.hpp"
 #include "duckdb/planner/operator/logical_get.hpp"
@@ -20,14 +21,30 @@ JoinFilterPushdownOptimizer::JoinFilterPushdownOptimizer(Optimizer &optimizer) :
 }
 
 bool PushdownJoinFilterExpression(Expression &expr, JoinFilterPushdownColumn &filter) {
-	if (expr.GetExpressionType() != ExpressionType::BOUND_COLUMN_REF) {
-		// not a simple column ref - bail-out
+	switch (expr.GetExpressionClass()) {
+	case ExpressionClass::BOUND_COLUMN_REF: {
+		// column-ref - pass through the new column binding
+		auto &colref = expr.Cast<BoundColumnRefExpression>();
+		filter.probe_column_index = colref.binding;
+		return true;
+	}
+	case ExpressionClass::BOUND_CAST: {
+		// We allow pushing through integral down/upcasts, as long as source/target are (u)bigint or smaller
+		const auto &bound_cast = expr.Cast<BoundCastExpression>();
+		const auto &src = bound_cast.child->return_type;
+		const auto &tgt = bound_cast.return_type;
+		if (!src.IsIntegral() || !tgt.IsIntegral()) {
+			return false;
+		}
+		if (GetTypeIdSize(src.InternalType()) > GetTypeIdSize(PhysicalType::INT64) ||
+		    GetTypeIdSize(tgt.InternalType()) > GetTypeIdSize(PhysicalType::INT64)) {
+			return false; // Only do this for (u)bigint and smaller
+		}
+		return PushdownJoinFilterExpression(*bound_cast.child, filter);
+	}
+	default:
 		return false;
 	}
-	// column-ref - pass through the new column binding
-	auto &colref = expr.Cast<BoundColumnRefExpression>();
-	filter.probe_column_index = colref.binding;
-	return true;
 }
 
 void JoinFilterPushdownOptimizer::GetPushdownFilterTargets(LogicalOperator &op,
@@ -97,11 +114,19 @@ void JoinFilterPushdownOptimizer::GetPushdownFilterTargets(LogicalOperator &op,
 			// filter pushdown is not supported - no need to consider this node
 			return;
 		}
+		get.ResolveOperatorTypes();
+		const auto bindings = get.GetColumnBindings();
 		for (auto &filter : columns) {
 			if (filter.probe_column_index.table_index != get.table_index) {
 				// the filter does not apply to the probe side here - bail-out
 				return;
 			}
+			for (idx_t i = 0; i < bindings.size(); i++) {
+				if (filter.probe_column_index.column_index == bindings[i].column_index) {
+					filter.type = get.types[i];
+				}
+			}
+			D_ASSERT(filter.type != LogicalType::INVALID);
 		}
 		targets.emplace_back(get, std::move(columns));
 		break;
