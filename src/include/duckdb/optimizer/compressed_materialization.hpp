@@ -63,11 +63,12 @@ public:
 
 struct CompressExpression {
 public:
-	CompressExpression(unique_ptr<Expression> expression, unique_ptr<BaseStatistics> stats);
+	CompressExpression(unique_ptr<Expression> expression, unique_ptr<BaseStatistics> stats, bool is_cast);
 
 public:
 	unique_ptr<Expression> expression;
 	unique_ptr<BaseStatistics> stats;
+	bool is_cast;
 };
 
 typedef column_binding_map_t<unique_ptr<BaseStatistics>> statistics_map_t;

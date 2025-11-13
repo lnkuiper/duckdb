@@ -36,6 +36,7 @@ void CompressedMaterialization::CompressAggregate(unique_ptr<LogicalOperator> &o
 	column_binding_set_t referenced_bindings;
 	vector<ColumnBinding> group_bindings(groups.size(), ColumnBinding());
 	vector<bool> needs_decompression(groups.size(), false);
+	vector<bool> is_cast(groups.size(), false);
 	vector<unique_ptr<BaseStatistics>> stored_group_stats;
 	stored_group_stats.resize(groups.size());
 	for (idx_t group_idx = 0; group_idx < groups.size(); group_idx++) {
@@ -58,6 +59,7 @@ void CompressedMaterialization::CompressAggregate(unique_ptr<LogicalOperator> &o
 		auto compress_expr = GetCompressExpression(group_expr.Copy(), *group_stats[group_idx]);
 		if (compress_expr) {
 			needs_decompression[group_idx] = true;
+			is_cast[group_idx] = compress_expr->is_cast;
 			stored_group_stats[group_idx] = std::move(group_stats[group_idx]);
 			groups[group_idx] = std::move(compress_expr->expression);
 			group_stats[group_idx] = std::move(compress_expr->stats);
@@ -99,6 +101,7 @@ void CompressedMaterialization::CompressAggregate(unique_ptr<LogicalOperator> &o
 			// Compressed non-generically
 			auto entry = info.binding_map.emplace(bindings_out[group_idx], std::move(binding_info));
 			entry.first->second.stats = std::move(stored_group_stats[group_idx]);
+			entry.first->second.is_cast = is_cast[group_idx];
 		} else if (group_bindings[group_idx] != ColumnBinding()) {
 			info.binding_map.emplace(group_bindings[group_idx], std::move(binding_info));
 		}
