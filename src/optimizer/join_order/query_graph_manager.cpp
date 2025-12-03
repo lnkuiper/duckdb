@@ -35,18 +35,18 @@ bool QueryGraphManager::Build(JoinOrderOptimizer &optimizer, LogicalOperator &op
 	return true;
 }
 
-void QueryGraphManager::GetColumnBinding(Expression &root_expr, ColumnBinding &binding) {
-	ExpressionIterator::VisitExpression<BoundColumnRefExpression>(
-	    root_expr, [&](const BoundColumnRefExpression &colref) {
-		    D_ASSERT(colref.depth == 0);
-		    D_ASSERT(colref.binding.table_index != DConstants::INVALID_INDEX);
-		    // map the base table index to the relation index used by the JoinOrderOptimizer
-		    D_ASSERT(relation_manager.relation_mapping.find(colref.binding.table_index) !=
-		             relation_manager.relation_mapping.end());
-		    binding = ColumnBinding(relation_manager.relation_mapping[colref.binding.table_index],
-		                            colref.binding.column_index);
-	    });
-}
+// void QueryGraphManager::GetColumnBinding(Expression &root_expr, ColumnBinding &binding) {
+// 	ExpressionIterator::VisitExpression<BoundColumnRefExpression>(
+// 	    root_expr, [&](const BoundColumnRefExpression &colref) {
+// 		    D_ASSERT(colref.depth == 0);
+// 		    D_ASSERT(colref.binding.table_index != DConstants::INVALID_INDEX);
+// 		    // map the base table index to the relation index used by the JoinOrderOptimizer
+// 		    D_ASSERT(relation_manager.relation_mapping.find(colref.binding.table_index) !=
+// 		             relation_manager.relation_mapping.end());
+// 		    binding = ColumnBinding(relation_manager.relation_mapping[colref.binding.table_index],
+// 		                            colref.binding.column_index);
+// 	    });
+// }
 
 const vector<unique_ptr<FilterInfo>> &QueryGraphManager::GetFilterBindings() const {
 	return filters_and_bindings;
@@ -233,13 +233,6 @@ GenerateJoinRelation QueryGraphManager::GenerateJoins(vector<unique_ptr<LogicalO
 				               f->join_type == JoinType::ANTI)) {
 					std::swap(join->children[0], join->children[1]);
 					std::swap(left, right);
-				bool invert = !JoinRelationSet::IsSubset(*left.set, *f->left_set);
-				// If the left and right set are inverted AND it is a semi or anti join
-				// swap left and right children back.
-
-				if (invert && (f->join_type == JoinType::SEMI || f->join_type == JoinType::ANTI)) {
-					std::swap(join->children[0], join->children[1]);
-					invert = false;
 				}
 
 				if (condition->GetExpressionClass() == ExpressionClass::BOUND_COMPARISON) {
@@ -270,7 +263,6 @@ GenerateJoinRelation QueryGraphManager::GenerateJoins(vector<unique_ptr<LogicalO
 	// TODO: this is where estimated properties start coming into play.
 	//  when creating the result operator, we should ask the cost model and cardinality estimator what
 	//  the cost and cardinality are
-	//	result_operator->estimated_props = node.estimated_props->Copy();
 	result_operator->estimated_cardinality = node->cardinality;
 	result_operator->has_estimated_cardinality = true;
 	// check if we should do a pushdown on this node

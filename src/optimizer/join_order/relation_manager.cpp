@@ -797,34 +797,28 @@ vector<unique_ptr<FilterInfo>> RelationManager::ExtractEdges(vector<reference<Lo
 			case JoinType::SEMI:
 			case JoinType::ANTI:
 			case JoinType::LEFT: {
-				// create a filter info that is a conjunction of all conditions, you cannot split up
-				// conditions for these join types.
-				unique_ptr<BoundConjunctionExpression> conj_expr =
-				    make_uniq<BoundConjunctionExpression>(ExpressionType::CONJUNCTION_AND);
-				for (idx_t i = 0; i < join.conditions.size(); i++) {
-					auto &condition = join.conditions[i];
-					auto expr = make_uniq<BoundComparisonExpression>(condition.comparison, std::move(condition.left),
-					                                                 std::move(condition.right));
-					conj_expr->children.push_back(std::move(expr));
-			if (join.join_type == JoinType::SEMI || join.join_type == JoinType::ANTI) {
-				auto conjunction_expression = make_uniq<BoundConjunctionExpression>(ExpressionType::CONJUNCTION_AND);
-				// create a conjunction expression for the semi join.
-				// It's possible multiple LHS relations have a condition in
-				// this semi join. Suppose we have ((A ⨝ B) ⋉ C). (example in test_4950.test)
-				// If the semi join condition has A.x = C.y AND B.x = C.z then we need to prevent a reordering
-				// that looks like ((A ⋉ C) ⨝ B)), since all columns from C will be lost after it joins with A,
-				// and the condition B.x = C.z will no longer be possible.
-				// if we make a conjunction expressions and populate the left set and right set with all
-				// the relations from the conditions in the conjunction expression, we can prevent invalid
-				// reordering.
-				for (auto &cond : join.conditions) {
-					auto comparison = make_uniq<BoundComparisonExpression>(cond.comparison, std::move(cond.left),
-					                                                       std::move(cond.right));
-					conjunction_expression->children.push_back(std::move(comparison));
+				if (join.join_type == JoinType::SEMI || join.join_type == JoinType::ANTI) {
+					auto conjunction_expression =
+					    make_uniq<BoundConjunctionExpression>(ExpressionType::CONJUNCTION_AND);
+					// create a conjunction expression for the semi join.
+					// It's possible multiple LHS relations have a condition in
+					// this semi join. Suppose we have ((A ⨝ B) ⋉ C). (example in test_4950.test)
+					// If the semi join condition has A.x = C.y AND B.x = C.z then we need to prevent a reordering
+					// that looks like ((A ⋉ C) ⨝ B)), since all columns from C will be lost after it joins with A,
+					// and the condition B.x = C.z will no longer be possible.
+					// if we make a conjunction expressions and populate the left set and right set with all
+					// the relations from the conditions in the conjunction expression, we can prevent invalid
+					// reordering.
+					for (auto &cond : join.conditions) {
+						auto comparison = make_uniq<BoundComparisonExpression>(cond.comparison, std::move(cond.left),
+						                                                       std::move(cond.right));
+						conjunction_expression->children.push_back(std::move(comparison));
+					}
+					auto leftover_exprs =
+					    CreateFilterInfoFromExpression(std::move(conjunction_expression), set_manager, join.join_type);
+					D_ASSERT(leftover_exprs.empty());
+					break;
 				}
-				auto leftover_exprs = CreateFilterInfoFromExpression(std::move(conj_expr), set_manager, join.join_type);
-				D_ASSERT(leftover_exprs.empty());
-				break;
 			}
 			default: {
 				D_ASSERT(join.join_type == JoinType::INNER);
