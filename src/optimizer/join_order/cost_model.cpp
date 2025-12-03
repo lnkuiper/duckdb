@@ -1,4 +1,3 @@
-
 #include "duckdb/optimizer/join_order/join_node.hpp"
 #include "duckdb/optimizer/join_order/join_order_optimizer.hpp"
 #include "duckdb/optimizer/join_order/cost_model.hpp"
@@ -13,7 +12,9 @@ double CostModel::ComputeCost(DPJoinNode &left, DPJoinNode &right, NeighborInfo 
 	return ComputeJoinCost(left, right);
 }
 
-double CostModel::ComputeJoinCost(DPJoinNode &left, DPJoinNode &right) {
+// Currently cost of a join only factors in the cardinalities.
+// If join types and join algorithms are to be considered, they should be added here.
+double CostModel::ComputeCost(DPJoinNode &left, DPJoinNode &right) {
 	auto &combination = query_graph_manager.set_manager.Union(left.set, right.set);
 	auto join_card = cardinality_estimator.EstimateCardinalityWithSet<double>(combination);
 	auto join_cost = join_card;

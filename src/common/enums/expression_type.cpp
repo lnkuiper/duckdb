@@ -15,6 +15,8 @@ string ExpressionTypeToString(ExpressionType type) {
 		return "IS_NULL";
 	case ExpressionType::OPERATOR_IS_NOT_NULL:
 		return "IS_NOT_NULL";
+	case ExpressionType::OPERATOR_UNPACK:
+		return "UNPACK";
 	case ExpressionType::COMPARE_EQUAL:
 		return "EQUAL";
 	case ExpressionType::COMPARE_NOTEQUAL:
@@ -77,6 +79,8 @@ string ExpressionTypeToString(ExpressionType type) {
 		return "LAG";
 	case ExpressionType::WINDOW_NTILE:
 		return "NTILE";
+	case ExpressionType::WINDOW_FILL:
+		return "FILL";
 	case ExpressionType::FUNCTION:
 		return "FUNCTION";
 	case ExpressionType::CASE_EXPR:
@@ -85,6 +89,8 @@ string ExpressionTypeToString(ExpressionType type) {
 		return "NULLIF";
 	case ExpressionType::OPERATOR_COALESCE:
 		return "COALESCE";
+	case ExpressionType::OPERATOR_TRY:
+		return "TRY";
 	case ExpressionType::ARRAY_EXTRACT:
 		return "ARRAY_EXTRACT";
 	case ExpressionType::ARRAY_SLICE:
@@ -280,6 +286,12 @@ ExpressionType NegateComparisonExpression(ExpressionType type) {
 		break;
 	case ExpressionType::COMPARE_GREATERTHANOREQUALTO:
 		negated_type = ExpressionType::COMPARE_LESSTHAN;
+		break;
+	case ExpressionType::COMPARE_DISTINCT_FROM:
+		negated_type = ExpressionType::COMPARE_NOT_DISTINCT_FROM;
+		break;
+	case ExpressionType::COMPARE_NOT_DISTINCT_FROM:
+		negated_type = ExpressionType::COMPARE_DISTINCT_FROM;
 		break;
 	default:
 		throw InternalException("Unsupported comparison type in negation");

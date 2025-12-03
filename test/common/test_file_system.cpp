@@ -3,6 +3,8 @@
 #include "duckdb/common/file_system.hpp"
 #include "duckdb/common/fstream.hpp"
 #include "duckdb/common/local_file_system.hpp"
+#include "duckdb/common/vector.hpp"
+#include "duckdb/common/virtual_file_system.hpp"
 #include "test_helpers.hpp"
 
 using namespace duckdb;
@@ -79,7 +81,7 @@ TEST_CASE("Make sure the file:// protocol works as expected", "[file_system]") {
 	REQUIRE(!fs->FileExists(fname_in_dir2));
 
 	auto file_listing = fs->Glob(fs->JoinPath(dname_triple_slash, "*"));
-	REQUIRE(file_listing[0] == fname_in_dir);
+	REQUIRE(file_listing[0].path == fname_in_dir);
 
 	fs->MoveFile(fname_in_dir, fname_in_dir2);
 
@@ -87,7 +89,7 @@ TEST_CASE("Make sure the file:// protocol works as expected", "[file_system]") {
 	REQUIRE(fs->FileExists(fname_in_dir2));
 
 	auto file_listing_after_move = fs->Glob(fs->JoinPath(dname_no_host, "*"));
-	REQUIRE(file_listing_after_move[0] == fname_in_dir3);
+	REQUIRE(file_listing_after_move[0].path == fname_in_dir3);
 
 	fs->RemoveDirectory(dname_triple_slash);
 
@@ -160,7 +162,7 @@ TEST_CASE("Test file operations", "[file_system]") {
 	// open file for writing
 	REQUIRE_NOTHROW(handle = fs->OpenFile(fname, FileFlags::FILE_FLAGS_WRITE | FileFlags::FILE_FLAGS_FILE_CREATE));
 	// write 10 integers
-	REQUIRE_NOTHROW(handle->Write((void *)test_data, sizeof(int64_t) * INTEGER_COUNT, 0));
+	REQUIRE_NOTHROW(handle->Write(QueryContext(), (void *)test_data, sizeof(int64_t) * INTEGER_COUNT, 0));
 	// close the file
 	handle.reset();
 
@@ -169,8 +171,14 @@ TEST_CASE("Test file operations", "[file_system]") {
 	}
 	// now open the file for reading
 	REQUIRE_NOTHROW(handle = fs->OpenFile(fname, FileFlags::FILE_FLAGS_READ));
+	// Check file stats.
+	const auto file_metadata = fs->Stats(*handle);
+	REQUIRE(file_metadata.file_size == 4096);
+	REQUIRE(file_metadata.file_type == FileType::FILE_TYPE_REGULAR);
+	REQUIRE(file_metadata.last_modification_time > timestamp_t {-1});
+
 	// read the 10 integers back
-	REQUIRE_NOTHROW(handle->Read((void *)test_data, sizeof(int64_t) * INTEGER_COUNT, 0));
+	REQUIRE_NOTHROW(handle->Read(QueryContext(), (void *)test_data, sizeof(int64_t) * INTEGER_COUNT, 0));
 	// check the values of the integers
 	for (int i = 0; i < 10; i++) {
 		REQUIRE(test_data[i] == i);
@@ -197,4 +205,72 @@ TEST_CASE("absolute paths", "[file_system]") {
 	REQUIRE(fs.NormalizeAbsolutePath(network) == network);
 	REQUIRE(fs.NormalizeAbsolutePath(long_path) == "\\\\?\\d:\\very long network\\");
 #endif
+}
+
+TEST_CASE("extract subsystem", "[file_system]") {
+	duckdb::VirtualFileSystem vfs;
+	auto local_filesystem = FileSystem::CreateLocal();
+	auto *local_filesystem_ptr = local_filesystem.get();
+	vfs.RegisterSubSystem(std::move(local_filesystem));
+
+	// Extract a non-existent filesystem gets nullptr.
+	REQUIRE(vfs.ExtractSubSystem("non-existent") == nullptr);
+
+	// Extract an existing filesystem.
+	auto extracted_filesystem = vfs.ExtractSubSystem(local_filesystem_ptr->GetName());
+	REQUIRE(extracted_filesystem.get() == local_filesystem_ptr);
+
+	// Re-extraction gets nullptr.
+	REQUIRE(vfs.ExtractSubSystem("non-existent") == nullptr);
+
+	// Register a subfilesystem and disable, which is not allowed to extract.
+	const ::duckdb::string target_fs = extracted_filesystem->GetName();
+	const ::duckdb::vector<string> disabled_subfilesystems {target_fs};
+	vfs.RegisterSubSystem(std::move(extracted_filesystem));
+	vfs.SetDisabledFileSystems(disabled_subfilesystems);
+	REQUIRE(vfs.ExtractSubSystem(target_fs) == nullptr);
+}
+
+TEST_CASE("re-register subsystem", "[file_system]") {
+	duckdb::VirtualFileSystem vfs;
+
+	// First time registration should succeed.
+	auto local_filesystem = FileSystem::CreateLocal();
+	vfs.RegisterSubSystem(std::move(local_filesystem));
+
+	// Re-register an already registered subfilesystem should throw.
+	auto second_local_filesystem = FileSystem::CreateLocal();
+	REQUIRE_THROWS(vfs.RegisterSubSystem(std::move(second_local_filesystem)));
+}
+
+TEST_CASE("filesystem concurrent access and deletion", "[file_system]") {
+	auto fs = FileSystem::CreateLocal();
+
+	auto fname = TestCreatePath("concurrent_delete_test_file");
+	const string payload = "DELETE_WHILE_OPEN_CONTENT";
+
+	// Open first handle to create/write, then close it.
+	auto write_handle = fs->OpenFile(fname, FileFlags::FILE_FLAGS_WRITE | FileFlags::FILE_FLAGS_FILE_CREATE);
+	write_handle->Write(QueryContext(), static_cast<void *>(const_cast<char *>(payload.c_str())), payload.size(),
+	                    /*location=*/0);
+	write_handle->Sync();
+	write_handle.reset();
+	REQUIRE(fs->FileExists(fname));
+
+	// Open second handle for reading.
+	auto read_handle = fs->OpenFile(fname, FileFlags::FILE_FLAGS_READ);
+
+	// Delete the file while the read handle is still open.
+	fs->RemoveFile(fname);
+	REQUIRE(!fs->FileExists(fname));
+
+	// Reading from the already-open read handle should still return the content.
+	string read_back(payload.size(), '\0');
+	read_handle->Read(QueryContext(), static_cast<void *>(const_cast<char *>(read_back.data())), payload.size(),
+	                  /*location=*/0);
+	REQUIRE(read_back == payload);
+
+	// Close the remaining handle; the file should not exist.
+	read_handle.reset();
+	REQUIRE(!fs->FileExists(fname));
 }

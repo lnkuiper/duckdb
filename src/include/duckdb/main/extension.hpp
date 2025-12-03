@@ -12,18 +12,19 @@
 #include "duckdb/common/winapi.hpp"
 
 namespace duckdb {
-class DuckDB;
+class ExtensionLoader;
 
 //! The Extension class is the base class used to define extensions
 class Extension {
 public:
 	DUCKDB_API virtual ~Extension();
 
-	DUCKDB_API virtual void Load(DuckDB &db) = 0;
+	DUCKDB_API virtual void Load(ExtensionLoader &db) = 0;
 	DUCKDB_API virtual std::string Name() = 0;
 	DUCKDB_API virtual std::string Version() const {
 		return "";
 	}
+	DUCKDB_API static const char *DefaultVersion();
 };
 
 enum class ExtensionABIType : uint8_t {

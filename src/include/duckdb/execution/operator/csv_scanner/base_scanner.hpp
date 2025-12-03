@@ -17,6 +17,35 @@
 namespace duckdb {
 
 class CSVFileScan;
+
+//! Class that keeps track of line starts, used for line size verification
+class LinePosition {
+public:
+	LinePosition() {
+	}
+	LinePosition(idx_t buffer_idx_p, idx_t buffer_pos_p, idx_t buffer_size_p)
+	    : buffer_pos(buffer_pos_p), buffer_size(buffer_size_p), buffer_idx(buffer_idx_p) {
+	}
+
+	idx_t operator-(const LinePosition &other) const {
+		if (other.buffer_idx == buffer_idx) {
+			return buffer_pos - other.buffer_pos;
+		}
+		return other.buffer_size - other.buffer_pos + buffer_pos;
+	}
+
+	bool operator==(const LinePosition &other) const {
+		return buffer_pos == other.buffer_pos && buffer_idx == other.buffer_idx && buffer_size == other.buffer_size;
+	}
+
+	idx_t GetGlobalPosition(idx_t requested_buffer_size, bool first_char_nl = false) const {
+		return requested_buffer_size * buffer_idx + buffer_pos + first_char_nl;
+	}
+	idx_t buffer_pos = 0;
+	idx_t buffer_size = 0;
+	idx_t buffer_idx = 0;
+};
+
 class ScannerResult {
 public:
 	ScannerResult(CSVStates &states, CSVStateMachine &state_machine, idx_t result_size);
@@ -52,6 +81,10 @@ public:
 		return result.comment == true;
 	}
 
+	inline bool IsStateCurrent(CSVState state) const {
+		return states.states[1] == state;
+	}
+
 	//! Variable to keep information regarding quoted and escaped values
 	bool quoted = false;
 	//! If the current quoted value is unquoted
@@ -62,10 +95,13 @@ public:
 	bool comment = false;
 	idx_t quoted_position = 0;
 
+	LinePosition last_position;
+
 	//! Size of the result
 	const idx_t result_size;
 
 	CSVStateMachine &state_machine;
+	bool cur_line_starts_as_comment = false;
 
 	void Print() const {
 		state_machine.Print();
@@ -81,14 +117,14 @@ class BaseScanner {
 public:
 	explicit BaseScanner(shared_ptr<CSVBufferManager> buffer_manager, shared_ptr<CSVStateMachine> state_machine,
 	                     shared_ptr<CSVErrorHandler> error_handler, bool sniffing = false,
-	                     shared_ptr<CSVFileScan> csv_file_scan = nullptr, CSVIterator iterator = {});
+	                     shared_ptr<CSVFileScan> csv_file_scan = nullptr, const CSVIterator &iterator = {});
 
 	virtual ~BaseScanner() = default;
 
 	//! Returns true if the scanner is finished
 	bool FinishedFile() const;
 
-	//! Parses data into a output_chunk
+	//! Parses data into an output_chunk
 	virtual ScannerResult &ParseChunk();
 
 	//! Returns the result from the last Parse call. Shouts at you if you call it wrong
@@ -111,6 +147,9 @@ public:
 	}
 
 	CSVStateMachine &GetStateMachine() const;
+
+	//! Removes thousands separator
+	static string RemoveSeparator(const char *value_ptr, const idx_t size, char thousands_separator);
 
 	shared_ptr<CSVFileScan> csv_file_scan;
 
@@ -166,6 +205,11 @@ protected:
 	void Process(T &result) {
 		idx_t to_pos;
 		const bool has_escaped_value = state_machine->dialect_options.state_machine_options.escape != '\0';
+		const bool only_rn_newlines =
+		    state_machine->state_machine_options.strict_mode.GetValue() &&
+		    state_machine->state_machine_options.strict_mode.IsSetByUser() &&
+		    state_machine->state_machine_options.new_line.GetValue() == NewLineIdentifier::CARRY_ON &&
+		    state_machine->state_machine_options.new_line.IsSetByUser();
 		const idx_t start_pos = iterator.pos.buffer_pos;
 		if (iterator.IsBoundarySet()) {
 			to_pos = iterator.GetEndPos();
@@ -229,7 +273,7 @@ protected:
 							lines_read++;
 							return;
 						}
-					} else {
+					} else if (!only_rn_newlines) {
 						if (T::AddRow(result, iterator.pos.buffer_pos)) {
 							iterator.pos.buffer_pos++;
 							bytes_read = iterator.pos.buffer_pos - start_pos;
@@ -248,7 +292,16 @@ protected:
 			case CSVState::QUOTED: {
 				if ((states.states[0] == CSVState::UNQUOTED || states.states[0] == CSVState::MAYBE_QUOTED) &&
 				    has_escaped_value) {
+					ever_escaped = true;
 					T::SetEscaped(result);
+				}
+				if ((states.states[0] == CSVState::ESCAPE || states.states[0] == CSVState::ESCAPED_RETURN ||
+				     states.states[0] == CSVState::UNQUOTED_ESCAPE) &&
+				    (buffer_handle_ptr[iterator.pos.buffer_pos] ==
+				         state_machine->dialect_options.state_machine_options.quote.GetValue() ||
+				     !state_machine->dialect_options.state_machine_options.strict_mode.GetValue())) {
+					// We only set the ever escaped variable if this is either a quote char OR strict mode is off
+					ever_escaped = true;
 				}
 				ever_quoted = true;
 				T::SetQuoted(result, iterator.pos.buffer_pos);
@@ -271,6 +324,7 @@ protected:
 			} break;
 			case CSVState::UNQUOTED: {
 				if (states.states[0] == CSVState::MAYBE_QUOTED) {
+					ever_escaped = true;
 					T::SetEscaped(result);
 				}
 				T::SetUnquoted(result);
@@ -281,7 +335,6 @@ protected:
 			case CSVState::UNQUOTED_ESCAPE:
 			case CSVState::ESCAPED_RETURN:
 				T::SetEscaped(result);
-				ever_escaped = true;
 				iterator.pos.buffer_pos++;
 				break;
 			case CSVState::STANDARD: {

@@ -7,19 +7,29 @@ include_directories(
   ../../third_party/thrift ../../third_party/snappy
   ../../third_party/brotli/include)
 
+add_subdirectory(decoder)
+add_subdirectory(reader)
+add_subdirectory(writer)
 set(PARQUET_EXTENSION_FILES
+    ${PARQUET_EXTENSION_FILES}
     column_reader.cpp
     column_writer.cpp
     parquet_crypto.cpp
     parquet_extension.cpp
+    parquet_file_metadata_cache.cpp
+    parquet_float16.cpp
+    parquet_multi_file_info.cpp
     parquet_metadata.cpp
     parquet_reader.cpp
+    parquet_field_id.cpp
     parquet_statistics.cpp
     parquet_timestamp.cpp
     parquet_writer.cpp
+    parquet_shredding.cpp
+    parquet_column_schema.cpp
+    parquet_geometry.cpp
     serialize_parquet.cpp
-    zstd_file_system.cpp
-    geo_parquet.cpp)
+    zstd_file_system.cpp)
 
 if(NOT CLANG_TIDY)
   # parquet/thrift/snappy

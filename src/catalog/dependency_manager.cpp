@@ -16,6 +16,8 @@
 #include "duckdb/parser/constraints/foreign_key_constraint.hpp"
 #include "duckdb/catalog/dependency_catalog_set.hpp"
 
+#include "duckdb/common/printer.hpp"
+
 namespace duckdb {
 
 static void AssertMangledName(const string &mangled_name, idx_t expected_null_bytes) {
@@ -455,7 +457,8 @@ void DependencyManager::VerifyExistence(CatalogTransaction transaction, Dependen
 
 	if (type != CatalogType::SCHEMA_ENTRY && lookup_result.result) {
 		auto &schema_entry = lookup_result.result->Cast<SchemaCatalogEntry>();
-		lookup_result = schema_entry.GetEntryDetailed(transaction, type, name);
+		EntryLookupInfo lookup_info(type, name);
+		lookup_result = schema_entry.LookupEntryDetailed(transaction, lookup_info);
 	}
 
 	if (lookup_result.reason == CatalogSet::EntryLookup::FailureReason::DELETED) {

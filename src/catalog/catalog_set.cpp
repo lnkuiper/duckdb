@@ -7,6 +7,7 @@
 #include "duckdb/common/exception.hpp"
 #include "duckdb/common/serializer/memory_stream.hpp"
 #include "duckdb/common/serializer/binary_serializer.hpp"
+#include "duckdb/catalog/catalog_entry/dependency/dependency_entry.hpp"
 #include "duckdb/common/string_util.hpp"
 #include "duckdb/parser/expression/constant_expression.hpp"
 #include "duckdb/parser/parsed_data/alter_table_info.hpp"
@@ -351,9 +352,10 @@ bool CatalogSet::AlterEntry(CatalogTransaction transaction, const string &name, 
 	map.UpdateEntry(std::move(value));
 
 	// push the old entry in the undo buffer for this transaction
+	unique_ptr<CatalogEntry> entry_to_destroy;
 	if (transaction.transaction) {
 		// serialize the AlterInfo into a temporary buffer
-		MemoryStream stream;
+		MemoryStream stream(Allocator::Get(*transaction.db));
 		BinarySerializer serializer(stream);
 		serializer.Begin();
 		serializer.WriteProperty(100, "column_name", alter_info.GetColumnName());
@@ -362,6 +364,10 @@ bool CatalogSet::AlterEntry(CatalogTransaction transaction, const string &name, 
 
 		DuckTransactionManager::Get(GetCatalog().GetAttached())
 		    .PushCatalogEntry(*transaction.transaction, new_entry->Child(), stream.GetData(), stream.GetPosition());
+	} else {
+		// if we don't have a transaction this alter is non-transactional
+		// in that case we are able to just directly destroy the child (if there is any)
+		entry_to_destroy = new_entry->TakeChild();
 	}
 
 	read_lock.unlock();
@@ -369,7 +375,6 @@ bool CatalogSet::AlterEntry(CatalogTransaction transaction, const string &name, 
 
 	// Check the dependency manager to verify that there are no conflicting dependencies with this alter
 	catalog.GetDependencyManager()->AlterObject(transaction, *entry, *new_entry, alter_info);
-
 	return true;
 }
 
@@ -451,6 +456,7 @@ void CatalogSet::VerifyExistenceOfDependency(transaction_t commit_id, CatalogEnt
 void CatalogSet::CommitDrop(transaction_t commit_id, transaction_t start_time, CatalogEntry &entry) {
 	auto &duck_catalog = GetCatalog();
 
+	entry.OnDrop();
 	// Make sure that we don't see any uncommitted changes
 	auto transaction_id = MAX_TRANSACTION_ID;
 	// This will allow us to see all committed changes made before this COMMIT happened
@@ -672,7 +678,7 @@ void CatalogSet::CreateDefaultEntries(CatalogTransaction transaction, unique_loc
 }
 
 void CatalogSet::Scan(CatalogTransaction transaction, const std::function<void(CatalogEntry &)> &callback) {
-	// lock the catalog set
+	// Lock the catalog set.
 	unique_lock<mutex> lock(catalog_lock);
 	CreateDefaultEntries(transaction, lock);
 
@@ -685,8 +691,28 @@ void CatalogSet::Scan(CatalogTransaction transaction, const std::function<void(C
 	}
 }
 
+void CatalogSet::ScanWithReturn(CatalogTransaction transaction, const std::function<bool(CatalogEntry &)> &callback) {
+	// Lock the catalog set.
+	unique_lock<mutex> lock(catalog_lock);
+	CreateDefaultEntries(transaction, lock);
+
+	for (auto &kv : map.Entries()) {
+		auto &entry = *kv.second;
+		auto &entry_for_transaction = GetEntryForTransaction(transaction, entry);
+		if (!entry_for_transaction.deleted) {
+			if (!callback(entry_for_transaction)) {
+				return;
+			}
+		}
+	}
+}
+
 void CatalogSet::Scan(ClientContext &context, const std::function<void(CatalogEntry &)> &callback) {
 	Scan(catalog.GetCatalogTransaction(context), callback);
+}
+
+void CatalogSet::ScanWithReturn(ClientContext &context, const std::function<bool(CatalogEntry &)> &callback) {
+	ScanWithReturn(catalog.GetCatalogTransaction(context), callback);
 }
 
 void CatalogSet::ScanWithPrefix(CatalogTransaction transaction, const std::function<void(CatalogEntry &)> &callback,
@@ -717,6 +743,11 @@ void CatalogSet::Scan(const std::function<void(CatalogEntry &)> &callback) {
 			callback(commited_entry);
 		}
 	}
+}
+
+void CatalogSet::SetDefaultGenerator(unique_ptr<DefaultGenerator> defaults_p) {
+	lock_guard<mutex> lock(catalog_lock);
+	defaults = std::move(defaults_p);
 }
 
 void CatalogSet::Verify(Catalog &catalog_p) {

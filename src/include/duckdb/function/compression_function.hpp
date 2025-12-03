@@ -11,10 +11,14 @@
 #include "duckdb/common/common.hpp"
 #include "duckdb/common/enums/compression_type.hpp"
 #include "duckdb/common/map.hpp"
+#include "duckdb/common/insertion_order_preserving_map.hpp"
 #include "duckdb/common/mutex.hpp"
 #include "duckdb/function/function.hpp"
 #include "duckdb/storage/data_pointer.hpp"
 #include "duckdb/storage/storage_info.hpp"
+#include "duckdb/storage/block_manager.hpp"
+#include "duckdb/main/client_context.hpp"
+#include "duckdb/storage/storage_lock.hpp"
 
 namespace duckdb {
 class DatabaseInstance;
@@ -23,8 +27,8 @@ struct ColumnDataCheckpointData;
 class ColumnSegment;
 class SegmentStatistics;
 class TableFilter;
+struct TableFilterState;
 struct ColumnSegmentState;
-
 struct ColumnFetchState;
 struct ColumnScanState;
 struct PrefetchState;
@@ -32,21 +36,30 @@ struct SegmentScanState;
 
 class CompressionInfo {
 public:
-	explicit CompressionInfo(const idx_t block_size) : block_size(block_size) {
+	explicit CompressionInfo(BlockManager &block_manager) : block_manager(block_manager) {
 	}
 
 public:
 	//! The size below which the segment is compacted on flushing.
 	idx_t GetCompactionFlushLimit() const {
-		return block_size / 5 * 4;
+		return block_manager.GetBlockSize() / 5 * 4;
 	}
 	//! The block size for blocks using this compression.
 	idx_t GetBlockSize() const {
-		return block_size;
+		return block_manager.GetBlockSize();
+	}
+
+	//! The block header size for blocks using this compression.
+	idx_t GetBlockHeaderSize() const {
+		return block_manager.GetBlockHeaderSize();
+	}
+
+	BlockManager &GetBlockManager() const {
+		return block_manager;
 	}
 
 private:
-	idx_t block_size;
+	BlockManager &block_manager;
 };
 
 struct AnalyzeState {
@@ -161,7 +174,8 @@ typedef void (*compression_compress_finalize_t)(CompressionState &state);
 // Uncompress / Scan
 //===--------------------------------------------------------------------===//
 typedef void (*compression_init_prefetch_t)(ColumnSegment &segment, PrefetchState &prefetch_state);
-typedef unique_ptr<SegmentScanState> (*compression_init_segment_scan_t)(ColumnSegment &segment);
+typedef unique_ptr<SegmentScanState> (*compression_init_segment_scan_t)(const QueryContext &context,
+                                                                        ColumnSegment &segment);
 
 //! Function prototype used for reading an entire vector (STANDARD_VECTOR_SIZE)
 typedef void (*compression_scan_vector_t)(ColumnSegment &segment, ColumnScanState &state, idx_t scan_count,
@@ -174,7 +188,8 @@ typedef void (*compression_select_t)(ColumnSegment &segment, ColumnScanState &st
                                      const SelectionVector &sel, idx_t sel_count);
 //! Function prototype used for applying a filter to a vector while scanning that vector
 typedef void (*compression_filter_t)(ColumnSegment &segment, ColumnScanState &state, idx_t vector_count, Vector &result,
-                                     SelectionVector &sel, idx_t &sel_count, const TableFilter &filter);
+                                     SelectionVector &sel, idx_t &sel_count, const TableFilter &filter,
+                                     TableFilterState &filter_state);
 //! Function prototype used for reading a single value
 typedef void (*compression_fetch_row_t)(ColumnSegment &segment, ColumnFetchState &state, row_t row_id, Vector &result,
                                         idx_t result_idx);
@@ -191,7 +206,7 @@ typedef unique_ptr<CompressionAppendState> (*compression_init_append_t)(ColumnSe
 typedef idx_t (*compression_append_t)(CompressionAppendState &append_state, ColumnSegment &segment,
                                       SegmentStatistics &stats, UnifiedVectorFormat &data, idx_t offset, idx_t count);
 typedef idx_t (*compression_finalize_append_t)(ColumnSegment &segment, SegmentStatistics &stats);
-typedef void (*compression_revert_append_t)(ColumnSegment &segment, idx_t start_row);
+typedef void (*compression_revert_append_t)(ColumnSegment &segment, idx_t new_count);
 
 //===--------------------------------------------------------------------===//
 // Serialization (optional)
@@ -202,6 +217,13 @@ typedef unique_ptr<ColumnSegmentState> (*compression_serialize_state_t)(ColumnSe
 typedef unique_ptr<ColumnSegmentState> (*compression_deserialize_state_t)(Deserializer &deserializer);
 //! Function prototype for cleaning up the segment state when the column data is dropped
 typedef void (*compression_cleanup_state_t)(ColumnSegment &segment);
+
+//===--------------------------------------------------------------------===//
+// GetSegmentInfo (optional)
+//===--------------------------------------------------------------------===//
+//! Function prototype for retrieving segment information straight from the column segment
+typedef InsertionOrderPreservingMap<string> (*compression_get_segment_info_t)(QueryContext context,
+                                                                              ColumnSegment &segment);
 
 enum class CompressionValidity : uint8_t { REQUIRES_VALIDITY, NO_VALIDITY_REQUIRED };
 
@@ -300,6 +322,13 @@ public:
 	//! Cleanup the segment state (optional)
 	compression_cleanup_state_t cleanup_state;
 
+	// Get Segment Info
+	//! This is only necessary if you want to convey more information about the segment in the 'pragma_storage_info'
+	//! result
+
+	//! Get stringified segment information directly from reading the column segment
+	compression_get_segment_info_t get_segment_info = nullptr;
+
 	//! Whether the validity mask should be separately compressed
 	//! or this compression function can also be used to decompress the validity
 	CompressionValidity validity = CompressionValidity::REQUIRES_VALIDITY;
@@ -307,8 +336,31 @@ public:
 
 //! The set of compression functions
 struct CompressionFunctionSet {
+	static constexpr idx_t COMPRESSION_TYPE_COUNT = 15;
+	static constexpr idx_t PHYSICAL_TYPE_COUNT = 19;
+
+public:
+	CompressionFunctionSet();
+
+	vector<reference<CompressionFunction>> GetCompressionFunctions(PhysicalType physical_type);
+	optional_ptr<CompressionFunction> GetCompressionFunction(CompressionType type, PhysicalType physical_type);
+	void SetDisabledCompressionMethods(const vector<CompressionType> &methods);
+	vector<CompressionType> GetDisabledCompressionMethods() const;
+
+private:
 	mutex lock;
-	map<CompressionType, map<PhysicalType, CompressionFunction>> functions;
+	atomic<bool> is_disabled[COMPRESSION_TYPE_COUNT];
+	atomic<bool> is_loaded[PHYSICAL_TYPE_COUNT];
+	vector<vector<CompressionFunction>> functions;
+
+private:
+	void LoadCompressionFunctions(PhysicalType physical_type);
+
+	static void TryLoadCompression(CompressionType type, PhysicalType physical_type,
+	                               vector<CompressionFunction> &result);
+	static idx_t GetCompressionIndex(PhysicalType physical_type);
+	static idx_t GetCompressionIndex(CompressionType type);
+	void ResetDisabledMethods();
 };
 
 } // namespace duckdb

@@ -6,6 +6,7 @@
 #include "duckdb/main/client_context.hpp"
 #include "duckdb/planner/expression/bound_function_expression.hpp"
 #include "duckdb/transaction/meta_transaction.hpp"
+#include "duckdb/planner/expression/bound_cast_expression.hpp"
 
 namespace duckdb {
 
@@ -22,7 +23,7 @@ static void CurrentTimestampFunction(DataChunk &input, ExpressionState &state, V
 
 ScalarFunction GetCurrentTimestampFun::GetFunction() {
 	ScalarFunction current_timestamp({}, LogicalType::TIMESTAMP_TZ, CurrentTimestampFunction);
-	current_timestamp.stability = FunctionStability::CONSISTENT_WITHIN_QUERY;
+	current_timestamp.SetStability(FunctionStability::CONSISTENT_WITHIN_QUERY);
 	return current_timestamp;
 }
 

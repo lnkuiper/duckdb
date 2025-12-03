@@ -26,7 +26,7 @@ select row_number() over (range between unbounded preceding and unbounded preced
 
 # ORDER BY is now implemented for window functions!
 query I
-select LIST(salary ORDER BY enroll_date) OVER (PARTITION BY depname) FROM empsalary
+select LIST(salary ORDER BY enroll_date, salary) OVER (PARTITION BY depname) FROM empsalary
 ORDER BY ALL DESC
 ----
 [6000, 5200, 5200, 4200, 4500]
@@ -66,5 +66,68 @@ FROM generate_series(1,5) AS _(i)
 WINDOW ${invalid} AS (ORDER BY i);
 ----
 syntax error at or near
+
+endloop
+
+# Framed non-aggregate functions can't handle EXCLUDE
+foreach func lead lag ntile
+
+statement error
+SELECT 
+	i,
+	${func}(i ORDER BY i // 2, i) OVER (
+		ORDER BY i // 2
+		ROWS BETWEEN 3 PRECEDING AND 3 FOLLOWING 
+		EXCLUDE TIES
+	) AS f,
+FROM range(10) tbl(i)
+ORDER BY i;
+----
+EXCLUDE is not supported for the window function
+
+statement error
+SELECT 
+	i,
+	lead(i ORDER BY i // 2, i) OVER w AS f,
+FROM range(10) tbl(i)
+WINDOW w AS (
+		ORDER BY i // 2
+		ROWS BETWEEN 3 PRECEDING AND 3 FOLLOWING 
+		EXCLUDE TIES
+	)
+ORDER BY i;
+----
+EXCLUDE is not supported for the window function
+
+endloop
+
+foreach func row_number rank cume_dist
+
+statement error
+SELECT 
+	i,
+	${func}(ORDER BY i // 2, i) OVER (
+		ORDER BY i // 2
+		ROWS BETWEEN 3 PRECEDING AND 3 FOLLOWING 
+		EXCLUDE TIES
+	) AS f,
+FROM range(10) tbl(i)
+ORDER BY i;
+----
+EXCLUDE is not supported for the window function
+
+statement error
+SELECT 
+	i,
+	${func}(ORDER BY i // 2, i) OVER w AS f,
+FROM range(10) tbl(i)
+WINDOW w AS (
+	ORDER BY i // 2
+	ROWS BETWEEN 3 PRECEDING AND 3 FOLLOWING 
+	EXCLUDE TIES
+)
+ORDER BY i;
+----
+EXCLUDE is not supported for the window function
 
 endloop

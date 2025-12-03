@@ -2,6 +2,7 @@
 #include "duckdb/parser/constraint.hpp"
 #include "duckdb/parser/constraints/list.hpp"
 #include "duckdb/parser/transformer.hpp"
+#include "duckdb/common/exception/parser_exception.hpp"
 
 namespace duckdb {
 
@@ -105,9 +106,9 @@ unique_ptr<Constraint> Transformer::TransformConstraint(duckdb_libpgquery::PGCon
 	case duckdb_libpgquery::PG_CONSTR_CHECK:
 		return TransformConstraint(constraint);
 	case duckdb_libpgquery::PG_CONSTR_PRIMARY:
-		return make_uniq<UniqueConstraint>(LogicalIndex(index), true);
+		return make_uniq<UniqueConstraint>(LogicalIndex(index), column.GetName(), true);
 	case duckdb_libpgquery::PG_CONSTR_UNIQUE:
-		return make_uniq<UniqueConstraint>(LogicalIndex(index), false);
+		return make_uniq<UniqueConstraint>(LogicalIndex(index), column.GetName(), false);
 	case duckdb_libpgquery::PG_CONSTR_NULL:
 		return nullptr;
 	case duckdb_libpgquery::PG_CONSTR_GENERATED_VIRTUAL: {
@@ -127,7 +128,7 @@ unique_ptr<Constraint> Transformer::TransformConstraint(duckdb_libpgquery::PGCon
 		column.SetCompressionType(CompressionTypeFromString(constraint.compression_name));
 		if (column.CompressionType() == CompressionType::COMPRESSION_AUTO) {
 			throw ParserException("Unrecognized option for column compression, expected none, uncompressed, rle, "
-			                      "dictionary, pfor, bitpacking or fsst");
+			                      "dictionary, pfor, bitpacking, fsst, chimp, patas, zstd, alp, alprd or roaring");
 		}
 		return nullptr;
 	case duckdb_libpgquery::PG_CONSTR_FOREIGN:

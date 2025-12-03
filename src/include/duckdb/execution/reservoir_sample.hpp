@@ -88,7 +88,6 @@ public:
 	void Serialize(Serializer &serializer) const;
 	static unique_ptr<BaseReservoirSampling> Deserialize(Deserializer &deserializer);
 
-	static double GetMinWeightFromTuplesSeen(idx_t rows_seen_total);
 	// static unordered_map<idx_t, double> tuples_to_min_weight_map;
 	// Blocking sample is a virtual class. It should be allowed to see the weights and
 	// of tuples in the sample. The blocking sample can then easily maintain statisitcal properties
@@ -172,7 +171,13 @@ public:
 	static constexpr const SampleType TYPE = SampleType::RESERVOIR_SAMPLE;
 
 	constexpr static idx_t FIXED_SAMPLE_SIZE_MULTIPLIER = 10;
-	constexpr static idx_t FAST_TO_SLOW_THRESHOLD = 60;
+	// size is small enough, then the threshold to switch
+	// MinValue between std vec size and fixed sample size.
+	// During 'fast' sampling, we want every new vector to have the potential
+	// to add to the sample. If the threshold is too far below the standard vector size, then
+	// samples in the sample have a higher weight than new samples coming in.
+	// i.e during vector_size=2, 2 new samples will not be significant compared 2048 samples from 204800 tuples.
+	constexpr static idx_t FAST_TO_SLOW_THRESHOLD = MinValue<idx_t>(STANDARD_VECTOR_SIZE, 60);
 
 	// If the table has less than 204800 rows, this is the percentage
 	// of values we save when serializing/returning a sample.
@@ -195,7 +200,8 @@ public:
 	void ConvertToReservoirSample();
 
 	//! Get the capactiy of the data chunk reserved for storing samples
-	idx_t GetReservoirChunkCapacity() const;
+	template <typename T>
+	T GetReservoirChunkCapacity() const;
 
 	//! If for_serialization=true then the sample_chunk is not padded with extra spaces for
 	//! future sampling values
