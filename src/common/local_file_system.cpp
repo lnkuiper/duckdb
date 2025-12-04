@@ -11,6 +11,8 @@
 #include "duckdb/main/database.hpp"
 #include "duckdb/logging/file_system_logger.hpp"
 #include "duckdb/logging/log_manager.hpp"
+#include "duckdb/storage/external_file_cache.hpp"
+#include "duckdb/common/types/uuid.hpp"
 
 #include <cstdint>
 #include <cstdio>
@@ -204,6 +206,9 @@ static FileMetadata StatsInternal(int fd, const string &path) {
 		file_metadata.file_type = FileType::FILE_TYPE_INVALID;
 		break;
 	}
+
+	file_metadata.extended_file_info["st_dev"] = Value::UBIGINT(NumericCast<uint64_t>(s.st_dev));
+	file_metadata.extended_file_info["st_ino"] = Value::UBIGINT(NumericCast<uint64_t>(s.st_ino));
 
 	return file_metadata;
 } // LCOV_EXCL_STOP
@@ -600,6 +605,17 @@ timestamp_t LocalFileSystem::GetLastModifiedTime(FileHandle &handle) {
 	return file_metadata.last_modification_time;
 }
 
+string LocalFileSystem::GetVersionTag(FileHandle &handle) {
+	const auto file_metadata = Stats(handle);
+	const auto dev_it = file_metadata.extended_file_info.find("st_dev");
+	const auto ino_it = file_metadata.extended_file_info.find("st_ino");
+	if (dev_it == file_metadata.extended_file_info.end() || ino_it == file_metadata.extended_file_info.end()) {
+		return "";
+	}
+	const hugeint_t tag(NumericCast<int64_t>(dev_it->second.GetValue<uint64_t>()), ino_it->second.GetValue<uint64_t>());
+	return UUID::ToString(tag);
+}
+
 FileType LocalFileSystem::GetFileType(FileHandle &handle) {
 	const auto file_metadata = Stats(handle);
 	return file_metadata.file_type;
@@ -888,6 +904,10 @@ static FileMetadata StatsInternal(HANDLE hFile, const string &path) {
 	} else {
 		file_metadata.file_type = FileType::FILE_TYPE_INVALID;
 	}
+
+	file_metadata.extended_file_info["st_dev"] = Value::UBIGINT(NumericCast<uint64_t>(file_info.dwVolumeSerialNumber));
+	auto ino = (NumericCast<uint64_t>(file_info.nFileIndexHigh) << 32) | NumericCast<uint64_t>(file_info.nFileIndexLow);
+	file_metadata.extended_file_info["st_ino"] = Value::UBIGINT(ino);
 
 	return file_metadata;
 }
