@@ -79,8 +79,8 @@ bool ExternalFileCache::IsValid(bool validate, const string &cached_version_tag,
 	if (!validate) {
 		return true; // Assume valid
 	}
-	if (!current_version_tag.empty() || !cached_version_tag.empty()) {
-		return cached_version_tag == current_version_tag; // Validity checked by version tag
+	if ((!current_version_tag.empty() || !cached_version_tag.empty()) && cached_version_tag != current_version_tag) {
+		return false; // Invalidated by version tag
 	}
 	if (cached_last_modified != current_last_modified) {
 		return false; // The file has certainly been modified
