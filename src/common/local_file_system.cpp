@@ -605,17 +605,6 @@ timestamp_t LocalFileSystem::GetLastModifiedTime(FileHandle &handle) {
 	return file_metadata.last_modification_time;
 }
 
-string LocalFileSystem::GetVersionTag(FileHandle &handle) {
-	const auto file_metadata = Stats(handle);
-	const auto dev_it = file_metadata.extended_file_info.find("st_dev");
-	const auto ino_it = file_metadata.extended_file_info.find("st_ino");
-	if (dev_it == file_metadata.extended_file_info.end() || ino_it == file_metadata.extended_file_info.end()) {
-		return "";
-	}
-	const hugeint_t tag(NumericCast<int64_t>(dev_it->second.GetValue<uint64_t>()), ino_it->second.GetValue<uint64_t>());
-	return UUID::ToString(tag);
-}
-
 FileType LocalFileSystem::GetFileType(FileHandle &handle) {
 	const auto file_metadata = Stats(handle);
 	return file_metadata.file_type;
@@ -1347,6 +1336,17 @@ bool LocalFileSystem::CanSeek() {
 
 bool LocalFileSystem::OnDiskFile(FileHandle &handle) {
 	return true;
+}
+
+string LocalFileSystem::GetVersionTag(FileHandle &handle) {
+	const auto file_metadata = Stats(handle);
+	const auto dev_it = file_metadata.extended_file_info.find("st_dev");
+	const auto ino_it = file_metadata.extended_file_info.find("st_ino");
+	if (dev_it == file_metadata.extended_file_info.end() || ino_it == file_metadata.extended_file_info.end()) {
+		return "";
+	}
+	const hugeint_t tag(NumericCast<int64_t>(dev_it->second.GetValue<uint64_t>()), ino_it->second.GetValue<uint64_t>());
+	return UUID::ToString(tag) + Timestamp::ToString(file_metadata.last_modification_time);
 }
 
 void LocalFileSystem::Seek(FileHandle &handle, idx_t location) {
