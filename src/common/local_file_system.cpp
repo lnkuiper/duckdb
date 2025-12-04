@@ -12,7 +12,6 @@
 #include "duckdb/logging/file_system_logger.hpp"
 #include "duckdb/logging/log_manager.hpp"
 #include "duckdb/storage/external_file_cache.hpp"
-#include "duckdb/common/types/uuid.hpp"
 
 #include <cstdint>
 #include <cstdio>
@@ -1345,8 +1344,15 @@ string LocalFileSystem::GetVersionTag(FileHandle &handle) {
 	if (dev_it == file_metadata.extended_file_info.end() || ino_it == file_metadata.extended_file_info.end()) {
 		return "";
 	}
-	const hugeint_t tag(NumericCast<int64_t>(dev_it->second.GetValue<uint64_t>()), ino_it->second.GetValue<uint64_t>());
-	return UUID::ToString(tag) + Timestamp::ToString(file_metadata.last_modification_time);
+
+	// dev/ino should be enough, but to guard against in-place writes we also add file size and modification time
+	uint64_t version_tag[4];
+	Store(dev_it->second.GetValue<uint64_t>(), data_ptr_cast(&version_tag[0]));
+	Store(ino_it->second.GetValue<uint64_t>(), data_ptr_cast(&version_tag[1]));
+	Store(file_metadata.file_size, data_ptr_cast(&version_tag[2]));
+	Store(file_metadata.last_modification_time.value, data_ptr_cast(&version_tag[3]));
+
+	return string(char_ptr_cast(version_tag), sizeof(uint64_t) * 4);
 }
 
 void LocalFileSystem::Seek(FileHandle &handle, idx_t location) {
