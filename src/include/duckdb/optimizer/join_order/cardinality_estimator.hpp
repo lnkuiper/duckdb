@@ -17,8 +17,8 @@ namespace duckdb {
 class FilterInfo;
 
 struct DenomInfo {
-	DenomInfo(JoinRelationSet &numerator_relations, double filter_strength, double denominator)
-	    : numerator_relations(numerator_relations), extra_multiplier(filter_strength), denominator(denominator) {
+	DenomInfo(JoinRelationSet &numerator_relations, double extra_multiplier, double denominator)
+	    : numerator_relations(numerator_relations), extra_multiplier(extra_multiplier), denominator(denominator) {
 	}
 
 	JoinRelationSet &numerator_relations;

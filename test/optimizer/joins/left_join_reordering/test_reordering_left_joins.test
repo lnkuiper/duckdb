@@ -1,5 +1,5 @@
 # name: test/optimizer/joins/left_join_reordering/test_reordering_left_joins.test
-# description: Reordering left joins produces still valid results
+# description: Reordering left joins produces valid results
 # group: [left_join_reordering]
 
 # make sure no illegal left join reordering happens

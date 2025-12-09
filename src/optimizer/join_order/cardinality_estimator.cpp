@@ -16,14 +16,14 @@ namespace duckdb {
 // The filter was made on top of a logical sample or other projection,
 // but no specific columns are referenced. See issue 4978 number 4.
 bool CardinalityEstimator::EmptyFilter(FilterInfo &filter_info) {
-	if (filter_info.left_relation_set->count == 0 && filter_info.right_relation_set->count == 0) {
+	if (filter_info.left_relation_set->Empty() && filter_info.right_relation_set->Empty()) {
 		return true;
 	}
 	return false;
 }
 
 void CardinalityEstimator::AddRelationStats(FilterInfo &filter_info) {
-	D_ASSERT(filter_info.set->count >= 1);
+	D_ASSERT(!filter_info.set->Empty());
 	for (const RelationsSetToStats &r2tdom : relation_set_stats) {
 		auto &i_set = r2tdom.equivalent_relations;
 		if (i_set.find(filter_info.left_binding) != i_set.end()) {
@@ -38,8 +38,8 @@ void CardinalityEstimator::AddRelationStats(FilterInfo &filter_info) {
 	relation_set_stats.emplace_back(new_r2tdom);
 }
 
-bool CardinalityEstimator::SingleColumnFilter(duckdb::FilterInfo &filter_info) {
-	if (filter_info.left_relation_set->count >= 1 && filter_info.right_relation_set->count >= 1 &&
+bool CardinalityEstimator::SingleColumnFilter(FilterInfo &filter_info) {
+	if (!filter_info.left_relation_set->Empty() && !filter_info.right_relation_set->Empty() &&
 	    filter_info.set->count >= 2) {
 		// Both set and are from different relations
 		return false;
@@ -114,8 +114,8 @@ void CardinalityEstimator::InitEquivalentRelations(const vector<unique_ptr<Filte
 		} else if (EmptyFilter(*filter)) {
 			continue;
 		}
-		D_ASSERT(filter->left_relation_set->count >= 1);
-		D_ASSERT(filter->right_relation_set->count >= 1);
+		D_ASSERT(!filter->left_relation_set->Empty());
+		D_ASSERT(!filter->right_relation_set->Empty());
 
 		auto matching_equivalent_sets = DetermineMatchingEquivalentSets(filter.get());
 		AddToEquivalenceSets(filter.get(), matching_equivalent_sets);
@@ -339,8 +339,8 @@ DenomInfo CardinalityEstimator::GetDenominator(JoinRelationSet &set) {
 
 			if (JoinRelationSet::IsSubset(*left_subgraph->relations, *edge.filter_info->left_relation_set) &&
 			    JoinRelationSet::IsSubset(*left_subgraph->relations, *edge.filter_info->right_relation_set)) {
-				// here we have an edge that connects the same subgraph to the same subgraph. Just continue. no need to
-				// update the denom
+				// here we have an edge that connects the same subgraph to the same subgraph.
+				// Just continue. no need to update the denom
 				continue;
 			}
 			left_subgraph->numerator_relations = &UpdateNumeratorRelations(*left_subgraph, right_subgraph, edge);
@@ -418,7 +418,7 @@ DenomInfo CardinalityEstimator::GetDenominator(JoinRelationSet &set) {
 	                 subgraphs.at(0).denom * denom_multiplier);
 }
 
-// Cardinality is calculatd using logic found in
+// Cardinality is calculated using logic found in
 // https://blobs.duckdb.org/papers/tom-ebergen-msc-thesis-join-order-optimization-with-almost-no-statistics.pdf TL;DR
 // Cardinality is estimated based on cardinality of base tables and the distinct counts of joined columns. If you have
 // two tables A and B joined using A.x = B.y we assume that each tuple in A will match ~ B/(distinct(y)) tuples in B.

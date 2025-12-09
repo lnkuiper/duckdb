@@ -1,5 +1,5 @@
 # name: test/optimizer/joins/left_join_reordering/left_join_cardinality_estimation.test
-# description: Cardinality Estimation Left Join Reodering.
+# description: Cardinality Estimation Left Join Reordering
 # group: [left_join_reordering]
 
 statement ok

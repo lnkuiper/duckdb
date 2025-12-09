@@ -192,7 +192,7 @@ void Optimizer::RunBuiltInOptimizers() {
 	// this also rewrites cross products + filters into joins and performs filter pushdowns
 	RunOptimizer(OptimizerType::JOIN_ORDER, [&]() {
 		JoinOrderOptimizer optimizer(context);
-		plan = optimizer.Optimize(std::move(plan), nullptr, true);
+		plan = optimizer.Optimize(std::move(plan));
 	});
 
 	RunOptimizer(OptimizerType::JOIN_ELIMINATION, [&]() {

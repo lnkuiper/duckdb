@@ -35,19 +35,6 @@ bool QueryGraphManager::Build(JoinOrderOptimizer &optimizer, LogicalOperator &op
 	return true;
 }
 
-// void QueryGraphManager::GetColumnBinding(Expression &root_expr, ColumnBinding &binding) {
-// 	ExpressionIterator::VisitExpression<BoundColumnRefExpression>(
-// 	    root_expr, [&](const BoundColumnRefExpression &colref) {
-// 		    D_ASSERT(colref.depth == 0);
-// 		    D_ASSERT(colref.binding.table_index != DConstants::INVALID_INDEX);
-// 		    // map the base table index to the relation index used by the JoinOrderOptimizer
-// 		    D_ASSERT(relation_manager.relation_mapping.find(colref.binding.table_index) !=
-// 		             relation_manager.relation_mapping.end());
-// 		    binding = ColumnBinding(relation_manager.relation_mapping[colref.binding.table_index],
-// 		                            colref.binding.column_index);
-// 	    });
-// }
-
 const vector<unique_ptr<FilterInfo>> &QueryGraphManager::GetFilterBindings() const {
 	return filters_and_bindings;
 }
@@ -275,8 +262,8 @@ GenerateJoinRelation QueryGraphManager::GenerateJoins(vector<unique_ptr<LogicalO
 			// now check if the filter is a subset of the current relation
 			// note that infos with an empty relation set are a special case and we do not push them down
 			if (info.join_type == JoinType::LEFT) {
-				// any left join is most definitely a filter that joins two relations, so do not push the filter
-				// preemptively here
+				// any left join is most definitely a filter that joins two relations,
+				// so do not push the filter preemptively here
 				continue;
 			}
 			if (info.set->count > 0 && JoinRelationSet::IsSubset(*result_relation, *info.set)) {

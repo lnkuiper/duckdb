@@ -1,13 +1,8 @@
 #include "duckdb/optimizer/join_order/join_order_optimizer.hpp"
 
-#include "duckdb/common/enums/join_type.hpp"
-#include "duckdb/common/limits.hpp"
-#include "duckdb/common/pair.hpp"
 #include "duckdb/optimizer/join_order/cost_model.hpp"
 #include "duckdb/optimizer/join_order/plan_enumerator.hpp"
-#include "duckdb/planner/expression/list.hpp"
 #include "duckdb/planner/operator/list.hpp"
-#include "duckdb/optimizer/column_binding_replacer.hpp"
 
 namespace duckdb {
 
@@ -24,79 +19,12 @@ JoinOrderOptimizer JoinOrderOptimizer::CreateChildOptimizer() {
 	return child_optimizer;
 }
 
-unique_ptr<LogicalOperator> RemoveUnnecessaryProjections::RemoveProjectionsChildren(unique_ptr<LogicalOperator> plan) {
-	for (idx_t i = 0; i < plan->children.size(); i++) {
-		plan->children[i] = RemoveProjections(std::move(plan->children[i]));
-	}
-	return plan;
-}
-unique_ptr<LogicalOperator> RemoveUnnecessaryProjections::RemoveProjections(unique_ptr<LogicalOperator> plan) {
-	if (plan->type == LogicalOperatorType::LOGICAL_UNION || plan->type == LogicalOperatorType::LOGICAL_EXCEPT ||
-	    plan->type == LogicalOperatorType::LOGICAL_INTERSECT ||
-	    plan->type == LogicalOperatorType::LOGICAL_RECURSIVE_CTE ||
-	    plan->type == LogicalOperatorType::LOGICAL_MATERIALIZED_CTE) {
-		// guaranteed to find a projection under this that is meant to keep the column order in the presence of
-		// an optimization done by build side probe side.
-		for (idx_t i = 0; i < plan->children.size(); i++) {
-			first_projection = true;
-			plan->children[i] = RemoveProjections(std::move(plan->children[i]));
-		}
-		return plan;
-	}
-	if (plan->type != LogicalOperatorType::LOGICAL_PROJECTION) {
-		return RemoveProjectionsChildren(std::move(plan));
-	}
-	// operator is a projection. Remove if possible
-	if (first_projection) {
-		first_projection = false;
-		return RemoveProjectionsChildren(std::move(plan));
-	}
-	auto &proj = plan->Cast<LogicalProjection>();
-	auto child_bindings = plan->children[0]->GetColumnBindings();
-	if (proj.GetColumnBindings().size() != child_bindings.size()) {
-		return plan;
-	}
-	idx_t binding_index = 0;
-	for (auto &expr : proj.expressions) {
-		if (expr->type != ExpressionType::BOUND_COLUMN_REF) {
-			return plan;
-		}
-		auto &bound_ref = expr->Cast<BoundColumnRefExpression>();
-		if (bound_ref.binding != child_bindings[binding_index]) {
-			return plan;
-		}
-		binding_index++;
-	}
-	D_ASSERT(binding_index == plan->GetColumnBindings().size());
-	// we have a projection where every expression is a bound column ref, and they are in the same order as the
-	// bindings of the child. We can remove this projection
-	binding_index = 0;
-	for (auto &binding : plan->GetColumnBindings()) {
-		replacer.replacement_bindings.push_back(ReplacementBinding(binding, child_bindings[binding_index]));
-		binding_index++;
-	}
-	return RemoveProjectionsChildren(std::move(plan->children[0]));
-}
-
-RemoveUnnecessaryProjections::RemoveUnnecessaryProjections() {
-	first_projection = true;
-}
-
 unique_ptr<LogicalOperator> JoinOrderOptimizer::Optimize(unique_ptr<LogicalOperator> plan,
-                                                         optional_ptr<RelationStats> stats, bool remove_projections) {
+                                                         optional_ptr<RelationStats> stats) {
 	if (depth > query_graph_manager.context.config.max_expression_depth) {
 		// Very deep plans will eventually consume quite some stack space
 		// Returning the current plan is always a valid choice
 		return plan;
-	}
-
-	// make sure query graph manager has not extracted a relation graph already
-	if (remove_projections) {
-		RemoveUnnecessaryProjections remover;
-		plan = remover.RemoveProjections(std::move(plan));
-		remover.replacer.VisitOperator(*plan);
-
-		auto bindings = plan->GetColumnBindings();
 	}
 
 	LogicalOperator *op = plan.get();
@@ -110,7 +38,7 @@ unique_ptr<LogicalOperator> JoinOrderOptimizer::Optimize(unique_ptr<LogicalOpera
 
 	if (reorderable) {
 		// query graph now has filters and relations
-		auto cost_model = CostModel(query_graph_manager);
+		auto cost_model = CostModel(query_graph_manager, cardinality_estimator);
 
 		// Initialize a plan enumerator.
 		auto plan_enumerator =

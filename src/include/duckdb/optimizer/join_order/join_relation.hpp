@@ -20,9 +20,7 @@ struct JoinRelationSet {
 	}
 
 	string ToString() const;
-	bool Empty() {
-		return count == 0;
-	}
+	bool Empty() const;
 
 	unsafe_unique_array<idx_t> relations;
 	idx_t count;
@@ -42,6 +40,7 @@ public:
 	};
 
 public:
+	//! Get an empty JoinRelationSet
 	JoinRelationSet &GetEmptyJoinRelationSet();
 	//! Create or get a JoinRelationSet from a single node with the given index
 	JoinRelationSet &GetJoinRelation(idx_t index);
@@ -51,8 +50,6 @@ public:
 	JoinRelationSet &GetJoinRelation(unsafe_unique_array<idx_t> relations, idx_t count);
 	//! Union two sets of relations together and create a new relation set
 	JoinRelationSet &Union(JoinRelationSet &left, JoinRelationSet &right);
-	// //! Create the set difference of left \ right (i.e. all elements in left that are not in right)
-	// JoinRelationSet *Difference(JoinRelationSet *left, JoinRelationSet *right);
 	string ToString() const;
 	void Print();
 

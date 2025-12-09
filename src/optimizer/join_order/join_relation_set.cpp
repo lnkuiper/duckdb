@@ -18,6 +18,10 @@ string JoinRelationSet::ToString() const {
 }
 // LCOV_EXCL_STOP
 
+bool JoinRelationSet::Empty() const {
+	return count == 0;
+}
+
 //! Returns true if sub is a subset of super
 bool JoinRelationSet::IsSubset(JoinRelationSet &super, JoinRelationSet &sub) {
 	D_ASSERT(sub.count > 0);

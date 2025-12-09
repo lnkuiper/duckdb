@@ -87,13 +87,11 @@ public:
 	vector<unique_ptr<FilterInfo>> ExtractEdges(vector<reference<LogicalOperator>> &filter_operators,
 	                                            JoinRelationSetManager &set_manager);
 
-	//! Extract all column bindings from an expression with the
+	//! Extract all column bindings from an expression
 	void ExtractColumnBindingsFromExpression(Expression &expression, unordered_set<idx_t> &bindings);
-	//! Extract the Column binding from an expression
-	void ExtractColumnBinding(Expression &expression, ColumnBinding &binding);
-	// Inspects an expression and creates filter info instances that can connect two relations
-	// If the expreession (or conjunction expression children cannot create a FilterInfo), then
-	// they are returned to be added to the filter_op so they are pushed down at the end of reconstruction.
+	//! Inspects an expression and creates filter info instances that can connect two relations
+	//! If the expression (or conjunction expression children cannot create a FilterInfo), then
+	//! they are returned to be added to the filter_op so they are pushed down at the end of reconstruction.
 	vector<unique_ptr<Expression>> CreateFilterInfoFromExpression(unique_ptr<Expression> expr,
 	                                                              JoinRelationSetManager &set_manager,
 	                                                              JoinType join_type = JoinType::INNER);
@@ -128,8 +126,7 @@ private:
 	vector<unique_ptr<SingleJoinRelation>> relations;
 	unordered_set<idx_t> no_cross_product_relations;
 
-	//! used when extracting edges from the relations. They are then passed to the
-	//! query graph manager.
+	//! Used when extracting edges from the relations. They are then passed to the query graph manager
 	vector<unique_ptr<FilterInfo>> filter_infos_;
 };
 
