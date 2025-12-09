@@ -817,8 +817,8 @@ vector<unique_ptr<FilterInfo>> RelationManager::ExtractEdges(vector<reference<Lo
 					auto leftover_exprs =
 					    CreateFilterInfoFromExpression(std::move(conjunction_expression), set_manager, join.join_type);
 					D_ASSERT(leftover_exprs.empty());
-					break;
 				}
+				break;
 			}
 			default: {
 				D_ASSERT(join.join_type == JoinType::INNER);

@@ -23,7 +23,7 @@ bool CardinalityEstimator::EmptyFilter(FilterInfo &filter_info) {
 }
 
 void CardinalityEstimator::AddRelationStats(FilterInfo &filter_info) {
-	D_ASSERT(filter_info.set.get().count >= 1);
+	D_ASSERT(filter_info.set->count >= 1);
 	for (const RelationsSetToStats &r2tdom : relation_set_stats) {
 		auto &i_set = r2tdom.equivalent_relations;
 		if (i_set.find(filter_info.left_binding) != i_set.end()) {
