@@ -4,6 +4,7 @@
 #include "duckdb/common/enums/logical_operator_type.hpp"
 #include "duckdb/common/string_util.hpp"
 #include "duckdb/optimizer/join_order/join_order_optimizer.hpp"
+#include "duckdb/optimizer/join_order/join_relation.hpp"
 #include "duckdb/optimizer/join_order/relation_statistics_helper.hpp"
 #include "duckdb/parser/expression_map.hpp"
 #include "duckdb/planner/expression/list.hpp"
@@ -26,6 +27,18 @@ vector<unique_ptr<SingleJoinRelation>> RelationManager::GetRelations() {
 
 idx_t RelationManager::NumRelations() {
 	return relations.size();
+}
+
+void FilterInfo::SetLeftSet(optional_ptr<JoinRelationSet> left_set_new) {
+	left_relation_set = left_set_new;
+}
+
+void FilterInfo::SetRightSet(optional_ptr<JoinRelationSet> right_set_new) {
+	right_relation_set = right_set_new;
+}
+
+bool FilterInfo::SingleColumnFilter() {
+	return left_relation_set->Empty() || right_relation_set->Empty();
 }
 
 void RelationManager::AddAggregateOrWindowRelation(LogicalOperator &op, optional_ptr<LogicalOperator> parent,
@@ -73,7 +86,9 @@ void RelationManager::AddRelation(LogicalOperator &op, optional_ptr<LogicalOpera
 		// columns that are not unnested, and from the child of the logical get.
 		auto bindings = op.GetColumnBindings();
 		for (auto &binding : bindings) {
-			relation_mapping[binding.table_index] = relation_id;
+			if (relation_mapping.find(binding.table_index) == relation_mapping.end()) {
+				relation_mapping[binding.table_index] = relation_id;
+			}
 		}
 	} else {
 		// Relations should never return more than 1 table index
@@ -145,6 +160,7 @@ static bool JoinIsReorderable(LogicalOperator &op) {
 		switch (join.join_type) {
 		case JoinType::INNER:
 		case JoinType::SEMI:
+		case JoinType::LEFT:
 		case JoinType::ANTI:
 			for (auto &cond : join.conditions) {
 				if (ExpressionContainsColumnRef(*cond.left) && ExpressionContainsColumnRef(*cond.right)) {
@@ -315,14 +331,14 @@ bool RelationManager::ExtractJoinRelations(JoinOrderOptimizer &optimizer, Logica
 
 		// So we treat the right side of left join as its own relation so no relations
 		// are pushed into the right side, or taken out of the right side.
-		if (join.join_type == JoinType::SEMI || join.join_type == JoinType::ANTI) {
+		if (join.join_type == JoinType::SEMI || join.join_type == JoinType::ANTI || join.join_type == JoinType::LEFT) {
 			RelationStats child_stats;
 			// optimize the child and copy the stats
 			auto child_optimizer = optimizer.CreateChildOptimizer();
 			op->children[1] = child_optimizer.Optimize(std::move(op->children[1]), &child_stats);
 			AddRelation(*op->children[1], op, child_stats);
 			// remember that if a cross product needs to be forced, it cannot be forced
-			// across the children of a semi or anti join
+			// across the children of a semi/anti/left join
 			no_cross_product_relations.insert(relations.size() - 1);
 			auto right_child_bindings = op->children[1]->GetColumnBindings();
 			for (auto &bindings : right_child_bindings) {
@@ -512,7 +528,38 @@ bool RelationManager::ExtractJoinRelations(JoinOrderOptimizer &optimizer, Logica
 	}
 }
 
-bool RelationManager::ExtractBindings(Expression &expression, unordered_set<idx_t> &bindings) {
+void RelationManager::GetColumnBindingsFromExpression(Expression &expression, column_binding_set_t &column_bindings) {
+	if (expression.GetExpressionType() == ExpressionType::BOUND_COLUMN_REF) {
+		// Here you have a filter on a single column in a table. Return a binding for the column
+		// being filtered on so the filter estimator knows what HLL count to pull
+		auto &colref = expression.Cast<BoundColumnRefExpression>();
+		D_ASSERT(colref.depth == 0);
+		D_ASSERT(colref.binding.table_index != DConstants::INVALID_INDEX);
+		// only add column bindings that map to relations.
+		if (relation_mapping.find(colref.binding.table_index) == relation_mapping.end()) {
+			return;
+		}
+		// map the base table index to the relation index used by the JoinOrderOptimizer
+		column_bindings.insert(
+		    ColumnBinding(relation_mapping[colref.binding.table_index], colref.binding.column_index));
+	}
+
+	// TODO: handle inequality filters with functions.
+	ExpressionIterator::EnumerateChildren(
+	    expression, [&](Expression &expr) { GetColumnBindingsFromExpression(expr, column_bindings); });
+}
+
+optional_ptr<JoinRelationSet> RelationManager::GetJoinRelations(column_binding_set_t &column_bindings,
+                                                                JoinRelationSetManager &set_manager) {
+	optional_ptr<JoinRelationSet> ret = set_manager.GetEmptyJoinRelationSet();
+	for (auto &binding : column_bindings) {
+		optional_ptr<JoinRelationSet> binding_set = set_manager.GetJoinRelation(binding.table_index);
+		ret = set_manager.Union(*ret, *binding_set);
+	}
+	return *ret;
+}
+
+void RelationManager::ExtractColumnBindingsFromExpression(Expression &expression, unordered_set<idx_t> &bindings) {
 	if (expression.GetExpressionType() == ExpressionType::BOUND_COLUMN_REF) {
 		auto &colref = expression.Cast<BoundColumnRefExpression>();
 		D_ASSERT(colref.depth == 0);
@@ -524,7 +571,7 @@ bool RelationManager::ExtractBindings(Expression &expression, unordered_set<idx_
 			// Here we return true and don't fill the bindings, the expression can be reordered.
 			// A filter will be created using this expression, and pushed back on top of the parent
 			// operator during plan reconstruction
-			return true;
+			return;
 		}
 		if (relation_mapping.find(colref.binding.table_index) != relation_mapping.end()) {
 			bindings.insert(relation_mapping[colref.binding.table_index]);
@@ -533,25 +580,212 @@ bool RelationManager::ExtractBindings(Expression &expression, unordered_set<idx_
 	if (expression.GetExpressionType() == ExpressionType::BOUND_REF) {
 		// bound expression
 		bindings.clear();
-		return false;
+		return;
 	}
 	D_ASSERT(expression.GetExpressionType() != ExpressionType::SUBQUERY);
-	bool can_reorder = true;
-	ExpressionIterator::EnumerateChildren(expression, [&](Expression &expr) {
-		if (!ExtractBindings(expr, bindings)) {
-			can_reorder = false;
-			return;
-		}
-	});
-	return can_reorder;
+	ExpressionIterator::EnumerateChildren(
+	    expression, [&](Expression &expr) { ExtractColumnBindingsFromExpression(expr, bindings); });
 }
 
-vector<unique_ptr<FilterInfo>> RelationManager::ExtractEdges(LogicalOperator &op,
-                                                             vector<reference<LogicalOperator>> &filter_operators,
+vector<unique_ptr<Expression>>
+RelationManager::CreateFilterFromConjunctionChildren(unique_ptr<BoundConjunctionExpression> conjunction_expression,
+                                                     JoinRelationSetManager &set_manager, JoinType join_type) {
+	column_binding_set_t left_bindings, right_bindings;
+	vector<unique_ptr<Expression>> leftover_expressions;
+	unique_ptr<FilterInfo> filter_info = nullptr;
+	// gather all relations/bindings from left expressions and all relations/bindings from the right expression sides
+	// this encapsulates filters like (t1.a = t2.b OR t1.c = t2.d) to be a join condition
+	// also LEFT/SEMI/ANTI joins with multiple conditions.
+	for (auto &bound_expr : conjunction_expression->children) {
+		if (bound_expr->GetExpressionClass() == ExpressionClass::BOUND_COMPARISON) {
+			auto &comp = bound_expr->Cast<BoundComparisonExpression>();
+			GetColumnBindingsFromExpression(*comp.left, left_bindings);
+			GetColumnBindingsFromExpression(*comp.right, right_bindings);
+		} else {
+			// if the condition is (t1.a = t2.b OR t1.c = t2.d or t1 is not null)
+			// then you need t1 and t2 in the whole relation set, so add t1 and t2 to both side.
+			// TODO: no you don't. But it does need to be in the left or the right.
+			GetColumnBindingsFromExpression(*bound_expr, left_bindings);
+			GetColumnBindingsFromExpression(*bound_expr, right_bindings);
+		}
+	}
+	if (left_bindings.empty() && right_bindings.empty()) {
+		// the conjunction filter cannot be made into a connection
+		// in this case we do not create a FilterInfo for it, it will be pushed down the plan
+		// during plan reconstruction. (duckdb-internal/#1493)s
+		leftover_expressions.push_back(std::move(conjunction_expression));
+		return leftover_expressions;
+	}
+	auto left_relations = GetJoinRelations(left_bindings, set_manager);
+	auto right_relations = GetJoinRelations(right_bindings, set_manager);
+	optional_ptr<JoinRelationSet> all_relations = set_manager.Union(*left_relations, *right_relations);
+	D_ASSERT(left_relations && right_relations && all_relations && conjunction_expression);
+	if (left_relations->Empty() || right_relations->Empty()) {
+		filter_info = make_uniq<FilterInfo>(std::move(conjunction_expression), all_relations.get(),
+		                                    filter_infos_.size(), join_type, *left_relations, *right_relations);
+	} else {
+		filter_info = make_uniq<FilterInfo>(std::move(conjunction_expression), all_relations.get(),
+		                                    filter_infos_.size(), join_type, *left_relations, *right_relations,
+		                                    *left_bindings.begin(), *right_bindings.begin());
+	}
+	filter_infos_.push_back(std::move(filter_info));
+	return leftover_expressions;
+}
+
+vector<unique_ptr<Expression>> RelationManager::CreateFilterInfoFromExpression(unique_ptr<Expression> expr,
+                                                                               JoinRelationSetManager &set_manager,
+                                                                               JoinType join_type) {
+	// Given a filter expression operator, check the following
+	// if join_type == JoinType::LEFT, JoinType::ANTI, JoinType::SEMI,
+	// 	-> treat expression as conjunction OR so and conditions don't get split up.
+	// if conjunction AND - > recurse on each child
+	// if conjunction OR -> extract bindings from left and right sides and create FilterInfo
+	// if comparison expression -> extract relations from left and right. If both sides have a RelationSet, create
+	// filter info, otherwise create a "leftover_expression" else -> create a "leftover expression"
+	vector<unique_ptr<Expression>> leftover_expressions;
+	unique_ptr<FilterInfo> new_filter = nullptr;
+	column_binding_set_t left_bindings, right_bindings;
+	optional_ptr<JoinRelationSet> left_set = nullptr;
+	optional_ptr<JoinRelationSet> right_set = nullptr;
+	optional_ptr<JoinRelationSet> set = nullptr;
+	unique_ptr<Expression> new_expression = nullptr;
+	switch (join_type) {
+	case JoinType::SEMI:
+	case JoinType::ANTI:
+	case JoinType::LEFT: {
+		// todo handle a case like select * from a join b on a.col1 = a.col2 (i.e no conditions no table b)
+		// for SEMI ANTI AND LEFT, you want to keep the expressions together
+		D_ASSERT(expr->expression_class == ExpressionClass::BOUND_CONJUNCTION);
+		if (expr->expression_class == ExpressionClass::BOUND_CONJUNCTION) {
+			auto conj = unique_ptr_cast<Expression, BoundConjunctionExpression>(std::move(expr));
+			auto unused_expressions = CreateFilterFromConjunctionChildren(std::move(conj), set_manager, join_type);
+			// there should not be any unused expressions here.
+			D_ASSERT(unused_expressions.empty());
+			D_ASSERT(!filter_infos_.empty());
+			// We can guarantee there is a filterr info since the filter is created from a semi anti condition.
+			auto &new_filter = *filter_infos_.back();
+			left_set = new_filter.left_relation_set;
+			right_set = new_filter.right_relation_set;
+			set = set_manager.Union(*left_set, *right_set);
+		} else {
+			throw InternalException("left/semi/anti join should have conjunction expression");
+		}
+
+		if (join_type == JoinType::LEFT) {
+			// When we extract relations from the left join, all filters already extracted (i.e above the left
+			// join) must be checked for the following condition If the filter includes relations from the RHS
+			// of the LEFT JOIN, then all LHS relations of the LEFT JOIN are required to be present before the
+			// filter can take place. This means the left join will be planned before the filter.
+			for (auto &filter : filter_infos_) {
+				if (filter->join_type == JoinType::LEFT) {
+					// don't inspect the filter we just created.
+					continue;
+				}
+				// if any filter filters on just the right set,
+				// if there is no right set, it is a single column filter?
+				if (JoinRelationSet::IsSubset(*filter->set, *right_set)) {
+					// TODO: I don't think changing the set does much, you need to change the left and right set and
+					//  the conditions of what is required.
+					// make sure it requires all relations from the left set.
+					// if the filter is a (T1.a = 9) where t1.a is in the RHS of the left join
+					// then the filter set needs the left relations of the left join filter
+					// if the filter is a (T1.a = T2.b) where T1.a is the RHS of the left join and t2.b is the
+					// LHS, then we are fine. Union the two sets because if you have a join plan like so ((A
+					// LEFT JOIN B) JOIN C) with condition B.x = C.y the upper inner join has the total set (A,
+					// B, C).
+					filter->set = set_manager.Union(*filter->set, *set);
+				}
+				if (JoinRelationSet::IsSubset(*filter->left_relation_set, *right_set)) {
+					filter->left_relation_set = set_manager.Union(*filter->left_relation_set, *set);
+				}
+				if (JoinRelationSet::IsSubset(*filter->right_relation_set, *right_set)) {
+					filter->right_relation_set = set_manager.Union(*filter->right_relation_set, *set);
+				}
+			}
+		}
+		// there really should be no leftover expressions
+		D_ASSERT(leftover_expressions.empty());
+		break;
+	}
+	// for inner joins, the filter condition can come from regular filter operation
+	// so we want to extract each expressions individually (if it's a conjunction and)
+	case JoinType::INNER: {
+		if (expr->expression_class == ExpressionClass::BOUND_CONJUNCTION) {
+			auto conj = unique_ptr_cast<Expression, BoundConjunctionExpression>(std::move(expr));
+			if (conj->type == ExpressionType::CONJUNCTION_AND) {
+				// recurse into conjunction children and try to make join filter from each child.
+				for (idx_t i = 0; i < conj->children.size(); i++) {
+					auto child = std::move(conj->children[i]);
+					auto unused_expressions = CreateFilterInfoFromExpression(std::move(child), set_manager, join_type);
+					for (idx_t j = 0; j < unused_expressions.size(); j++) {
+						auto unused_expression = std::move(unused_expressions[j]);
+						if (unused_expression) {
+							leftover_expressions.push_back(std::move(unused_expression));
+						}
+					}
+				}
+			} else {
+				auto unused_expressions = CreateFilterFromConjunctionChildren(std::move(conj), set_manager, join_type);
+				for (idx_t j = 0; j < unused_expressions.size(); j++) {
+					auto unused_expression = std::move(unused_expressions[j]);
+					if (unused_expression) {
+						leftover_expressions.push_back(std::move(unused_expression));
+					}
+				}
+				return leftover_expressions;
+			}
+		} else if (expr->expression_class == ExpressionClass::BOUND_COMPARISON) {
+			auto &comp = expr->Cast<BoundComparisonExpression>();
+			auto new_comp =
+			    make_uniq<BoundComparisonExpression>(comp.type, std::move(comp.left), std::move(comp.right));
+			GetColumnBindingsFromExpression(*new_comp->left, left_bindings);
+			GetColumnBindingsFromExpression(*new_comp->right, right_bindings);
+			left_set = GetJoinRelations(left_bindings, set_manager);
+			right_set = GetJoinRelations(right_bindings, set_manager);
+			set = set_manager.Union(*left_set, *right_set);
+			new_expression = unique_ptr_cast<BoundComparisonExpression, Expression>(std::move(new_comp));
+		} else {
+			// filter is something like `t1.a is null` or `not t1.a`
+			// or t1.a IN (1, 4, 9)
+			GetColumnBindingsFromExpression(*expr, left_bindings);
+			left_set = GetJoinRelations(left_bindings, set_manager);
+			right_set = GetJoinRelations(right_bindings, set_manager);
+			set = set_manager.Union(*left_set, *right_set);
+			new_expression = std::move(expr);
+		}
+		break;
+	}
+	default:
+		throw InternalException("Unknown join type");
+	}
+
+	if (left_bindings.empty() && right_bindings.empty()) {
+		// the filter cannot be made into a connection
+		// in this case we do not create a FilterInfo for it, it will be pushed down the plan
+		// during plan reconstruction. (duckdb-internal/#1493)s
+		if (new_expression) {
+			leftover_expressions.push_back(std::move(new_expression));
+		}
+	} else if (new_expression) {
+		D_ASSERT(new_expression);
+		D_ASSERT(set && left_set && right_set);
+		if (left_set->Empty() || right_set->Empty()) {
+			new_filter = make_uniq<FilterInfo>(std::move(new_expression), set.get(), filter_infos_.size(), join_type,
+			                                   *left_set, *right_set);
+		} else {
+			new_filter = make_uniq<FilterInfo>(std::move(new_expression), set.get(), filter_infos_.size(), join_type,
+			                                   *left_set, *right_set, *left_bindings.begin(), *right_bindings.begin());
+		}
+		filter_infos_.push_back(std::move(new_filter));
+	}
+	return leftover_expressions;
+}
+
+vector<unique_ptr<FilterInfo>> RelationManager::ExtractEdges(vector<reference<LogicalOperator>> &filter_operators,
                                                              JoinRelationSetManager &set_manager) {
+	D_ASSERT(filter_infos_.empty());
 	// now that we know we are going to perform join ordering we actually extract the filters, eliminating duplicate
 	// filters in the process
-	vector<unique_ptr<FilterInfo>> filters_and_bindings;
 	expression_set_t filter_set;
 	for (auto &filter_op : filter_operators) {
 		auto &f_op = filter_op.get();
@@ -559,103 +793,68 @@ vector<unique_ptr<FilterInfo>> RelationManager::ExtractEdges(LogicalOperator &op
 		    f_op.type == LogicalOperatorType::LOGICAL_ASOF_JOIN) {
 			auto &join = f_op.Cast<LogicalComparisonJoin>();
 			D_ASSERT(join.expressions.empty());
-			if (join.join_type == JoinType::SEMI || join.join_type == JoinType::ANTI) {
-				auto conjunction_expression = make_uniq<BoundConjunctionExpression>(ExpressionType::CONJUNCTION_AND);
-				// create a conjunction expression for the semi join.
-				// It's possible multiple LHS relations have a condition in
-				// this semi join. Suppose we have ((A ⨝ B) ⋉ C). (example in test_4950.test)
-				// If the semi join condition has A.x = C.y AND B.x = C.z then we need to prevent a reordering
-				// that looks like ((A ⋉ C) ⨝ B)), since all columns from C will be lost after it joins with A,
-				// and the condition B.x = C.z will no longer be possible.
-				// if we make a conjunction expressions and populate the left set and right set with all
-				// the relations from the conditions in the conjunction expression, we can prevent invalid
-				// reordering.
-				for (auto &cond : join.conditions) {
-					auto comparison = make_uniq<BoundComparisonExpression>(cond.comparison, std::move(cond.left),
-					                                                       std::move(cond.right));
-					conjunction_expression->children.push_back(std::move(comparison));
-				}
-
-				// create the filter info so all required LHS relations are present when reconstructing the
-				// join
-				optional_ptr<JoinRelationSet> left_set;
-				optional_ptr<JoinRelationSet> right_set;
-				optional_ptr<JoinRelationSet> full_set;
-				// here we create a left_set that unions all relations from the left side of
-				// every expression and a right_set that unions all relations frmo the right side of a
-				// every expression (although this should always be 1).
-				for (auto &bound_expr : conjunction_expression->children) {
-					D_ASSERT(bound_expr->GetExpressionClass() == ExpressionClass::BOUND_COMPARISON);
-					auto &comp = bound_expr->Cast<BoundComparisonExpression>();
-					unordered_set<idx_t> right_bindings, left_bindings;
-					ExtractBindings(*comp.right, right_bindings);
-					ExtractBindings(*comp.left, left_bindings);
-
-					if (!left_set) {
-						left_set = set_manager.GetJoinRelation(left_bindings);
-					} else {
-						left_set = set_manager.Union(set_manager.GetJoinRelation(left_bindings), *left_set);
+			switch (join.join_type) {
+			case JoinType::SEMI:
+			case JoinType::ANTI:
+			case JoinType::LEFT: {
+				if (join.join_type == JoinType::SEMI || join.join_type == JoinType::ANTI) {
+					auto conjunction_expression =
+					    make_uniq<BoundConjunctionExpression>(ExpressionType::CONJUNCTION_AND);
+					// create a conjunction expression for the semi join.
+					// It's possible multiple LHS relations have a condition in
+					// this semi join. Suppose we have ((A ⨝ B) ⋉ C). (example in test_4950.test)
+					// If the semi join condition has A.x = C.y AND B.x = C.z then we need to prevent a reordering
+					// that looks like ((A ⋉ C) ⨝ B)), since all columns from C will be lost after it joins with A,
+					// and the condition B.x = C.z will no longer be possible.
+					// if we make a conjunction expressions and populate the left set and right set with all
+					// the relations from the conditions in the conjunction expression, we can prevent invalid
+					// reordering.
+					for (auto &cond : join.conditions) {
+						auto comparison = make_uniq<BoundComparisonExpression>(cond.comparison, std::move(cond.left),
+						                                                       std::move(cond.right));
+						conjunction_expression->children.push_back(std::move(comparison));
 					}
-					if (!right_set) {
-						right_set = set_manager.GetJoinRelation(right_bindings);
-					} else {
-						right_set = set_manager.Union(set_manager.GetJoinRelation(right_bindings), *right_set);
-					}
+					auto leftover_exprs =
+					    CreateFilterInfoFromExpression(std::move(conjunction_expression), set_manager, join.join_type);
+					D_ASSERT(leftover_exprs.empty());
+					break;
 				}
-				full_set = set_manager.Union(*left_set, *right_set);
-				D_ASSERT(left_set && left_set->count > 0);
-				D_ASSERT(right_set && right_set->count == 1);
-				D_ASSERT(full_set && full_set->count > 0);
-
-				// now we push the conjunction expressions
-				// In QueryGraphManager::GenerateJoins we extract each condition again and create a standalone join
-				// condition.
-				auto filter_info = make_uniq<FilterInfo>(std::move(conjunction_expression), *full_set,
-				                                         filters_and_bindings.size(), join.join_type);
-				filter_info->SetLeftSet(left_set);
-				filter_info->SetRightSet(right_set);
-
-				filters_and_bindings.push_back(std::move(filter_info));
-			} else {
-				// can extract every inner join condition individually.
-				for (auto &cond : join.conditions) {
-					auto comparison = make_uniq<BoundComparisonExpression>(cond.comparison, std::move(cond.left),
-					                                                       std::move(cond.right));
-					if (filter_set.find(*comparison) == filter_set.end()) {
-						filter_set.insert(*comparison);
-						unordered_set<idx_t> bindings;
-						ExtractBindings(*comparison, bindings);
-						auto &set = set_manager.GetJoinRelation(bindings);
-						auto filter_info = make_uniq<FilterInfo>(std::move(comparison), set,
-						                                         filters_and_bindings.size(), join.join_type);
-						filters_and_bindings.push_back(std::move(filter_info));
-					}
+			}
+			default: {
+				D_ASSERT(join.join_type == JoinType::INNER);
+				for (idx_t i = 0; i < join.conditions.size(); i++) {
+					auto &condition = join.conditions[i];
+					auto expr = make_uniq<BoundComparisonExpression>(condition.comparison, std::move(condition.left),
+					                                                 std::move(condition.right));
+					auto leftover_exprs = CreateFilterInfoFromExpression(std::move(expr), set_manager, join.join_type);
+					// since this is a join, there should not be leftover expressions
+					// TODO: handle a case like select * from t1 JOIN t2 on t1.a = t1.b; (i.e filter is only on t1)
+					D_ASSERT(leftover_exprs.empty());
 				}
+				break;
+			}
 			}
 			join.conditions.clear();
 		} else {
+			// handle filters from logical filters
 			vector<unique_ptr<Expression>> leftover_expressions;
-			for (auto &expression : f_op.expressions) {
-				if (filter_set.find(*expression) == filter_set.end()) {
-					filter_set.insert(*expression);
-					unordered_set<idx_t> bindings;
-					ExtractBindings(*expression, bindings);
-					if (bindings.empty()) {
-						// the filter is on a column that is not in our relational map. (example: limit_rownum)
-						// in this case we do not create a FilterInfo for it. (duckdb-internal/#1493)s
-						leftover_expressions.push_back(std::move(expression));
-						continue;
-					}
-					auto &set = set_manager.GetJoinRelation(bindings);
-					auto filter_info = make_uniq<FilterInfo>(std::move(expression), set, filters_and_bindings.size());
-					filters_and_bindings.push_back(std::move(filter_info));
+			for (idx_t i = 0; i < f_op.expressions.size(); i++) {
+				auto expression = std::move(f_op.expressions[i]);
+				auto l = CreateFilterInfoFromExpression(std::move(expression), set_manager, JoinType::INNER);
+				for (idx_t j = 0; j < l.size(); j++) {
+					auto expr = std::move(l[j]);
+					leftover_expressions.push_back(std::move(expr));
 				}
 			}
 			f_op.expressions = std::move(leftover_expressions);
 		}
 	}
-
-	return filters_and_bindings;
+#ifdef DEBUG // otherwise tidy thinks &filter is unused.
+	for (auto &filter : filter_infos_) {
+		D_ASSERT(!filter->set->Empty());
+	}
+#endif
+	return std::move(filter_infos_);
 }
 
 // LCOV_EXCL_START

@@ -18,11 +18,11 @@ class FilterInfo;
 
 struct DenomInfo {
 	DenomInfo(JoinRelationSet &numerator_relations, double filter_strength, double denominator)
-	    : numerator_relations(numerator_relations), filter_strength(filter_strength), denominator(denominator) {
+	    : numerator_relations(numerator_relations), extra_multiplier(filter_strength), denominator(denominator) {
 	}
 
 	JoinRelationSet &numerator_relations;
-	double filter_strength;
+	double extra_multiplier;
 	double denominator;
 };
 
@@ -63,9 +63,11 @@ public:
 struct Subgraph2Denominator {
 	optional_ptr<JoinRelationSet> relations;
 	optional_ptr<JoinRelationSet> numerator_relations;
+	double numerator_relations_extra;
 	double denom;
 
-	Subgraph2Denominator() : relations(nullptr), numerator_relations(nullptr), denom(1) {};
+	Subgraph2Denominator()
+	    : relations(nullptr), numerator_relations(nullptr), numerator_relations_extra(1), denom(1) {};
 };
 
 class CardinalityHelper {
@@ -90,6 +92,8 @@ public:
 class CardinalityEstimator {
 public:
 	static constexpr double DEFAULT_SEMI_ANTI_SELECTIVITY = 5;
+	static constexpr double DEFAULT_LT_GT_MULTIPLIER = 2.5;
+	static constexpr double LEFT_JOIN_COEFFICIENT = 0.008;
 	explicit CardinalityEstimator() {};
 
 private:

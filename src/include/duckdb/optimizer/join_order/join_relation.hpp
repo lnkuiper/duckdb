@@ -9,8 +9,8 @@
 #pragma once
 
 #include "duckdb/common/common.hpp"
-#include "duckdb/common/unordered_map.hpp"
 #include "duckdb/common/unordered_set.hpp"
+#include "duckdb/common/optional_ptr.hpp"
 
 namespace duckdb {
 
@@ -20,6 +20,9 @@ struct JoinRelationSet {
 	}
 
 	string ToString() const;
+	bool Empty() {
+		return count == 0;
+	}
 
 	unsafe_unique_array<idx_t> relations;
 	idx_t count;
@@ -39,6 +42,7 @@ public:
 	};
 
 public:
+	JoinRelationSet &GetEmptyJoinRelationSet();
 	//! Create or get a JoinRelationSet from a single node with the given index
 	JoinRelationSet &GetJoinRelation(idx_t index);
 	//! Create or get a JoinRelationSet from a set of relation bindings
@@ -54,6 +58,7 @@ public:
 
 private:
 	JoinRelationTreeNode root;
+	optional_ptr<JoinRelationSet> empty_relation_set;
 };
 
 } // namespace duckdb

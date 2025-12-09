@@ -1,0 +1,25 @@
+# name: test/optimizer/joins/left_join_reordering/left_join_cardinality_estimation.test
+# description: Cardinality Estimation Left Join Reodering.
+# group: [left_join_reordering]
+
+statement ok
+create table large as select range l_id from range(100000);
+
+statement ok
+create table medium as select range m_id from range(10000);
+
+statement ok
+create table small as select range s_id from range(150);
+
+# reorder so that large is first left joined with small, then left joined with medium
+query II
+explain select * from large left join medium on (l_id = m_id) left join small on (l_id = s_id);
+----
+physical_plan	<REGEX>:.*l_id = m_id.*l_id = s_id.*
+
+
+# reorder so that large is first left joined with small, then left joined with medium
+# query II
+# explain select * from large left join medium on (l_id = m_id) left join small on (l_id = s_id);
+# ----
+# physical_plan	<REGEX>:.*~100000 Rows*

@@ -8,9 +8,13 @@ CostModel::CostModel(QueryGraphManager &query_graph_manager)
     : query_graph_manager(query_graph_manager), cardinality_estimator() {
 }
 
+// double CostModel::ComputeCost(DPJoinNode &left, DPJoinNode &right, NeighborInfo &neighbor_info) {
+// 	return ComputeJoinCost(left, right);
+// }
+
 // Currently cost of a join only factors in the cardinalities.
 // If join types and join algorithms are to be considered, they should be added here.
-double CostModel::ComputeCost(DPJoinNode &left, DPJoinNode &right) {
+double CostModel::ComputeCost(DPJoinNode &left, DPJoinNode &right, NeighborInfo &connection) {
 	auto &combination = query_graph_manager.set_manager.Union(left.set, right.set);
 	auto join_card = cardinality_estimator.EstimateCardinalityWithSet<double>(combination);
 	auto join_cost = join_card;

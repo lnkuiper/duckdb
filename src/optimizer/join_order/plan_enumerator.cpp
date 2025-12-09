@@ -120,7 +120,7 @@ unique_ptr<DPJoinNode> PlanEnumerator::CreateJoinTree(JoinRelationSet &set,
 	}
 	auto join_type = JoinType::INVALID;
 	for (auto &filter_binding : best_connection->filters) {
-		if (!filter_binding->left_set || !filter_binding->right_set) {
+		if (!filter_binding->left_relation_set || !filter_binding->right_relation_set) {
 			continue;
 		}
 
@@ -132,7 +132,7 @@ unique_ptr<DPJoinNode> PlanEnumerator::CreateJoinTree(JoinRelationSet &set,
 		}
 	}
 	// need the filter info from the Neighborhood info.
-	auto cost = cost_model.ComputeCost(left, right);
+	auto cost = cost_model.ComputeCost(left, right, *best_connection);
 	auto result = make_uniq<DPJoinNode>(set, best_connection, left.set, right.set, cost);
 	result->cardinality = cost_model.cardinality_estimator.EstimateCardinalityWithSet<idx_t>(set);
 	return result;

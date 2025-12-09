@@ -29,35 +29,27 @@ bool QueryGraphManager::Build(JoinOrderOptimizer &optimizer, LogicalOperator &op
 		return false;
 	}
 	// extract the edges of the hypergraph, creating a list of filters and their associated bindings.
-	filters_and_bindings = relation_manager.ExtractEdges(op, filter_operators, set_manager);
+	filters_and_bindings = relation_manager.ExtractEdges(filter_operators, set_manager);
 	// Create the query_graph hyper edges
 	CreateHyperGraphEdges();
 	return true;
 }
 
-void QueryGraphManager::GetColumnBinding(Expression &root_expr, ColumnBinding &binding) {
-	ExpressionIterator::VisitExpression<BoundColumnRefExpression>(
-	    root_expr, [&](const BoundColumnRefExpression &colref) {
-		    D_ASSERT(colref.depth == 0);
-		    D_ASSERT(colref.binding.table_index != DConstants::INVALID_INDEX);
-		    // map the base table index to the relation index used by the JoinOrderOptimizer
-		    D_ASSERT(relation_manager.relation_mapping.find(colref.binding.table_index) !=
-		             relation_manager.relation_mapping.end());
-		    binding = ColumnBinding(relation_manager.relation_mapping[colref.binding.table_index],
-		                            colref.binding.column_index);
-	    });
-}
+// void QueryGraphManager::GetColumnBinding(Expression &root_expr, ColumnBinding &binding) {
+// 	ExpressionIterator::VisitExpression<BoundColumnRefExpression>(
+// 	    root_expr, [&](const BoundColumnRefExpression &colref) {
+// 		    D_ASSERT(colref.depth == 0);
+// 		    D_ASSERT(colref.binding.table_index != DConstants::INVALID_INDEX);
+// 		    // map the base table index to the relation index used by the JoinOrderOptimizer
+// 		    D_ASSERT(relation_manager.relation_mapping.find(colref.binding.table_index) !=
+// 		             relation_manager.relation_mapping.end());
+// 		    binding = ColumnBinding(relation_manager.relation_mapping[colref.binding.table_index],
+// 		                            colref.binding.column_index);
+// 	    });
+// }
 
 const vector<unique_ptr<FilterInfo>> &QueryGraphManager::GetFilterBindings() const {
 	return filters_and_bindings;
-}
-
-void FilterInfo::SetLeftSet(optional_ptr<JoinRelationSet> left_set_new) {
-	left_set = left_set_new;
-}
-
-void FilterInfo::SetRightSet(optional_ptr<JoinRelationSet> right_set_new) {
-	right_set = right_set_new;
 }
 
 static unique_ptr<LogicalOperator> PushFilter(unique_ptr<LogicalOperator> node, unique_ptr<Expression> expr) {
@@ -79,76 +71,12 @@ static unique_ptr<LogicalOperator> PushFilter(unique_ptr<LogicalOperator> node, 
 void QueryGraphManager::CreateHyperGraphEdges() {
 	// create potential edges from the comparisons
 	for (auto &filter_info : filters_and_bindings) {
-		auto &filter = filter_info->filter;
-		// now check if it can be used as a join predicate
-		if (filter->GetExpressionClass() == ExpressionClass::BOUND_COMPARISON) {
-			auto &comparison = filter->Cast<BoundComparisonExpression>();
-			// extract the bindings that are required for the left and right side of the comparison
-			unordered_set<idx_t> left_bindings, right_bindings;
-			relation_manager.ExtractBindings(*comparison.left, left_bindings);
-			relation_manager.ExtractBindings(*comparison.right, right_bindings);
-			GetColumnBinding(*comparison.left, filter_info->left_binding);
-			GetColumnBinding(*comparison.right, filter_info->right_binding);
-			if (!left_bindings.empty() && !right_bindings.empty()) {
-				// both the left and the right side have bindings
-				// first create the relation sets, if they do not exist
-				if (!filter_info->left_set) {
-					filter_info->left_set = &set_manager.GetJoinRelation(left_bindings);
-				}
-				if (!filter_info->right_set) {
-					filter_info->right_set = &set_manager.GetJoinRelation(right_bindings);
-				}
-				// we can only create a meaningful edge if the sets are not exactly the same
-				if (filter_info->left_set != filter_info->right_set) {
-					// check if the sets are disjoint
-					if (Disjoint(left_bindings, right_bindings)) {
-						// they are disjoint, we only need to create one set of edges in the join graph
-						query_graph.CreateEdge(*filter_info->left_set, *filter_info->right_set, filter_info);
-						query_graph.CreateEdge(*filter_info->right_set, *filter_info->left_set, filter_info);
-					}
-				}
-			}
-		} else if (filter->GetExpressionClass() == ExpressionClass::BOUND_CONJUNCTION) {
-			auto &conjunction = filter->Cast<BoundConjunctionExpression>();
-			if (conjunction.GetExpressionType() == ExpressionType::CONJUNCTION_OR ||
-			    filter_info->join_type == JoinType::INNER || filter_info->join_type == JoinType::INVALID) {
-				// Currently we do not interpret Conjunction expressions as INNER joins
-				// for hyper graph edges. These are most likely OR conjunctions, and
-				// will be pushed down into a join later in the optimizer.
-				// Conjunction filters are mostly to help plan semi and anti joins at the moment.
-				continue;
-			}
-			unordered_set<idx_t> left_bindings, right_bindings;
-			D_ASSERT(filter_info->left_set);
-			D_ASSERT(filter_info->right_set);
-			D_ASSERT(filter_info->join_type == JoinType::SEMI || filter_info->join_type == JoinType::ANTI);
-			for (auto &child_comp : conjunction.children) {
-				if (child_comp->GetExpressionClass() != ExpressionClass::BOUND_COMPARISON) {
-					continue;
-				}
-				auto &comparison = child_comp->Cast<BoundComparisonExpression>();
-				// extract the bindings that are required for the left and right side of the comparison
-				relation_manager.ExtractBindings(*comparison.left, left_bindings);
-				relation_manager.ExtractBindings(*comparison.right, right_bindings);
-				if (filter_info->left_binding.table_index == DConstants::INVALID_INDEX &&
-				    filter_info->left_binding.column_index == DConstants::INVALID_INDEX) {
-					GetColumnBinding(*comparison.left, filter_info->left_binding);
-				}
-				if (filter_info->right_binding.table_index == DConstants::INVALID_INDEX &&
-				    filter_info->right_binding.column_index == DConstants::INVALID_INDEX) {
-					GetColumnBinding(*comparison.right, filter_info->right_binding);
-				}
-			}
-			if (!left_bindings.empty() && !right_bindings.empty()) {
-				// we can only create a meaningful edge if the sets are not exactly the same
-				if (filter_info->left_set != filter_info->right_set) {
-					// check if the sets are disjoint
-					if (Disjoint(left_bindings, right_bindings)) {
-						// they are disjoint, we only need to create one set of edges in the join graph
-						query_graph.CreateEdge(*filter_info->left_set, *filter_info->right_set, filter_info);
-						query_graph.CreateEdge(*filter_info->right_set, *filter_info->left_set, filter_info);
-					}
-				}
+		if (!filter_info->left_relation_set->Empty() && !filter_info->right_relation_set->Empty()) {
+			// we can only create a meaningful edge if the sets are not exactly the same
+			if (filter_info->left_relation_set != filter_info->right_relation_set) {
+				// they are disjoint, we only need to create one set of edges in the join graph
+				query_graph.CreateEdge(*filter_info->left_relation_set, *filter_info->right_relation_set, filter_info);
+				query_graph.CreateEdge(*filter_info->right_relation_set, *filter_info->left_relation_set, filter_info);
 			}
 		}
 	}
@@ -230,6 +158,22 @@ static JoinCondition MaybeInvertConditions(unique_ptr<Expression> condition, boo
 	return cond;
 }
 
+void GetColumnBindingsFromExpression(Expression &expression, column_binding_set_t &column_bindings) {
+	if (expression.GetExpressionType() == ExpressionType::BOUND_COLUMN_REF) {
+		// Here you have a filter on a single column in a table. Return a binding for the column
+		// being filtered on so the filter estimator knows what HLL count to pull
+		auto &colref = expression.Cast<BoundColumnRefExpression>();
+		D_ASSERT(colref.depth == 0);
+		D_ASSERT(colref.binding.table_index != DConstants::INVALID_INDEX);
+		// only add column bindings that map to relations.
+		// map the base table index to the relation index used by the JoinOrderOptimizer
+		column_bindings.insert(ColumnBinding(colref.binding.table_index, colref.binding.column_index));
+	}
+	// TODO: handle inequality filters with functions.
+	ExpressionIterator::EnumerateChildren(
+	    expression, [&](Expression &expr) { GetColumnBindingsFromExpression(expr, column_bindings); });
+}
+
 GenerateJoinRelation QueryGraphManager::GenerateJoins(vector<unique_ptr<LogicalOperator>> &extracted_relations,
                                                       JoinRelationSet &set) {
 	optional_ptr<JoinRelationSet> left_node;
@@ -274,18 +218,21 @@ GenerateJoinRelation QueryGraphManager::GenerateJoins(vector<unique_ptr<LogicalO
 				auto &filter_and_binding = filters_and_bindings.at(f->filter_index);
 				auto condition = std::move(filter_and_binding->filter);
 				// now create the actual join condition
-				D_ASSERT((JoinRelationSet::IsSubset(*left.set, *f->left_set) &&
-				          JoinRelationSet::IsSubset(*right.set, *f->right_set)) ||
-				         (JoinRelationSet::IsSubset(*left.set, *f->right_set) &&
-				          JoinRelationSet::IsSubset(*right.set, *f->left_set)));
+				D_ASSERT((JoinRelationSet::IsSubset(*left.set, *f->left_relation_set) &&
+				          JoinRelationSet::IsSubset(*right.set, *f->right_relation_set)) ||
+				         (JoinRelationSet::IsSubset(*left.set, *f->right_relation_set) &&
+				          JoinRelationSet::IsSubset(*right.set, *f->left_relation_set)));
 
-				bool invert = !JoinRelationSet::IsSubset(*left.set, *f->left_set);
-				// If the left and right set are inverted AND it is a semi or anti join
-				// swap left and right children back.
+				auto left_bindings = join->children[0]->GetColumnBindings();
+				auto right_bindings = join->children[1]->GetColumnBindings();
+				bool invert = !JoinRelationSet::IsSubset(*left.set, *f->left_relation_set);
 
-				if (invert && (f->join_type == JoinType::SEMI || f->join_type == JoinType::ANTI)) {
+				// If the left and right set are inverted for LEFT/SEMI/ANTI joins then swap them back
+				// and set invert = false. This is to preserve left/rightedness of relations
+				if (invert && (f->join_type == JoinType::LEFT || f->join_type == JoinType::SEMI ||
+				               f->join_type == JoinType::ANTI)) {
 					std::swap(join->children[0], join->children[1]);
-					invert = false;
+					std::swap(left, right);
 				}
 
 				if (condition->GetExpressionClass() == ExpressionClass::BOUND_COMPARISON) {
@@ -316,7 +263,6 @@ GenerateJoinRelation QueryGraphManager::GenerateJoins(vector<unique_ptr<LogicalO
 	// TODO: this is where estimated properties start coming into play.
 	//  when creating the result operator, we should ask the cost model and cardinality estimator what
 	//  the cost and cardinality are
-	//	result_operator->estimated_props = node.estimated_props->Copy();
 	result_operator->estimated_cardinality = node->cardinality;
 	result_operator->has_estimated_cardinality = true;
 	// check if we should do a pushdown on this node
@@ -328,13 +274,18 @@ GenerateJoinRelation QueryGraphManager::GenerateJoins(vector<unique_ptr<LogicalO
 		if (filters_and_bindings[info.filter_index]->filter) {
 			// now check if the filter is a subset of the current relation
 			// note that infos with an empty relation set are a special case and we do not push them down
-			if (info.set.get().count > 0 && JoinRelationSet::IsSubset(*result_relation, info.set)) {
+			if (info.join_type == JoinType::LEFT) {
+				// any left join is most definitely a filter that joins two relations, so do not push the filter
+				// preemptively here
+				continue;
+			}
+			if (info.set->count > 0 && JoinRelationSet::IsSubset(*result_relation, *info.set)) {
 				auto &filter_and_binding = filters_and_bindings[info.filter_index];
 				auto filter = std::move(filter_and_binding->filter);
 				// if it is, we can push the filter
 				// we can push it either into a join or as a filter
 				// check if we are in a join or in a base table
-				if (!left_node || !info.left_set) {
+				if (!left_node || !info.left_relation_set) {
 					// base table or non-comparison expression, push it as a filter
 					result_operator = PushFilter(std::move(result_operator), std::move(filter));
 					continue;
@@ -343,11 +294,11 @@ GenerateJoinRelation QueryGraphManager::GenerateJoins(vector<unique_ptr<LogicalO
 				// check if the nodes can be split up into left/right
 				bool found_subset = false;
 				bool invert = false;
-				if (JoinRelationSet::IsSubset(*left_node, *info.left_set) &&
-				    JoinRelationSet::IsSubset(*right_node, *info.right_set)) {
+				if (JoinRelationSet::IsSubset(*left_node, *info.left_relation_set) &&
+				    JoinRelationSet::IsSubset(*right_node, *info.right_relation_set)) {
 					found_subset = true;
-				} else if (JoinRelationSet::IsSubset(*right_node, *info.left_set) &&
-				           JoinRelationSet::IsSubset(*left_node, *info.right_set)) {
+				} else if (JoinRelationSet::IsSubset(*right_node, *info.left_relation_set) &&
+				           JoinRelationSet::IsSubset(*left_node, *info.right_relation_set)) {
 					invert = true;
 					found_subset = true;
 				}

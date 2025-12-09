@@ -1,0 +1,47 @@
+# name: test/optimizer/joins/left_join_reordering/test_reordering_left_joins.test
+# description: Reordering left joins produces still valid results
+# group: [left_join_reordering]
+
+# make sure no illegal left join reordering happens
+
+statement ok
+pragma enable_verification
+
+statement ok
+pragma disabled_optimizers='build_side_probe_side';
+
+statement ok
+create table t1 as from values (0), (1), (2), (3), (NULL) t(a);
+
+statement ok
+create table t2 as from values (0), (1) t(b);
+
+statement ok
+create table t3 as from values (1), (2) t(c);
+
+
+# filters (a ⟕ (b ⨝ c))
+query III
+select * from t1 left join (select * from t2, t3 where b = c) on a = c order by all;
+----
+0	NULL	NULL
+1	1	1
+2	NULL	NULL
+3	NULL	NULL
+NULL	NULL	NULL
+
+# illegal reordering of test above ((a ⟕ c) ⨝ b)
+query III
+select * from (from t1 left join t3 on a=c), t2 where b = c order by all;
+----
+1	1	1
+
+# this can be reordered
+# from (a ⨝ b) ⟕ c) to ((b ⟕ c) ⨝ a)
+query III
+select * from t1 join t2 on a = b left join t3 on b = c order by all;
+----
+0	0	NULL
+1	1	1
+
+# two && three left joins.
