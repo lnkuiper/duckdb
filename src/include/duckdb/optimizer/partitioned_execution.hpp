@@ -16,13 +16,14 @@ class Optimizer;
 
 class PartitionedExecution {
 public:
-	explicit PartitionedExecution(Optimizer &optimizer);
+	PartitionedExecution(Optimizer &optimizer, LogicalOperator &root);
 
 public:
-	unique_ptr<LogicalOperator> Optimize(unique_ptr<LogicalOperator> op);
+	void Optimize(unique_ptr<LogicalOperator> &op);
 
 private:
 	Optimizer &optimizer;
+	LogicalOperator &root;
 };
 
 } // namespace duckdb

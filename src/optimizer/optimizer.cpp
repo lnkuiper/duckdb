@@ -318,8 +318,8 @@ void Optimizer::RunBuiltInOptimizers() {
 
 	// split pipelines into partitions and union them back together
 	RunOptimizer(OptimizerType::PARTITIONED_EXECUTION, [&]() {
-		PartitionedExecution partitioned_execution(*this);
-		plan = partitioned_execution.Optimize(std::move(plan));
+		PartitionedExecution partitioned_execution(*this, *plan);
+		partitioned_execution.Optimize(plan);
 	});
 
 	// perform join filter pushdown after the dust has settled
