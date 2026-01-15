@@ -17,6 +17,7 @@ struct PartitionedExecutionColumn {
 
 	ColumnBinding column_binding;
 	OrderType order_type = OrderType::INVALID;
+	StorageIndex storage_index;
 };
 
 bool PartitionedExecutionGetColumns(LogicalOperator &op, vector<PartitionedExecutionColumn> &columns) {
@@ -79,18 +80,61 @@ optional_ptr<LogicalGet> PartitionedExecutionTraceColumns(LogicalOperator &op,
 			break;
 		}
 		case LogicalOperatorType::LOGICAL_FILTER: {
-			break; // Just continue
+			break; // Don't have to update bindings
 		}
 		default:
 			return nullptr; // Unsupported for partition pass-through
 		}
 		child_ref = *child_ref.get().children[0];
 	}
+
 	D_ASSERT(child_ref.get().type == LogicalOperatorType::LOGICAL_GET);
 	if (!child_ref.get().children.empty()) {
-		return nullptr; // Table in/out, bail
+		return nullptr; // Table in/out, unsupported
 	}
-	return child_ref.get().Cast<LogicalGet>();
+	auto &get = child_ref.get().Cast<LogicalGet>();
+
+	// Get the storage index
+	const auto &column_ids = get.GetColumnIds();
+	for (auto it = columns.begin(); it != columns.end(); it++) {
+		const auto &column_index = column_ids[it->column_binding.column_index];
+		if (get.TryGetStorageIndex(column_index, it->storage_index)) {
+			continue; // Successfully got a storage index
+		}
+		switch (op.type) {
+		case LogicalOperatorType::LOGICAL_AGGREGATE_AND_GROUP_BY:
+			it = columns.erase(it); // We can partition on any column so we can freely remove any
+			break;
+		case LogicalOperatorType::LOGICAL_ORDER_BY:
+			for (; it != columns.end(); it++) {
+				it = columns.erase(it); // Have to remove from the first column without storage index onwards
+			}
+			break;
+		default:
+			throw NotImplementedException("PartitionedExecutionTraceColumns for %s", EnumUtil::ToString(op.type));
+		}
+	}
+
+	return get;
+}
+
+struct PartitionedExecutionSplit {
+	BaseStatistics &min;
+	BaseStatistics &max;
+	idx_t count;
+};
+
+vector<PartitionedExecutionSplit>
+PartitionedExecutionComputeSplits(const vector<PartitionedExecutionColumn> &columns,
+                                  const vector<PartitionStatistics> &partition_stats) {
+	vector<PartitionedExecutionSplit> result;
+	throw NotImplementedException("PartitionedExecutionComputeSplits");
+	return result;
+}
+
+void PartitionExecutionSplitPipeline(Optimizer &optimizer, LogicalOperator &root, unique_ptr<LogicalOperator> &op,
+                                     const vector<PartitionedExecutionSplit> &splits) {
+	throw NotImplementedException("PartitionExecutionSplitPipeline");
 }
 
 void PartitionedExecution::Optimize(unique_ptr<LogicalOperator> &op) {
@@ -98,22 +142,28 @@ void PartitionedExecution::Optimize(unique_ptr<LogicalOperator> &op) {
 		Optimize(child); // Depth-first
 	}
 
-	if (op->children.size() != 1) {
-		return; // Only for straight pipelines to scans
-	}
-
 	vector<PartitionedExecutionColumn> columns;
 	if (!PartitionedExecutionGetColumns(*op, columns) || columns.empty()) {
-		return; // Not able to get partition columns from this operator
+		return; // Unable to get partition columns from this operator
 	}
 
 	optional_ptr<LogicalGet> get = PartitionedExecutionTraceColumns(*op, columns);
 	if (!get || columns.empty()) {
-		return; // Unable to trace bindings down to scan
+		return; // Unable to trace any binding down to scan
 	}
 
 	GetPartitionStatsInput input(get->function, get->bind_data.get());
-	auto partition_stats = get->function.get_partition_stats(optimizer.context, input);
+	const auto partition_stats = get->function.get_partition_stats(optimizer.context, input);
+	if (partition_stats.size() <= 1) {
+		return; // Can't split 0 or 1 partitions
+	}
+
+	const auto splits = PartitionedExecutionComputeSplits(columns, partition_stats);
+	if (splits.empty()) {
+		return; // Unable to compute splits
+	}
+
+	PartitionExecutionSplitPipeline(optimizer, root, op, splits); // Success!
 }
 
 } // namespace duckdb
