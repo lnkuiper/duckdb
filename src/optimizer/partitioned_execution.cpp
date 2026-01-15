@@ -27,10 +27,9 @@ bool PartitionedExecutionGetColumns(LogicalOperator &op, vector<PartitionedExecu
 			return false; // Only regular grouped aggregations
 		}
 		for (auto &group : agg.groups) {
-			if (group->GetExpressionClass() != ExpressionClass::BOUND_COLUMN_REF) {
-				return false; // Only colrefs
+			if (group->GetExpressionClass() == ExpressionClass::BOUND_COLUMN_REF) {
+				columns.emplace_back(*group); // We can partition on any colref
 			}
-			columns.emplace_back(*group);
 		}
 		return true;
 	}
@@ -38,7 +37,7 @@ bool PartitionedExecutionGetColumns(LogicalOperator &op, vector<PartitionedExecu
 		auto &order = op.Cast<LogicalOrder>();
 		for (auto &order_by_node : order.orders) {
 			if (order_by_node.expression->GetExpressionClass() != ExpressionClass::BOUND_COLUMN_REF) {
-				return false; // Only colrefs
+				break; // Have to break on the first non-colref
 			}
 			columns.emplace_back(*order_by_node.expression, order_by_node.type);
 		}
@@ -57,12 +56,25 @@ optional_ptr<LogicalGet> PartitionedExecutionTraceColumns(LogicalOperator &op,
 		switch (child_ref.get().type) {
 		case LogicalOperatorType::LOGICAL_PROJECTION: {
 			auto &proj = child_ref.get().Cast<LogicalProjection>();
-			for (auto &col : columns) {
-				auto &expr = *proj.expressions[col.column_binding.column_index];
-				if (expr.GetExpressionClass() != ExpressionClass::BOUND_COLUMN_REF) {
-					return nullptr;
+			for (auto it = columns.begin(); it != columns.end(); it++) {
+				auto &expr = *proj.expressions[it->column_binding.column_index];
+				if (expr.GetExpressionClass() == ExpressionClass::BOUND_COLUMN_REF) {
+					it->column_binding = expr.Cast<BoundColumnRefExpression>().binding;
+					continue;
 				}
-				col.column_binding = expr.Cast<BoundColumnRefExpression>().binding;
+				switch (op.type) {
+				case LogicalOperatorType::LOGICAL_AGGREGATE_AND_GROUP_BY:
+					it = columns.erase(it); // We can partition on any colref so we can freely remove any
+					break;
+				case LogicalOperatorType::LOGICAL_ORDER_BY:
+					for (; it != columns.end(); it++) {
+						it = columns.erase(it); // Have to remove from the first non-colref onward
+					}
+					break;
+				default:
+					throw NotImplementedException("PartitionedExecutionTraceColumns for %s",
+					                              EnumUtil::ToString(op.type));
+				}
 			}
 			break;
 		}
@@ -91,13 +103,12 @@ void PartitionedExecution::Optimize(unique_ptr<LogicalOperator> &op) {
 	}
 
 	vector<PartitionedExecutionColumn> columns;
-	if (!PartitionedExecutionGetColumns(*op, columns)) {
+	if (!PartitionedExecutionGetColumns(*op, columns) || columns.empty()) {
 		return; // Not able to get partition columns from this operator
 	}
-	D_ASSERT(!columns.empty());
 
 	optional_ptr<LogicalGet> get = PartitionedExecutionTraceColumns(*op, columns);
-	if (!get) {
+	if (!get || columns.empty()) {
 		return; // Unable to trace bindings down to scan
 	}
 
