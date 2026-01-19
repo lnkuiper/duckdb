@@ -402,6 +402,13 @@ void PartitionExecutionSplitPipeline(Optimizer &optimizer, LogicalOperator &root
 		FilterPushdown filter_pushdown(optimizer, false);
 		copy = filter_pushdown.Rewrite(std::move(copy));
 
+		// Add cardinality estimates for these GETs
+		reference<LogicalOperator> get = *copy;
+		while (get.get().type != LogicalOperatorType::LOGICAL_GET) {
+			get = *get.get().children[0];
+		}
+		get.get().SetEstimatedCardinality(range.count);
+
 		// Add it the children for the union
 		children.emplace_back(std::move(copy));
 	}
