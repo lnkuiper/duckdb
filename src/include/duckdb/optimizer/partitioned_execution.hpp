@@ -24,6 +24,7 @@ public:
 private:
 	Optimizer &optimizer;
 	LogicalOperator &root;
+	const idx_t num_threads;
 };
 
 } // namespace duckdb

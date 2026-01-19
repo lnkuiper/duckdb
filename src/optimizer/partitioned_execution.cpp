@@ -1,21 +1,30 @@
 #include "duckdb/optimizer/partitioned_execution.hpp"
 
 #include "duckdb/optimizer/optimizer.hpp"
+#include "duckdb/optimizer/filter_pushdown.hpp"
 #include "duckdb/planner/operator/list.hpp"
+#include "duckdb/planner/logical_operator_deep_copy.hpp"
 #include "duckdb/planner/expression/bound_columnref_expression.hpp"
+#include "duckdb/planner/expression/bound_comparison_expression.hpp"
+#include "duckdb/planner/expression/bound_constant_expression.hpp"
+#include "duckdb/optimizer/column_binding_replacer.hpp"
 #include "duckdb/parallel/task_scheduler.hpp"
 
 namespace duckdb {
 
 PartitionedExecution::PartitionedExecution(Optimizer &optimizer_p, LogicalOperator &root_p)
-    : optimizer(optimizer_p), root(root_p) {
+    : optimizer(optimizer_p), root(root_p),
+      num_threads(NumericCast<idx_t>(TaskScheduler::GetScheduler(optimizer.context).NumberOfThreads())) {
 }
 
 struct PartitionedExecutionColumn {
-	explicit PartitionedExecutionColumn(Expression &expr, OrderType order_type_p = OrderType::INVALID)
-	    : column_binding(expr.Cast<BoundColumnRefExpression>().binding), order_type(order_type_p) {
+	explicit PartitionedExecutionColumn(idx_t original_idx_p, Expression &expr,
+	                                    OrderType order_type_p = OrderType::INVALID)
+	    : original_idx(original_idx_p), column_binding(expr.Cast<BoundColumnRefExpression>().binding),
+	      order_type(order_type_p) {
 	}
 
+	idx_t original_idx;
 	ColumnBinding column_binding;
 	OrderType order_type = OrderType::INVALID;
 	StorageIndex storage_index;
@@ -30,7 +39,7 @@ static bool PartitionedExecutionGetColumns(LogicalOperator &op, vector<Partition
 		}
 		for (auto &group : agg.groups) {
 			if (group->GetExpressionClass() == ExpressionClass::BOUND_COLUMN_REF) {
-				columns.emplace_back(*group); // We can partition on any colref
+				columns.emplace_back(columns.size(), *group); // We can partition on any colref
 			}
 		}
 		return true;
@@ -41,7 +50,7 @@ static bool PartitionedExecutionGetColumns(LogicalOperator &op, vector<Partition
 			if (order_by_node.expression->GetExpressionClass() != ExpressionClass::BOUND_COLUMN_REF) {
 				break; // Have to break on the first non-colref
 			}
-			columns.emplace_back(*order_by_node.expression, order_by_node.type);
+			columns.emplace_back(columns.size(), *order_by_node.expression, order_by_node.type);
 		}
 		return true;
 	}
@@ -91,6 +100,7 @@ static optional_ptr<LogicalGet> PartitionedExecutionTraceColumns(LogicalOperator
 			break; // Don't have to update bindings
 		}
 		default:
+			// TODO: we could pass through joins with tiny build sides
 			return nullptr; // Unsupported for partition pass-through
 		}
 		child_ref = *child_ref.get().children[0];
@@ -192,34 +202,32 @@ static bool
 PartitionedExecutionCompareStatsNodes(const vector<PartitionedExecutionColumn> &columns,
                                       const vector<vector<PartitionedExecutionStatsNode>> &column_stats_nodes,
                                       const idx_t &lhs, const idx_t &rhs) {
-	idx_t col_idx = 0;
-	for (; col_idx < columns.size(); col_idx++) {
+	for (idx_t col_idx = 0; col_idx < columns.size(); col_idx++) {
 		const auto &stats_nodes = column_stats_nodes[col_idx];
 		const auto &lhs_node = stats_nodes[lhs];
 		const auto &rhs_node = stats_nodes[rhs];
-		if (lhs_node.val != rhs_node.val) {
-			break;
+		if (col_idx < columns.size() - 1 && lhs_node.val == rhs_node.val) {
+			continue; // Not the last iteration and values are equal
+		}
+
+		// Last iteration or values not equal, need to return
+		if (lhs_node.val == rhs_node.val) {
+			return lhs_node.count_delta > rhs_node.count_delta; // All columns equal, add start of row groups first
+		}
+
+		// Return based on sort order
+		switch (columns[col_idx].order_type) {
+		case OrderType::ASCENDING:
+		case OrderType::INVALID:
+			return lhs_node.val < rhs_node.val;
+		case OrderType::DESCENDING:
+			return lhs_node.val > rhs_node.val;
+		default:
+			throw NotImplementedException("PartitionedExecutionCompareStatsNodes for %s",
+			                              EnumUtil::ToString(columns[col_idx].order_type));
 		}
 	}
-
-	const auto &stats_nodes = column_stats_nodes[col_idx];
-	const auto &lhs_node = stats_nodes[lhs];
-	const auto &rhs_node = stats_nodes[rhs];
-
-	if (col_idx == columns.size()) {
-		return lhs_node.count_delta > rhs_node.count_delta; // All columns equal, add start of row groups first
-	}
-
-	switch (columns[col_idx].order_type) {
-	case OrderType::ASCENDING:
-	case OrderType::INVALID:
-		return lhs_node.val < rhs_node.val;
-	case OrderType::DESCENDING:
-		return lhs_node.val > rhs_node.val;
-	default:
-		throw NotImplementedException("PartitionedExecutionCompareStatsNodes for %s",
-		                              EnumUtil::ToString(columns[col_idx].order_type));
-	}
+	throw InternalException("PartitionedExecutionCompareStatsNodes failed"); // This should be unreachable
 }
 
 static void PartitionedExecutionGrowPartition(
@@ -234,7 +242,6 @@ static void PartitionedExecutionGrowPartition(
 			partition_count += NumericCast<idx_t>(node.count_delta); // Only add if it's the start of a row group
 		}
 		partition_overlap_ratio = static_cast<double>(current_overlap) / static_cast<double>(partition_count);
-		D_ASSERT(partition_overlap_ratio <= 1);
 		update_callback();
 	}
 }
@@ -269,7 +276,8 @@ PartitionedExecutionComputeRanges(LogicalOperator &op, vector<PartitionedExecuti
 	// Tuned constants for finding reasonable partitions
 	static constexpr idx_t MIN_ROW_GROUPS_PER_THREAD_PER_PARTITION = 16;
 	static constexpr double MAX_OVERLAP_RATIO = 0.1;
-	const auto min_partition_size = num_threads * DEFAULT_ROW_GROUP_SIZE * MIN_ROW_GROUPS_PER_THREAD_PER_PARTITION;
+	const auto min_row_groups_per_partition = num_threads * MIN_ROW_GROUPS_PER_THREAD_PER_PARTITION;
+	const auto min_partition_count = min_row_groups_per_partition * DEFAULT_ROW_GROUP_SIZE;
 
 	// Compute ranges
 	vector<PartitionedExecutionRange> ranges;
@@ -279,10 +287,10 @@ PartitionedExecutionComputeRanges(LogicalOperator &op, vector<PartitionedExecuti
 		idx_t partition_count = 0;
 		double partition_overlap_ratio = NumericLimits<double>::Maximum();
 
-		// Grow partition until "partition_count" is at least "min_partition_size"
+		// Grow partition until "partition_count" is at least "min_partition_count"
 		PartitionedExecutionGrowPartition(
 		    column_stats_nodes[0], indices, i, current_overlap, partition_count, partition_overlap_ratio,
-		    [&partition_count, &min_partition_size] { return partition_count >= min_partition_size; });
+		    [&partition_count, &min_partition_count] { return partition_count >= min_partition_count; });
 
 		// Grow partition until "partition_overlap" is less than the allowed maximum
 		PartitionedExecutionGrowPartition(
@@ -300,11 +308,11 @@ PartitionedExecutionComputeRanges(LogicalOperator &op, vector<PartitionedExecuti
 			auto lowest_overlap_ratio = partition_overlap_ratio;
 			auto lowest_i = i;
 
-			// Look ahead for at most "min_partition_size" to see if there's a point with less overlap
-			const auto end = MinValue<idx_t>(i + min_partition_size, indices.size());
+			// Look ahead for at most "min_partition_count" to see if there's a point with less overlap
+			const auto end = partition_count + min_partition_count;
 			PartitionedExecutionGrowPartition(
 			    column_stats_nodes[0], indices, temp_i, temp_current_overlap, temp_partition_count,
-			    temp_partition_overlap_ratio, [&temp_i, &end] { return temp_i == end; },
+			    temp_partition_overlap_ratio, [&temp_partition_count, &end] { return temp_partition_count >= end; },
 			    [&temp_i, &temp_partition_overlap_ratio, &lowest_overlap_ratio, &lowest_i] {
 				    if (temp_partition_overlap_ratio < lowest_overlap_ratio) {
 					    lowest_overlap_ratio = temp_partition_overlap_ratio;
@@ -319,17 +327,23 @@ PartitionedExecutionComputeRanges(LogicalOperator &op, vector<PartitionedExecuti
 			}
 		}
 
+		// Finally, grow if we would otherwise leave a remainder that is smaller than min_row_groups_per_partition
+		if (indices.size() - 1 < min_row_groups_per_partition) {
+			PartitionedExecutionGrowPartition(column_stats_nodes[0], indices, i, current_overlap, partition_count,
+			                                  partition_overlap_ratio, [] { return false; });
+		}
+
 		// Add the new range to the ranges
 		const auto partition_end_i = i;
 		PartitionedExecutionRange range;
 		if (partition_start_i != 0) {
 			for (auto &stats_nodes : column_stats_nodes) {
-				range.min.emplace_back(stats_nodes[partition_start_i].val);
+				range.min.emplace_back(stats_nodes[indices[partition_start_i]].val);
 			}
 		}
 		if (partition_end_i != indices.size()) {
 			for (auto &stats_nodes : column_stats_nodes) {
-				range.min.emplace_back(stats_nodes[partition_end_i].val);
+				range.max.emplace_back(stats_nodes[indices[partition_end_i]].val);
 			}
 		}
 		range.overlap = NumericCast<idx_t>(current_overlap);
@@ -341,8 +355,71 @@ PartitionedExecutionComputeRanges(LogicalOperator &op, vector<PartitionedExecuti
 }
 
 void PartitionExecutionSplitPipeline(Optimizer &optimizer, LogicalOperator &root, unique_ptr<LogicalOperator> &op,
+                                     const vector<PartitionedExecutionColumn> &columns,
                                      const vector<PartitionedExecutionRange> &ranges) {
-	throw NotImplementedException("PartitionExecutionSplitPipeline");
+	vector<unique_ptr<LogicalOperator>> children;
+	for (const auto &range : ranges) {
+		LogicalOperatorDeepCopy deep_copy(optimizer.binder, nullptr);
+		unique_ptr<LogicalOperator> copy;
+		try {
+			copy = deep_copy.DeepCopy(op);
+		} catch (NotImplementedException &) {
+			return; // Cannot copy this operator
+		}
+
+		// Do this again for the copied plan so we can get the new column bindings
+		vector<PartitionedExecutionColumn> copy_columns;
+		if (!PartitionedExecutionGetColumns(*copy, copy_columns) || copy_columns.empty()) {
+			throw InternalException("PartitionExecutionSplitPipeline failed");
+		}
+
+		// Create filter operator
+		unique_ptr<LogicalOperator> filter = make_uniq<LogicalFilter>();
+		D_ASSERT(range.min.empty() || range.min.size() == columns.size());
+		for (idx_t col_idx = 0; col_idx < range.min.size(); col_idx++) {
+			const auto &val = range.min[col_idx];
+			const auto &column_binding = copy_columns[columns[col_idx].original_idx].column_binding;
+			filter->expressions.emplace_back(
+			    make_uniq<BoundComparisonExpression>(ExpressionType::COMPARE_GREATERTHANOREQUALTO,
+			                                         make_uniq<BoundColumnRefExpression>(val.type(), column_binding),
+			                                         make_uniq<BoundConstantExpression>(val)));
+		}
+		D_ASSERT(range.max.empty() || range.max.size() == columns.size());
+		for (idx_t col_idx = 0; col_idx < range.max.size(); col_idx++) {
+			const auto &val = range.max[col_idx];
+			const auto &column_binding = copy_columns[columns[col_idx].original_idx].column_binding;
+			filter->expressions.emplace_back(
+			    make_uniq<BoundComparisonExpression>(ExpressionType::COMPARE_LESSTHANOREQUALTO,
+			                                         make_uniq<BoundColumnRefExpression>(val.type(), column_binding),
+			                                         make_uniq<BoundConstantExpression>(val)));
+		}
+
+		// Add the filter under the operator
+		filter->children.emplace_back(std::move(copy->children[0]));
+		copy->children[0] = std::move(filter);
+
+		// Now push it down
+		FilterPushdown filter_pushdown(optimizer, false);
+		copy = filter_pushdown.Rewrite(std::move(copy));
+
+		// Add it the children for the union
+		children.emplace_back(std::move(copy));
+	}
+
+	// Replace operator with union
+	const auto old_bindings = op->GetColumnBindings();
+	op = make_uniq<LogicalSetOperation>(optimizer.binder.GenerateTableIndex(), old_bindings.size(), std::move(children),
+	                                    LogicalOperatorType::LOGICAL_UNION, true,
+	                                    op->type != LogicalOperatorType::LOGICAL_ORDER_BY);
+	const auto new_bindings = op->GetColumnBindings();
+
+	// Fix up column bindings
+	ColumnBindingReplacer replacer;
+	for (idx_t col_idx = 0; col_idx < old_bindings.size(); col_idx++) {
+		replacer.replacement_bindings.emplace_back(old_bindings[col_idx], new_bindings[col_idx]);
+	}
+	replacer.stop_operator = op.get();
+	replacer.VisitOperator(root);
 }
 
 void PartitionedExecution::Optimize(unique_ptr<LogicalOperator> &op) {
@@ -366,13 +443,12 @@ void PartitionedExecution::Optimize(unique_ptr<LogicalOperator> &op) {
 		return; // Can't split 0 or 1 partitions
 	}
 
-	const auto num_threads = NumericCast<idx_t>(TaskScheduler::GetScheduler(optimizer.context).NumberOfThreads());
 	const auto ranges = PartitionedExecutionComputeRanges(*op, columns, partition_stats, num_threads);
-	if (ranges.empty()) {
-		return; // Unable to compute ranges
+	if (ranges.size() < 2) {
+		return; // Unable to compute useful ranges
 	}
 
-	PartitionExecutionSplitPipeline(optimizer, root, op, ranges); // Success!
+	PartitionExecutionSplitPipeline(optimizer, root, op, columns, ranges); // Success!
 }
 
 } // namespace duckdb
