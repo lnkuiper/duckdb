@@ -116,18 +116,12 @@ static optional_ptr<LogicalGet> PartitionedExecutionTraceColumns(LogicalOperator
 	return get;
 }
 
-struct PartitionedExecutionSplitNode {
-	PartitionedExecutionSplitNode(Value &&val_p, int64_t count_delta_p)
+struct PartitionedExecutionStatsNode {
+	PartitionedExecutionStatsNode(Value &&val_p, int64_t count_delta_p)
 	    : val(std::move(val_p)), count_delta(count_delta_p) {
 	}
 	Value val;
 	int64_t count_delta;
-};
-
-struct PartitionedExecutionSplit {
-	BaseStatistics &min;
-	BaseStatistics &max;
-	idx_t count;
 };
 
 static bool PartitionedExecutionCanUseStats(const unique_ptr<BaseStatistics> &stats) {
@@ -144,64 +138,30 @@ static bool PartitionedExecutionCanUseStats(const unique_ptr<BaseStatistics> &st
 	}
 }
 
-static void PartitionedExecutionAddSplitNodes(const BaseStatistics &stats, const idx_t count,
-                                              vector<PartitionedExecutionSplitNode> &split_nodes) {
+static void PartitionedExecutionAddStatsNodes(const BaseStatistics &stats, const idx_t count,
+                                              vector<PartitionedExecutionStatsNode> &stats_nodes) {
 	switch (stats.GetStatsType()) {
 	case StatisticsType::NUMERIC_STATS:
-		split_nodes.emplace_back(NumericStats::Min(stats), NumericCast<int64_t>(count));
-		split_nodes.emplace_back(NumericStats::Max(stats), -NumericCast<int64_t>(count));
+		stats_nodes.emplace_back(NumericStats::Min(stats), NumericCast<int64_t>(count));
+		stats_nodes.emplace_back(NumericStats::Max(stats), -NumericCast<int64_t>(count));
 		break;
 	case StatisticsType::STRING_STATS:
-		split_nodes.emplace_back(StringStats::Min(stats), NumericCast<int64_t>(count));
-		split_nodes.emplace_back(StringStats::Max(stats), -NumericCast<int64_t>(count));
+		stats_nodes.emplace_back(StringStats::Min(stats), NumericCast<int64_t>(count));
+		stats_nodes.emplace_back(StringStats::Max(stats), -NumericCast<int64_t>(count));
 		break;
 	default:
-		throw NotImplementedException("PartitionedExecutionAddSplitNodes for %s",
+		throw NotImplementedException("PartitionedExecutionAddStatsNodes for %s",
 		                              EnumUtil::ToString(stats.GetStatsType()));
 	}
 }
 
-static bool
-PartitionedExecutionCompareSplitNodes(const vector<PartitionedExecutionColumn> &columns,
-                                      const vector<vector<PartitionedExecutionSplitNode>> &column_split_nodes,
-                                      const idx_t &lhs, const idx_t &rhs) {
-	idx_t col_idx = 0;
-	for (; col_idx < columns.size(); col_idx++) {
-		const auto &split_nodes = column_split_nodes[col_idx];
-		const auto &lhs_node = split_nodes[lhs];
-		const auto &rhs_node = split_nodes[rhs];
-		if (lhs_node.val != rhs_node.val) {
-			break;
-		}
-	}
-
-	if (col_idx == columns.size()) {
-		return false; // All columns equal
-	}
-
-	const auto &split_nodes = column_split_nodes[col_idx];
-	const auto &lhs_node = split_nodes[lhs];
-	const auto &rhs_node = split_nodes[rhs];
-
-	switch (columns[col_idx].order_type) {
-	case OrderType::ASCENDING:
-	case OrderType::INVALID:
-		return lhs_node.val < rhs_node.val;
-	case OrderType::DESCENDING:
-		return lhs_node.val > rhs_node.val;
-	default:
-		throw NotImplementedException("PartitionedExecutionCompareSplitNodes for %s",
-		                              EnumUtil::ToString(columns[col_idx].order_type));
-	}
-}
-
-static vector<PartitionedExecutionSplit>
-PartitionedExecutionComputeSplits(LogicalOperator &op, vector<PartitionedExecutionColumn> &columns,
-                                  const vector<PartitionStatistics> &partition_stats, const idx_t num_threads) {
-	vector<vector<PartitionedExecutionSplitNode>> column_split_nodes;
+static vector<vector<PartitionedExecutionStatsNode>>
+PartitionedExecutionCollectStatsNodes(LogicalOperator &op, vector<PartitionedExecutionColumn> &columns,
+                                      const vector<PartitionStatistics> &partition_stats) {
+	vector<vector<PartitionedExecutionStatsNode>> column_stats_nodes;
 	for (auto it = columns.begin(); it != columns.end();) {
-		vector<PartitionedExecutionSplitNode> split_nodes;
-		split_nodes.reserve(partition_stats.size() * 2);
+		vector<PartitionedExecutionStatsNode> stats_nodes;
+		stats_nodes.reserve(partition_stats.size() * 2);
 
 		bool success = true;
 		for (auto &ps : partition_stats) {
@@ -214,53 +174,174 @@ PartitionedExecutionComputeSplits(LogicalOperator &op, vector<PartitionedExecuti
 				success = false; // Unable to use these stats
 				break;
 			}
-			PartitionedExecutionAddSplitNodes(*stats, ps.count, split_nodes);
+			PartitionedExecutionAddStatsNodes(*stats, ps.count, stats_nodes);
 		}
 		if (success) {
-			column_split_nodes.emplace_back(std::move(split_nodes));
+			column_stats_nodes.emplace_back(std::move(stats_nodes));
 			it++;
 		} else {
 			it = PartitionedExecutionHandleColumnRemoval(op.type, columns, it);
 		}
-		// TODO: Maybe impose a maximum number of columns, don't want to compare many columns in case of "BY ALL"
-		//  or, try to split by one column at a time and stop once we're happy with the splits
+		// TODO: Impose a maximum number of columns, don't want to compare many columns in case of "BY ALL"
 	}
-	D_ASSERT(columns.size() == column_split_nodes.size());
+	D_ASSERT(columns.size() == column_stats_nodes.size());
+	return column_stats_nodes;
+}
 
+static bool
+PartitionedExecutionCompareStatsNodes(const vector<PartitionedExecutionColumn> &columns,
+                                      const vector<vector<PartitionedExecutionStatsNode>> &column_stats_nodes,
+                                      const idx_t &lhs, const idx_t &rhs) {
+	idx_t col_idx = 0;
+	for (; col_idx < columns.size(); col_idx++) {
+		const auto &stats_nodes = column_stats_nodes[col_idx];
+		const auto &lhs_node = stats_nodes[lhs];
+		const auto &rhs_node = stats_nodes[rhs];
+		if (lhs_node.val != rhs_node.val) {
+			break;
+		}
+	}
+
+	const auto &stats_nodes = column_stats_nodes[col_idx];
+	const auto &lhs_node = stats_nodes[lhs];
+	const auto &rhs_node = stats_nodes[rhs];
+
+	if (col_idx == columns.size()) {
+		return lhs_node.count_delta > rhs_node.count_delta; // All columns equal, add start of row groups first
+	}
+
+	switch (columns[col_idx].order_type) {
+	case OrderType::ASCENDING:
+	case OrderType::INVALID:
+		return lhs_node.val < rhs_node.val;
+	case OrderType::DESCENDING:
+		return lhs_node.val > rhs_node.val;
+	default:
+		throw NotImplementedException("PartitionedExecutionCompareStatsNodes for %s",
+		                              EnumUtil::ToString(columns[col_idx].order_type));
+	}
+}
+
+static void PartitionedExecutionGrowPartition(
+    const vector<PartitionedExecutionStatsNode> &stats_nodes, const vector<idx_t> &indices, idx_t &i,
+    int64_t &current_overlap, idx_t &partition_count, double &partition_overlap_ratio,
+    const std::function<bool()> &stopping_criterium, const std::function<void()> &update_callback = [] {}) {
+	while (i < indices.size() && !stopping_criterium()) {
+		const auto &node = stats_nodes[indices[i++]];
+		current_overlap += node.count_delta; // Keep track of overall overlap at "i"
+		D_ASSERT(current_overlap >= 0);
+		if (node.count_delta > 0) {
+			partition_count += NumericCast<idx_t>(node.count_delta); // Only add if it's the start of a row group
+		}
+		partition_overlap_ratio = static_cast<double>(current_overlap) / static_cast<double>(partition_count);
+		D_ASSERT(partition_overlap_ratio <= 1);
+		update_callback();
+	}
+}
+
+struct PartitionedExecutionRange {
+	vector<Value> min;
+	vector<Value> max;
+	idx_t overlap;
+	idx_t count;
+};
+
+static vector<PartitionedExecutionRange>
+PartitionedExecutionComputeRanges(LogicalOperator &op, vector<PartitionedExecutionColumn> &columns,
+                                  const vector<PartitionStatistics> &partition_stats, const idx_t num_threads) {
+	auto column_stats_nodes = PartitionedExecutionCollectStatsNodes(op, columns, partition_stats);
 	if (columns.empty()) {
 		return {}; // None of the columns were eligible
 	}
 
-	// Initialize indices into the split nodes
+	// Initialize indices into the stats nodes
 	vector<idx_t> indices;
 	indices.reserve(partition_stats.size() * 2);
 	for (idx_t i = 0; i < partition_stats.size() * 2; i++) {
 		indices.emplace_back(i);
 	}
 
-	// Sort indices based on the values in the split nodes
-	std::sort(indices.begin(), indices.end(), [&columns, &column_split_nodes](const idx_t &lhs, const idx_t &rhs) {
-		return PartitionedExecutionCompareSplitNodes(columns, column_split_nodes, lhs, rhs);
+	// Sort indices based on the values in the stats nodes
+	std::sort(indices.begin(), indices.end(), [&columns, &column_stats_nodes](const idx_t &lhs, const idx_t &rhs) {
+		return PartitionedExecutionCompareStatsNodes(columns, column_stats_nodes, lhs, rhs);
 	});
 
-	// Compute how the count goes up and down at the split points
-	vector<int64_t> counts;
-	counts.reserve(indices.size());
-	int64_t count = 0;
-	for (const auto &index : indices) {
-		counts.emplace_back(count);
-		const auto &split_node = column_split_nodes[0][index];
-		count += split_node.count_delta;
+	// Tuned constants for finding reasonable partitions
+	static constexpr idx_t MIN_ROW_GROUPS_PER_THREAD_PER_PARTITION = 16;
+	static constexpr double MAX_OVERLAP_RATIO = 0.1;
+	const auto min_partition_size = num_threads * DEFAULT_ROW_GROUP_SIZE * MIN_ROW_GROUPS_PER_THREAD_PER_PARTITION;
+
+	// Compute ranges
+	vector<PartitionedExecutionRange> ranges;
+	int64_t current_overlap = 0;
+	for (idx_t i = 0; i < indices.size();) {
+		const auto partition_start_i = i;
+		idx_t partition_count = 0;
+		double partition_overlap_ratio = NumericLimits<double>::Maximum();
+
+		// Grow partition until "partition_count" is at least "min_partition_size"
+		PartitionedExecutionGrowPartition(
+		    column_stats_nodes[0], indices, i, current_overlap, partition_count, partition_overlap_ratio,
+		    [&partition_count, &min_partition_size] { return partition_count >= min_partition_size; });
+
+		// Grow partition until "partition_overlap" is less than the allowed maximum
+		PartitionedExecutionGrowPartition(
+		    column_stats_nodes[0], indices, i, current_overlap, partition_count, partition_overlap_ratio,
+		    [&partition_overlap_ratio] { return partition_overlap_ratio < MAX_OVERLAP_RATIO; });
+
+		if (partition_overlap_ratio != 0) {
+			// Temp variables for looking ahead
+			auto temp_current_overlap = current_overlap;
+			auto temp_i = i;
+			auto temp_partition_count = partition_count;
+			auto temp_partition_overlap_ratio = partition_overlap_ratio;
+
+			// To keep track of the lowest overlap
+			auto lowest_overlap_ratio = partition_overlap_ratio;
+			auto lowest_i = i;
+
+			// Look ahead for at most "min_partition_size" to see if there's a point with less overlap
+			const auto end = MinValue<idx_t>(i + min_partition_size, indices.size());
+			PartitionedExecutionGrowPartition(
+			    column_stats_nodes[0], indices, temp_i, temp_current_overlap, temp_partition_count,
+			    temp_partition_overlap_ratio, [&temp_i, &end] { return temp_i == end; },
+			    [&temp_i, &temp_partition_overlap_ratio, &lowest_overlap_ratio, &lowest_i] {
+				    if (temp_partition_overlap_ratio < lowest_overlap_ratio) {
+					    lowest_overlap_ratio = temp_partition_overlap_ratio;
+					    lowest_i = temp_i;
+				    }
+			    });
+
+			// Actually grow if it's a success
+			if (lowest_i != i) {
+				PartitionedExecutionGrowPartition(column_stats_nodes[0], indices, i, current_overlap, partition_count,
+				                                  partition_overlap_ratio, [&i, &lowest_i] { return i == lowest_i; });
+			}
+		}
+
+		// Add the new range to the ranges
+		const auto partition_end_i = i;
+		PartitionedExecutionRange range;
+		if (partition_start_i != 0) {
+			for (auto &stats_nodes : column_stats_nodes) {
+				range.min.emplace_back(stats_nodes[partition_start_i].val);
+			}
+		}
+		if (partition_end_i != indices.size()) {
+			for (auto &stats_nodes : column_stats_nodes) {
+				range.min.emplace_back(stats_nodes[partition_end_i].val);
+			}
+		}
+		range.overlap = NumericCast<idx_t>(current_overlap);
+		range.count = partition_count;
+		ranges.emplace_back(std::move(range));
 	}
 
-	vector<PartitionedExecutionSplit> result;
-
-	throw NotImplementedException("PartitionedExecutionComputeSplits");
-	return result;
+	return ranges;
 }
 
 void PartitionExecutionSplitPipeline(Optimizer &optimizer, LogicalOperator &root, unique_ptr<LogicalOperator> &op,
-                                     const vector<PartitionedExecutionSplit> &splits) {
+                                     const vector<PartitionedExecutionRange> &ranges) {
 	throw NotImplementedException("PartitionExecutionSplitPipeline");
 }
 
@@ -286,12 +367,12 @@ void PartitionedExecution::Optimize(unique_ptr<LogicalOperator> &op) {
 	}
 
 	const auto num_threads = NumericCast<idx_t>(TaskScheduler::GetScheduler(optimizer.context).NumberOfThreads());
-	const auto splits = PartitionedExecutionComputeSplits(*op, columns, partition_stats, num_threads);
-	if (splits.empty()) {
-		return; // Unable to compute splits
+	const auto ranges = PartitionedExecutionComputeRanges(*op, columns, partition_stats, num_threads);
+	if (ranges.empty()) {
+		return; // Unable to compute ranges
 	}
 
-	PartitionExecutionSplitPipeline(optimizer, root, op, splits); // Success!
+	PartitionExecutionSplitPipeline(optimizer, root, op, ranges); // Success!
 }
 
 } // namespace duckdb
