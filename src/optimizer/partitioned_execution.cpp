@@ -18,6 +18,17 @@ PartitionedExecution::PartitionedExecution(Optimizer &optimizer_p, LogicalOperat
       num_threads(NumericCast<idx_t>(TaskScheduler::GetScheduler(optimizer.context).NumberOfThreads())) {
 }
 
+struct PartitionedExecutionConfig {
+	//! Maximum number of columns to use for splitting ranges
+	static constexpr idx_t MAXIMUM_COLUMNS = 3;
+	//! Minimum number of row groups per thread per partition to split on
+	static constexpr idx_t MIN_ROW_GROUPS_PER_THREAD_PER_PARTITION = 16;
+	//! Maximum overlap (as fraction of partition size) that we allow for a split
+	static constexpr double MAX_OVERLAP_RATIO = 0.1;
+	//! Minimum input cardinality before we even consider splitting
+	static constexpr idx_t MINIMUM_INPUT_CARDINALITY = 4194304;
+};
+
 struct PartitionedExecutionColumn {
 	explicit PartitionedExecutionColumn(idx_t original_idx_p, Expression &expr,
 	                                    OrderType order_type_p = OrderType::INVALID)
@@ -79,6 +90,7 @@ PartitionedExecutionHandleColumnRemoval(const LogicalOperatorType type, vector<P
                                         vector<PartitionedExecutionColumn>::iterator &it) {
 	switch (type) {
 	case LogicalOperatorType::LOGICAL_AGGREGATE_AND_GROUP_BY:
+	case LogicalOperatorType::LOGICAL_WINDOW:
 		return columns.erase(it); // We can partition on any colref so we can freely remove any
 	case LogicalOperatorType::LOGICAL_ORDER_BY:
 		columns.erase(it, columns.end()); // Have to remove from the first non-colref onward
@@ -186,9 +198,9 @@ static vector<vector<PartitionedExecutionStatsNode>>
 PartitionedExecutionCollectStatsNodes(LogicalOperator &op, vector<PartitionedExecutionColumn> &columns,
                                       const vector<PartitionStatistics> &partition_stats) {
 	// We impose a maximum number of columns otherwise we could be fetching a massive amount of stats from storage
-	static constexpr idx_t MAXIMUM_COLUMNS = 3;
 	vector<vector<PartitionedExecutionStatsNode>> column_stats_nodes;
-	for (auto it = columns.begin(); it != columns.end() && column_stats_nodes.size() < MAXIMUM_COLUMNS;) {
+	for (auto it = columns.begin();
+	     it != columns.end() && column_stats_nodes.size() < PartitionedExecutionConfig::MAXIMUM_COLUMNS;) {
 		vector<PartitionedExecutionStatsNode> stats_nodes;
 		stats_nodes.reserve(partition_stats.size() * 2);
 
@@ -295,9 +307,8 @@ PartitionedExecutionComputeRanges(LogicalOperator &op, vector<PartitionedExecuti
 	});
 
 	// Tuned constants for finding reasonable partitions
-	static constexpr idx_t MIN_ROW_GROUPS_PER_THREAD_PER_PARTITION = 16;
-	static constexpr double MAX_OVERLAP_RATIO = 0.1;
-	const auto min_row_groups_per_partition = num_threads * MIN_ROW_GROUPS_PER_THREAD_PER_PARTITION;
+	const auto min_row_groups_per_partition =
+	    num_threads * PartitionedExecutionConfig::MIN_ROW_GROUPS_PER_THREAD_PER_PARTITION;
 	const auto min_partition_count = min_row_groups_per_partition * DEFAULT_ROW_GROUP_SIZE;
 
 	// Compute ranges
@@ -314,9 +325,11 @@ PartitionedExecutionComputeRanges(LogicalOperator &op, vector<PartitionedExecuti
 		    [&partition_count, &min_partition_count] { return partition_count >= min_partition_count; });
 
 		// Grow partition until "partition_overlap" is less than the allowed maximum
-		PartitionedExecutionGrowPartition(
-		    column_stats_nodes[0], indices, i, current_overlap, partition_count, partition_overlap_ratio,
-		    [&partition_overlap_ratio] { return partition_overlap_ratio < MAX_OVERLAP_RATIO; });
+		PartitionedExecutionGrowPartition(column_stats_nodes[0], indices, i, current_overlap, partition_count,
+		                                  partition_overlap_ratio, [&partition_overlap_ratio] {
+			                                  return partition_overlap_ratio <
+			                                         PartitionedExecutionConfig::MAX_OVERLAP_RATIO;
+		                                  });
 
 		if (partition_overlap_ratio != 0) {
 			// Temp variables for looking ahead
@@ -463,6 +476,10 @@ void PartitionedExecution::Optimize(unique_ptr<LogicalOperator> &op) {
 	optional_ptr<LogicalGet> get = PartitionedExecutionTraceColumns(*op, columns);
 	if (!get || columns.empty()) {
 		return; // Unable to trace any binding down to scan
+	}
+
+	if (get->EstimateCardinality(optimizer.context) < PartitionedExecutionConfig::MINIMUM_INPUT_CARDINALITY) {
+		return; // Too small
 	}
 
 	GetPartitionStatsInput input(get->function, get->bind_data.get());
