@@ -7,6 +7,7 @@
 #include "duckdb/planner/expression/bound_columnref_expression.hpp"
 #include "duckdb/planner/expression/bound_comparison_expression.hpp"
 #include "duckdb/planner/expression/bound_constant_expression.hpp"
+#include "duckdb/planner/expression/bound_window_expression.hpp"
 #include "duckdb/optimizer/column_binding_replacer.hpp"
 #include "duckdb/parallel/task_scheduler.hpp"
 
@@ -54,8 +55,21 @@ static bool PartitionedExecutionGetColumns(LogicalOperator &op, vector<Partition
 		}
 		return true;
 	}
+	case LogicalOperatorType::LOGICAL_WINDOW: {
+		const auto &expr = op.expressions[0]->Cast<BoundWindowExpression>();
+		for (idx_t expr_idx = 1; expr_idx < op.expressions.size(); expr_idx++) {
+			if (!expr.PartitionsAreEquivalent(op.expressions[expr_idx]->Cast<BoundWindowExpression>())) {
+				return false;
+			}
+		}
+		for (auto &partition : expr.partitions) {
+			if (partition->GetExpressionClass() == ExpressionClass::BOUND_COLUMN_REF) {
+				columns.emplace_back(columns.size(), *partition);
+			}
+		}
+		return true;
+	}
 	default:
-		// TODO: WINDOW/ASOF
 		return false;
 	}
 }
@@ -100,7 +114,6 @@ static optional_ptr<LogicalGet> PartitionedExecutionTraceColumns(LogicalOperator
 			break; // Don't have to update bindings
 		}
 		default:
-			// TODO: we could pass through joins with tiny build sides
 			return nullptr; // Unsupported for partition pass-through
 		}
 		child_ref = *child_ref.get().children[0];
@@ -172,8 +185,10 @@ static void PartitionedExecutionAddStatsNodes(const BaseStatistics &stats, const
 static vector<vector<PartitionedExecutionStatsNode>>
 PartitionedExecutionCollectStatsNodes(LogicalOperator &op, vector<PartitionedExecutionColumn> &columns,
                                       const vector<PartitionStatistics> &partition_stats) {
+	// We impose a maximum number of columns otherwise we could be fetching a massive amount of stats from storage
+	static constexpr idx_t MAXIMUM_COLUMNS = 3;
 	vector<vector<PartitionedExecutionStatsNode>> column_stats_nodes;
-	for (auto it = columns.begin(); it != columns.end();) {
+	for (auto it = columns.begin(); it != columns.end() && column_stats_nodes.size() < MAXIMUM_COLUMNS;) {
 		vector<PartitionedExecutionStatsNode> stats_nodes;
 		stats_nodes.reserve(partition_stats.size() * 2);
 
@@ -196,7 +211,9 @@ PartitionedExecutionCollectStatsNodes(LogicalOperator &op, vector<PartitionedExe
 		} else {
 			it = PartitionedExecutionHandleColumnRemoval(op.type, columns, it);
 		}
-		// TODO: Impose a maximum number of columns, don't want to compare many columns in case of "BY ALL"
+	}
+	while (columns.size() > column_stats_nodes.size()) {
+		columns.pop_back();
 	}
 	D_ASSERT(columns.size() == column_stats_nodes.size());
 	return column_stats_nodes;
