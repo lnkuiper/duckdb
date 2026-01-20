@@ -40,7 +40,6 @@
 #include "duckdb/optimizer/common_subplan_optimizer.hpp"
 #include "duckdb/optimizer/partitioned_execution.hpp"
 #include "duckdb/optimizer/window_self_join.hpp"
-#include "duckdb/optimizer/partitioned_execution.hpp"
 #include "duckdb/planner/binder.hpp"
 #include "duckdb/planner/planner.hpp"
 
