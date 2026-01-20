@@ -112,6 +112,10 @@ static optional_ptr<LogicalGet> PartitionedExecutionTraceColumns(LogicalOperator
 	}
 	auto &get = child_ref.get().Cast<LogicalGet>();
 
+	if (!get.function.get_partition_stats) {
+		return nullptr; // We need this
+	}
+
 	// Get the storage index
 	const auto &column_ids = get.GetColumnIds();
 	for (auto it = columns.begin(); it != columns.end();) {
