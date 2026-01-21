@@ -342,8 +342,8 @@ PartitionedExecutionComputeRanges(LogicalOperator &op, vector<PartitionedExecuti
 			auto lowest_overlap_ratio = partition_overlap_ratio;
 			auto lowest_i = i;
 
-			// Look ahead for at most "min_partition_count" to see if there's a point with less overlap
-			const auto end = partition_count + min_partition_count;
+			// Look ahead for at most half of "min_partition_count" to see if there's a point with less overlap
+			const auto end = partition_count + min_partition_count / 2;
 			PartitionedExecutionGrowPartition(
 			    column_stats_nodes[0], indices, temp_i, temp_current_overlap, temp_partition_count,
 			    temp_partition_overlap_ratio, [&temp_partition_count, &end] { return temp_partition_count >= end; },
@@ -361,8 +361,8 @@ PartitionedExecutionComputeRanges(LogicalOperator &op, vector<PartitionedExecuti
 			}
 		}
 
-		// Finally, grow if we would otherwise leave a remainder that is smaller than min_row_groups_per_partition
-		if (indices.size() - 1 < min_row_groups_per_partition) {
+		// Finally, grow if we would otherwise leave a remainder that is less than half of min_row_groups_per_partition
+		if (indices.size() - i < min_row_groups_per_partition / 2) {
 			PartitionedExecutionGrowPartition(column_stats_nodes[0], indices, i, current_overlap, partition_count,
 			                                  partition_overlap_ratio, [] { return false; });
 		}
@@ -388,6 +388,34 @@ PartitionedExecutionComputeRanges(LogicalOperator &op, vector<PartitionedExecuti
 	return ranges;
 }
 
+enum class PartitionedExecutionStatsType : uint8_t { MIN, MAX };
+
+ExpressionType ParititionedExecutionGetExpressionType(const OrderType order_type,
+                                                      PartitionedExecutionStatsType stats_type,
+                                                      const bool is_last_column) {
+	// Flip stats type if the sort order is DESC
+	switch (order_type) {
+	case OrderType::ASCENDING:
+	case OrderType::INVALID:
+		break;
+	case OrderType::DESCENDING:
+		stats_type = stats_type == PartitionedExecutionStatsType::MIN ? PartitionedExecutionStatsType::MAX
+		                                                              : PartitionedExecutionStatsType::MIN;
+		break;
+	default:
+		throw NotImplementedException("ParititionedExecutionGetExpressionType for %s", EnumUtil::ToString(order_type));
+	}
+
+	// We always have to be inclusive for either the min or the max, we choose to be inclusive for the max
+	// Furthermore, we have to be inclusive for any column that's not the last column
+	switch (stats_type) {
+	case PartitionedExecutionStatsType::MIN:
+		return is_last_column ? ExpressionType::COMPARE_GREATERTHAN : ExpressionType::COMPARE_GREATERTHANOREQUALTO;
+	case PartitionedExecutionStatsType::MAX:
+		return ExpressionType::COMPARE_LESSTHANOREQUALTO;
+	}
+}
+
 void PartitionExecutionSplitPipeline(Optimizer &optimizer, LogicalOperator &root, unique_ptr<LogicalOperator> &op,
                                      const vector<PartitionedExecutionColumn> &columns,
                                      const vector<PartitionedExecutionRange> &ranges) {
@@ -411,20 +439,23 @@ void PartitionExecutionSplitPipeline(Optimizer &optimizer, LogicalOperator &root
 		unique_ptr<LogicalOperator> filter = make_uniq<LogicalFilter>();
 		D_ASSERT(range.min.empty() || range.min.size() == columns.size());
 		for (idx_t col_idx = 0; col_idx < range.min.size(); col_idx++) {
+			const auto &column = copy_columns[columns[col_idx].original_idx];
+			const auto expression_type = ParititionedExecutionGetExpressionType(
+			    column.order_type, PartitionedExecutionStatsType::MIN, col_idx == columns.size() - 1);
 			const auto &val = range.min[col_idx];
-			const auto &column_binding = copy_columns[columns[col_idx].original_idx].column_binding;
 			filter->expressions.emplace_back(make_uniq<BoundComparisonExpression>(
-			    ExpressionType::COMPARE_GREATERTHAN, make_uniq<BoundColumnRefExpression>(val.type(), column_binding),
+			    expression_type, make_uniq<BoundColumnRefExpression>(val.type(), column.column_binding),
 			    make_uniq<BoundConstantExpression>(val)));
 		}
 		D_ASSERT(range.max.empty() || range.max.size() == columns.size());
 		for (idx_t col_idx = 0; col_idx < range.max.size(); col_idx++) {
+			const auto &column = copy_columns[columns[col_idx].original_idx];
+			const auto expression_type = ParititionedExecutionGetExpressionType(
+			    column.order_type, PartitionedExecutionStatsType::MAX, col_idx == columns.size() - 1);
 			const auto &val = range.max[col_idx];
-			const auto &column_binding = copy_columns[columns[col_idx].original_idx].column_binding;
-			filter->expressions.emplace_back(
-			    make_uniq<BoundComparisonExpression>(ExpressionType::COMPARE_LESSTHANOREQUALTO,
-			                                         make_uniq<BoundColumnRefExpression>(val.type(), column_binding),
-			                                         make_uniq<BoundConstantExpression>(val)));
+			filter->expressions.emplace_back(make_uniq<BoundComparisonExpression>(
+			    expression_type, make_uniq<BoundColumnRefExpression>(val.type(), column.column_binding),
+			    make_uniq<BoundConstantExpression>(val)));
 		}
 
 		// Add the filter under the operator

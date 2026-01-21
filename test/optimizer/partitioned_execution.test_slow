@@ -1,0 +1,59 @@
+# name: test/optimizer/partitioned_execution.test_slow
+# description: Test the PartitionedExecution optimizer
+# group: [optimizer]
+
+load __TEST_DIR__/partitioned_execution.duckdb
+
+# create test table with numberic data in a big range to avoid compressed materialization
+statement ok
+CREATE TABLE test AS
+SELECT
+    range // 2_000_000 * 10_000_000_000 AS low_cardinality_ordered,
+    range // 10 * 10_000_000_000 AS high_cardinality_ordered,
+    range % 10 * 10_000_000_000 AS low_cardinality_recurring,
+    range % 1_000_000 * 10_000_000_000 AS high_cardinality_recurring,
+FROM range(10_000_000);
+
+query I
+SELECT bit_xor(hash(*COLUMNS('^*_cardinality')))
+FROM test;
+----
+10757565029845036196
+
+statement ok
+pragma explain_output='optimized_only'
+
+# this optimizer splits pipelines based on the number of active threads
+# if there are many pipelines, we want larger splits to achieve good parallel CPU utilization
+# we set threads to 1 so we can test the functionality with a relatively small amount of data
+statement ok
+SET threads=1;
+
+# optimization works when ordering/grouping/windowing by these columns individually
+foreach c low_cardinality_ordered high_cardinality_ordered
+
+foreach order_type ASC DESC
+
+query II
+EXPLAIN WITH cte AS (
+    FROM test ORDER BY ${c} ${order_type}
+)
+SELECT bit_xor(hash(*COLUMNS('^*_cardinality')))
+FROM cte;
+----
+logical_opt	<REGEX>:.*UNION.*
+
+query I
+WITH cte AS (
+    FROM test ORDER BY ${c} ${order_type}
+)
+SELECT bit_xor(hash(*COLUMNS('^*_cardinality')))
+FROM cte;
+----
+10757565029845036196
+
+endloop
+
+# continue with group/window
+
+endloop
