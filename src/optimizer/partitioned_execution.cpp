@@ -413,10 +413,9 @@ void PartitionExecutionSplitPipeline(Optimizer &optimizer, LogicalOperator &root
 		for (idx_t col_idx = 0; col_idx < range.min.size(); col_idx++) {
 			const auto &val = range.min[col_idx];
 			const auto &column_binding = copy_columns[columns[col_idx].original_idx].column_binding;
-			filter->expressions.emplace_back(
-			    make_uniq<BoundComparisonExpression>(ExpressionType::COMPARE_GREATERTHANOREQUALTO,
-			                                         make_uniq<BoundColumnRefExpression>(val.type(), column_binding),
-			                                         make_uniq<BoundConstantExpression>(val)));
+			filter->expressions.emplace_back(make_uniq<BoundComparisonExpression>(
+			    ExpressionType::COMPARE_GREATERTHAN, make_uniq<BoundColumnRefExpression>(val.type(), column_binding),
+			    make_uniq<BoundConstantExpression>(val)));
 		}
 		D_ASSERT(range.max.empty() || range.max.size() == columns.size());
 		for (idx_t col_idx = 0; col_idx < range.max.size(); col_idx++) {
