@@ -16,14 +16,14 @@ class Optimizer;
 
 class PartitionedExecution {
 public:
-	PartitionedExecution(Optimizer &optimizer, LogicalOperator &root);
+	PartitionedExecution(Optimizer &optimizer, unique_ptr<LogicalOperator> &root);
 
 public:
 	void Optimize(unique_ptr<LogicalOperator> &op);
 
 private:
 	Optimizer &optimizer;
-	LogicalOperator &root;
+	unique_ptr<LogicalOperator> &root;
 	const idx_t num_threads;
 };
 

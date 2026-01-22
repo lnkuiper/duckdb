@@ -4,21 +4,22 @@
 
 load __TEST_DIR__/partitioned_execution.duckdb
 
-# create test table with doubles to avoid compressed materialization
+# create test table with doubles instead of integers to avoid compressed materialization
 statement ok
 CREATE TABLE test AS
 SELECT
-    CAST(range // 2_000_000 AS DOUBLE) AS low_cardinality_ordered,
-    CAST(range // 10 AS DOUBLE) AS high_cardinality_ordered,
-    CAST(range % 10 AS DOUBLE) AS low_cardinality_recurring,
-    CAST(range % 1_000_000 AS DOUBLE) AS high_cardinality_recurring,
+    CAST(range // 2_000_000 AS DOUBLE) AS t_low_cardinality_ordered,
+    CAST(range // 10 AS DOUBLE) AS t_high_cardinality_ordered,
+    CAST(range % 10 AS DOUBLE) AS t_low_cardinality_recurring,
+    CAST(range % 3_000_000 AS DOUBLE) AS t_high_cardinality_recurring,
+    CAST(42 AS DOUBLE) AS t_const
 FROM range(10_000_000);
 
-query I
-SELECT bit_xor(hash(*COLUMNS('^*_cardinality')))
+# compute order-agnostic hash, is used to make sure we don't scan rows multiple times or miss scanning rows
+query I nosort h
+SELECT bit_xor(hash(*COLUMNS('^t_')))
 FROM test;
 ----
-17640125827812702656
 
 statement ok
 pragma explain_output='optimized_only'
@@ -30,30 +31,99 @@ statement ok
 SET threads=1;
 
 # optimization works when ordering/grouping/windowing by these columns individually
-foreach c low_cardinality_ordered high_cardinality_ordered
+foreach c t_low_cardinality_ordered t_high_cardinality_ordered t_high_cardinality_recurring
 
+# ORDER BY, test both sort orders
 foreach order_type ASC DESC
 
+# should see a union here
 query II
 EXPLAIN WITH cte AS (
     FROM test ORDER BY ${c} ${order_type}
 )
-SELECT bit_xor(hash(*COLUMNS('^*_cardinality')))
+SELECT bit_xor(hash(*COLUMNS('^t_')))
 FROM cte;
 ----
 logical_opt	<REGEX>:.*UNION.*
 
-query I
+# hash should be the same
+query I nosort h
 WITH cte AS (
     FROM test ORDER BY ${c} ${order_type}
 )
-SELECT bit_xor(hash(*COLUMNS('^*_cardinality')))
+SELECT bit_xor(hash(*COLUMNS('^t_')))
 FROM cte;
 ----
-17640125827812702656
 
 endloop
 
-# continue with group/window
+# GROUP BY
+query II
+EXPLAIN WITH cte1 AS (
+    SELECT ${c}, list(test) l
+    FROM test GROUP BY ALL
+), cte2 AS (
+    SELECT unnest(l, recursive := true)
+    FROM cte1
+)
+SELECT bit_xor(hash(*COLUMNS('^t_')))
+FROM cte2;
+----
+logical_opt	<REGEX>:.*UNION.*
+
+query I nosort h
+WITH cte1 AS (
+    SELECT ${c}, list(test) l
+    FROM test GROUP BY ALL
+), cte2 AS (
+    SELECT unnest(l, recursive := true)
+    FROM cte1
+)
+SELECT bit_xor(hash(*COLUMNS('^t_')))
+FROM cte2;
+----
+
+# WINDOW
+query II
+EXPLAIN WITH cte AS (
+    SELECT ROW_NUMBER() OVER (PARTITION BY ${c}) AS idx, *
+    FROM test
+)
+SELECT bit_xor(hash(*COLUMNS('^t_')))
+FROM cte;
+----
+logical_opt	<REGEX>:.*UNION.*
+
+query I nosort h
+WITH cte AS (
+    SELECT ROW_NUMBER() OVER (PARTITION BY ${c}) AS idx, *
+    FROM test
+)
+SELECT bit_xor(hash(*COLUMNS('^t_')))
+FROM cte;
+----
+
 
 endloop
+
+# continue with multi-column stuff
+# const/ordered, we can split for ORDER BY because t_const min == max
+query II
+EXPLAIN WITH cte AS (
+    FROM test ORDER BY t_const, t_high_cardinality_recurring
+)
+SELECT bit_xor(hash(*COLUMNS('^t_')))
+FROM cte;
+----
+logical_opt	<REGEX>:.*UNION.*
+
+query II nosort h
+WITH cte AS (
+    FROM test ORDER BY t_const, t_high_cardinality_recurring
+)
+SELECT bit_xor(hash(*COLUMNS('^t_')))
+FROM cte;
+----
+
+
+# TODO more tests, make sure the order is correct too
