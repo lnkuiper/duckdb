@@ -30,15 +30,12 @@ struct PartitionedExecutionConfig {
 };
 
 struct PartitionedExecutionColumn {
-	explicit PartitionedExecutionColumn(idx_t original_idx_p, Expression &expr,
-	                                    OrderType order_type_p = OrderType::INVALID)
-	    : original_idx(original_idx_p), column_binding(expr.Cast<BoundColumnRefExpression>().binding),
-	      order_type(order_type_p) {
+	explicit PartitionedExecutionColumn(idx_t original_idx_p, Expression &expr)
+	    : original_idx(original_idx_p), column_binding(expr.Cast<BoundColumnRefExpression>().binding) {
 	}
 
 	idx_t original_idx;
 	ColumnBinding column_binding;
-	OrderType order_type = OrderType::INVALID;
 	StorageIndex storage_index;
 };
 
@@ -62,7 +59,7 @@ static bool PartitionedExecutionGetColumns(LogicalOperator &op, vector<Partition
 			if (order_by_node.expression->GetExpressionClass() != ExpressionClass::BOUND_COLUMN_REF) {
 				break; // Have to break on the first non-colref
 			}
-			columns.emplace_back(columns.size(), *order_by_node.expression, order_by_node.type);
+			columns.emplace_back(columns.size(), *order_by_node.expression);
 		}
 		return true;
 	}
@@ -179,19 +176,24 @@ static bool PartitionedExecutionCanUseStats(const unique_ptr<BaseStatistics> &st
 
 static void PartitionedExecutionAddStatsNodes(const BaseStatistics &stats, const idx_t count,
                                               vector<PartitionedExecutionStatsNode> &stats_nodes) {
+	Value min;
+	Value max;
 	switch (stats.GetStatsType()) {
 	case StatisticsType::NUMERIC_STATS:
-		stats_nodes.emplace_back(NumericStats::Min(stats), NumericCast<int64_t>(count));
-		stats_nodes.emplace_back(NumericStats::Max(stats), -NumericCast<int64_t>(count));
+		min = NumericStats::Min(stats);
+		max = NumericStats::Max(stats);
 		break;
 	case StatisticsType::STRING_STATS:
-		stats_nodes.emplace_back(StringStats::Min(stats), NumericCast<int64_t>(count));
-		stats_nodes.emplace_back(StringStats::Max(stats), -NumericCast<int64_t>(count));
+		min = StringStats::Min(stats);
+		max = StringStats::Max(stats);
 		break;
 	default:
 		throw NotImplementedException("PartitionedExecutionAddStatsNodes for %s",
 		                              EnumUtil::ToString(stats.GetStatsType()));
 	}
+
+	stats_nodes.emplace_back(std::move(min), NumericCast<int64_t>(count));
+	stats_nodes.emplace_back(std::move(max), -NumericCast<int64_t>(count));
 }
 
 static vector<vector<PartitionedExecutionStatsNode>>
@@ -232,35 +234,19 @@ PartitionedExecutionCollectStatsNodes(LogicalOperator &op, vector<PartitionedExe
 }
 
 static bool
-PartitionedExecutionCompareStatsNodes(const vector<PartitionedExecutionColumn> &columns,
-                                      const vector<vector<PartitionedExecutionStatsNode>> &column_stats_nodes,
+PartitionedExecutionCompareStatsNodes(const vector<vector<PartitionedExecutionStatsNode>> &column_stats_nodes,
                                       const idx_t &lhs, const idx_t &rhs) {
-	for (idx_t col_idx = 0; col_idx < columns.size(); col_idx++) {
+	const auto num_cols = column_stats_nodes.size();
+	for (idx_t col_idx = 0; col_idx < num_cols; col_idx++) {
 		const auto &stats_nodes = column_stats_nodes[col_idx];
 		const auto &lhs_node = stats_nodes[lhs];
 		const auto &rhs_node = stats_nodes[rhs];
-		if (col_idx < columns.size() - 1 && lhs_node.val == rhs_node.val) {
-			continue; // Not the last iteration and values are equal
-		}
-
-		// Last iteration or values not equal, need to return
-		if (lhs_node.val == rhs_node.val) {
-			return lhs_node.count_delta > rhs_node.count_delta; // All columns equal, add start of row groups first
-		}
-
-		// Return based on sort order
-		switch (columns[col_idx].order_type) {
-		case OrderType::ASCENDING:
-		case OrderType::INVALID:
-			return lhs_node.val < rhs_node.val;
-		case OrderType::DESCENDING:
-			return lhs_node.val > rhs_node.val;
-		default:
-			throw NotImplementedException("PartitionedExecutionCompareStatsNodes for %s",
-			                              EnumUtil::ToString(columns[col_idx].order_type));
+		if (lhs_node.val != rhs_node.val) {
+			return lhs_node.val < rhs_node.val; // Not equal, we can return
 		}
 	}
-	throw InternalException("PartitionedExecutionCompareStatsNodes failed"); // This should be unreachable
+	// All columns equal, add start of row groups first
+	return column_stats_nodes.back()[lhs].count_delta > column_stats_nodes.back()[rhs].count_delta;
 }
 
 static void PartitionedExecutionGrowPartition(
@@ -302,8 +288,8 @@ PartitionedExecutionComputeRanges(LogicalOperator &op, vector<PartitionedExecuti
 	}
 
 	// Sort indices based on the values in the stats nodes
-	std::sort(indices.begin(), indices.end(), [&columns, &column_stats_nodes](const idx_t &lhs, const idx_t &rhs) {
-		return PartitionedExecutionCompareStatsNodes(columns, column_stats_nodes, lhs, rhs);
+	std::sort(indices.begin(), indices.end(), [&column_stats_nodes](const idx_t &lhs, const idx_t &rhs) {
+		return PartitionedExecutionCompareStatsNodes(column_stats_nodes, lhs, rhs);
 	});
 
 	// Tuned constants for finding reasonable partitions
@@ -390,22 +376,8 @@ PartitionedExecutionComputeRanges(LogicalOperator &op, vector<PartitionedExecuti
 
 enum class PartitionedExecutionStatsType : uint8_t { MIN, MAX };
 
-ExpressionType ParititionedExecutionGetExpressionType(const OrderType order_type,
-                                                      PartitionedExecutionStatsType stats_type,
+ExpressionType ParititionedExecutionGetExpressionType(PartitionedExecutionStatsType stats_type,
                                                       const bool is_last_column) {
-	// Flip stats type if the sort order is DESC
-	switch (order_type) {
-	case OrderType::ASCENDING:
-	case OrderType::INVALID:
-		break;
-	case OrderType::DESCENDING:
-		stats_type = stats_type == PartitionedExecutionStatsType::MIN ? PartitionedExecutionStatsType::MAX
-		                                                              : PartitionedExecutionStatsType::MIN;
-		break;
-	default:
-		throw NotImplementedException("ParititionedExecutionGetExpressionType for %s", EnumUtil::ToString(order_type));
-	}
-
 	// We always have to be inclusive for either the min or the max, we choose to be inclusive for the max
 	// Furthermore, we have to be inclusive for any column that's not the last column
 	switch (stats_type) {
@@ -413,6 +385,8 @@ ExpressionType ParititionedExecutionGetExpressionType(const OrderType order_type
 		return is_last_column ? ExpressionType::COMPARE_GREATERTHAN : ExpressionType::COMPARE_GREATERTHANOREQUALTO;
 	case PartitionedExecutionStatsType::MAX:
 		return ExpressionType::COMPARE_LESSTHANOREQUALTO;
+	default:
+		throw NotImplementedException("ParititionedExecutionGetExpressionType for PartitionedExecutionStatsType");
 	}
 }
 
@@ -440,8 +414,8 @@ void PartitionExecutionSplitPipeline(Optimizer &optimizer, LogicalOperator &root
 		D_ASSERT(range.min.empty() || range.min.size() == columns.size());
 		for (idx_t col_idx = 0; col_idx < range.min.size(); col_idx++) {
 			const auto &column = copy_columns[columns[col_idx].original_idx];
-			const auto expression_type = ParititionedExecutionGetExpressionType(
-			    column.order_type, PartitionedExecutionStatsType::MIN, col_idx == columns.size() - 1);
+			const auto expression_type = ParititionedExecutionGetExpressionType(PartitionedExecutionStatsType::MIN,
+			                                                                    col_idx == columns.size() - 1);
 			const auto &val = range.min[col_idx];
 			filter->expressions.emplace_back(make_uniq<BoundComparisonExpression>(
 			    expression_type, make_uniq<BoundColumnRefExpression>(val.type(), column.column_binding),
@@ -450,8 +424,8 @@ void PartitionExecutionSplitPipeline(Optimizer &optimizer, LogicalOperator &root
 		D_ASSERT(range.max.empty() || range.max.size() == columns.size());
 		for (idx_t col_idx = 0; col_idx < range.max.size(); col_idx++) {
 			const auto &column = copy_columns[columns[col_idx].original_idx];
-			const auto expression_type = ParititionedExecutionGetExpressionType(
-			    column.order_type, PartitionedExecutionStatsType::MAX, col_idx == columns.size() - 1);
+			const auto expression_type = ParititionedExecutionGetExpressionType(PartitionedExecutionStatsType::MAX,
+			                                                                    col_idx == columns.size() - 1);
 			const auto &val = range.max[col_idx];
 			filter->expressions.emplace_back(make_uniq<BoundComparisonExpression>(
 			    expression_type, make_uniq<BoundColumnRefExpression>(val.type(), column.column_binding),
@@ -468,13 +442,22 @@ void PartitionExecutionSplitPipeline(Optimizer &optimizer, LogicalOperator &root
 
 		// Add cardinality estimates for these GETs
 		reference<LogicalOperator> get = *copy;
-		while (get.get().type != LogicalOperatorType::LOGICAL_GET) {
+		while (!get.get().children.empty()) {
 			get = *get.get().children[0];
 		}
+
+		if (get.get().type == LogicalOperatorType::LOGICAL_EMPTY_RESULT) {
+			continue; // Range incompatible with existing filters - skip
+		}
+
 		get.get().SetEstimatedCardinality(range.count);
 
 		// Add it the children for the union
 		children.emplace_back(std::move(copy));
+	}
+
+	if (children.size() < 2) {
+		return; // Less than two ranges were compatible with existing filters, no need to do this optimization
 	}
 
 	// Replace operator with union
