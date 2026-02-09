@@ -21,6 +21,19 @@ SELECT bit_xor(hash(*COLUMNS('^t_')))
 FROM test;
 ----
 
+# order-preserving hash functions
+query I nosort asc_h
+SELECT hash(list(test ORDER BY t_high_cardinality_recurring ASC, t_high_cardinality_ordered ASC))
+FROM test;
+----
+
+
+query I nosort desc_h
+SELECT hash(list(test ORDER BY t_high_cardinality_recurring DESC, t_high_cardinality_ordered DESC))
+FROM test;
+----
+
+
 statement ok
 pragma explain_output='optimized_only'
 
@@ -107,10 +120,13 @@ FROM cte;
 endloop
 
 # continue with multi-column stuff
-# const/ordered, we can split for ORDER BY because t_const min == max
+# we can split by t_high_cardinality_recurring in the following tests, but not by the other columns
+# we can still do the optimization!
+
+# ORDER BY
 query II
 EXPLAIN WITH cte AS (
-    FROM test ORDER BY t_const, t_high_cardinality_recurring
+    FROM test ORDER BY t_const, t_high_cardinality_recurring, t_low_cardinality_recurring
 )
 SELECT bit_xor(hash(*COLUMNS('^t_')))
 FROM cte;
@@ -119,11 +135,75 @@ logical_opt	<REGEX>:.*UNION.*
 
 query II nosort h
 WITH cte AS (
-    FROM test ORDER BY t_const, t_high_cardinality_recurring
+    FROM test ORDER BY t_const, t_high_cardinality_recurring, t_low_cardinality_recurring
+)
+SELECT bit_xor(hash(*COLUMNS('^t_')))
+FROM cte;
+----
+
+# TODO more tests, make sure the order is correct too
+
+# GROUP BY
+query II
+EXPLAIN WITH cte1 AS (
+    SELECT t_const, t_high_cardinality_recurring, t_low_cardinality_recurring, list(test) l
+    FROM test GROUP BY ALL
+), cte2 AS (
+    SELECT unnest(l, recursive := true)
+    FROM cte1
+)
+SELECT bit_xor(hash(*COLUMNS('^t_')))
+FROM cte2;
+----
+logical_opt	<REGEX>:.*UNION.*
+
+query I nosort h
+WITH cte1 AS (
+    SELECT t_const, t_high_cardinality_recurring, t_low_cardinality_recurring, list(test) l
+    FROM test GROUP BY ALL
+), cte2 AS (
+    SELECT unnest(l, recursive := true)
+    FROM cte1
+)
+SELECT bit_xor(hash(*COLUMNS('^t_')))
+FROM cte2;
+----
+
+# WINDOW
+query II
+EXPLAIN WITH cte AS (
+    SELECT ROW_NUMBER() OVER (PARTITION BY t_const, t_high_cardinality_recurring, t_low_cardinality_recurring) AS idx, *
+    FROM test
+)
+SELECT bit_xor(hash(*COLUMNS('^t_')))
+FROM cte;
+----
+logical_opt	<REGEX>:.*UNION.*
+
+query I nosort h
+WITH cte AS (
+    SELECT ROW_NUMBER() OVER (PARTITION BY t_const, t_high_cardinality_recurring, t_low_cardinality_recurring) AS idx, *
+    FROM test
 )
 SELECT bit_xor(hash(*COLUMNS('^t_')))
 FROM cte;
 ----
 
 
-# TODO more tests, make sure the order is correct too
+# make sure the order is correct for the order by stuff with the order-preserving hash
+query II nosort asc_h
+WITH cte AS (
+    FROM test ORDER BY t_high_cardinality_recurring ASC, t_high_cardinality_ordered ASC
+)
+SELECT hash(list(cte))
+FROM cte;
+----
+
+query II nosort desc_h
+WITH cte AS (
+    FROM test ORDER BY t_high_cardinality_recurring DESC, t_high_cardinality_ordered DESC
+)
+SELECT hash(list(cte))
+FROM cte;
+----
+
