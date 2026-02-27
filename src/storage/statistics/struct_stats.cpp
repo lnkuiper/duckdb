@@ -83,6 +83,12 @@ void StructStats::Copy(BaseStatistics &stats, const BaseStatistics &other) {
 }
 
 void StructStats::Merge(BaseStatistics &stats, const BaseStatistics &other) {
+	if (stats.CanHaveNull() || other.CanHaveNull()) {
+		stats.SetHasNull();
+	}
+	if (stats.CanHaveNoNull() || other.CanHaveNoNull()) {
+		stats.SetHasNoNull();
+	}
 	if (other.GetType().id() == LogicalTypeId::VALIDITY) {
 		return;
 	}
