@@ -53,6 +53,7 @@ class UpdateSetInfo;
 class LogicalProjection;
 class LogicalGet;
 class LogicalUpdate;
+class CopyQueryNode;
 class LogicalVacuum;
 
 class ColumnList;
@@ -352,6 +353,9 @@ public:
 	optional_ptr<Binding> GetMatchingBinding(const Identifier &catalog_name, const Identifier &schema_name,
 	                                         const Identifier &table_name, const Identifier &column_name,
 	                                         ErrorData &error);
+	//! Look up a binding for a (possibly nested) table qualification
+	optional_ptr<Binding> GetMatchingBinding(const BindingAlias &alias, const Identifier &column_name,
+	                                         ErrorData &error);
 
 	void SetBindingMode(BindingMode mode);
 	BindingMode GetBindingMode();
@@ -461,6 +465,7 @@ private:
 	BoundStatement Bind(MergeIntoStatement &stmt);
 	BoundStatement Bind(ConnectStatement &stmt);
 	BoundStatement Bind(DisconnectStatement &stmt);
+	BoundStatement Bind(ExternalResourceStatement &stmt);
 
 	//! Resolves the base table for DROP TRIGGER, stamps catalog/schema onto stmt.info,
 	//! and registers the catalog modification. IF EXISTS only guards the trigger, not the table.
@@ -522,6 +527,7 @@ private:
 	BoundStatement BindNode(UpdateQueryNode &node);
 	BoundStatement BindNode(DeleteQueryNode &node);
 	BoundStatement BindNode(MergeQueryNode &node);
+	BoundStatement BindNode(CopyQueryNode &node);
 
 	unique_ptr<LogicalOperator> VisitQueryNode(BoundQueryNode &node, unique_ptr<LogicalOperator> root);
 	unique_ptr<LogicalOperator> CreatePlan(BoundSelectNode &statement);
@@ -534,6 +540,8 @@ private:
 	BoundStatement Bind(BaseTableRef &ref);
 	BoundStatement Bind(BoundRefWrapper &ref);
 	BoundStatement Bind(JoinRef &ref);
+	//! Rewrites a NEAREST BY join into a lateral join over a top-k subquery and binds the result
+	BoundStatement BindNearestJoin(JoinRef &ref);
 	BoundStatement Bind(SubqueryRef &ref);
 	BoundStatement Bind(TableFunctionRef &ref);
 	BoundStatement Bind(EmptyTableRef &ref);
