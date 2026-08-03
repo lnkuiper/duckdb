@@ -57,7 +57,7 @@ public:
 public:
 	static idx_t InspectTableFilter(idx_t cardinality, const TableFilter &filter, BaseStatistics &base_stats);
 	//! Extract Statistics from a LogicalGet.
-	static RelationStats ExtractGetStats(LogicalGet &get, ClientContext &context);
+	static RelationStats ExtractGetStats(LogicalGet &get, ClientContext &context, bool update_estimate = true);
 	static RelationStats ExtractDelimGetStats(LogicalDelimGet &delim_get, ClientContext &context);
 	//! Create the statistics for a projection using the statistics of the operator that sits underneath the
 	//! projection. Then also create statistics for any extra columns the projection creates.
@@ -68,6 +68,8 @@ public:
 	static RelationStats ExtractAggregationStats(LogicalAggregate &aggr, RelationStats &child_stats);
 	static RelationStats ExtractWindowStats(LogicalWindow &window, RelationStats &child_stats);
 	static RelationStats ExtractEmptyResultStats(LogicalEmptyResult &empty);
+	//! Estimate the number of groups produced by duplicate elimination over the supplied key statistics.
+	static idx_t EstimateDistinctCardinality(const vector<DistinctCount> &distinct_counts, idx_t input_cardinality);
 	//! Called after reordering a query plan with potentially 2+ relations.
 	static RelationStats CombineStatsOfReorderableOperator(vector<ColumnBinding> &bindings,
 	                                                       vector<RelationStats> relation_stats);

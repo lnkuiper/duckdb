@@ -202,7 +202,8 @@ DistinctCount RelationStatisticsHelper::GetDistinctCount(LogicalGet &get, Client
 	return GetDistinctCountFromStats(*column_statistics, base_table_cardinality);
 }
 
-RelationStats RelationStatisticsHelper::ExtractGetStats(LogicalGet &get, ClientContext &context) {
+RelationStats RelationStatisticsHelper::ExtractGetStats(LogicalGet &get, ClientContext &context,
+                                                         bool update_estimate) {
 	auto return_stats = RelationStats();
 
 	auto base_table_cardinality = get.EstimateCardinality(context);
@@ -267,10 +268,11 @@ RelationStats RelationStatisticsHelper::ExtractGetStats(LogicalGet &get, ClientC
 	}
 
 	return_stats.cardinality = cardinality_after_filters;
-	// update the estimated cardinality of the get as well.
-	// This is not updated during plan reconstruction.
-	get.estimated_cardinality = cardinality_after_filters;
-	get.has_estimated_cardinality = true;
+	if (update_estimate) {
+		// Update the estimated cardinality of the get as well. This is not updated during plan reconstruction.
+		get.estimated_cardinality = cardinality_after_filters;
+		get.has_estimated_cardinality = true;
+	}
 	D_ASSERT(base_table_cardinality >= cardinality_after_filters);
 	return_stats.stats_initialized = true;
 	return return_stats;
@@ -483,14 +485,29 @@ RelationStats RelationStatisticsHelper::ExtractWindowStats(LogicalWindow &window
 	return stats;
 }
 
+idx_t RelationStatisticsHelper::EstimateDistinctCardinality(const vector<DistinctCount> &distinct_counts,
+                                                             idx_t input_cardinality) {
+	if (distinct_counts.empty()) {
+		return input_cardinality / 2;
+	}
+	double product = 1;
+	for (auto &distinct_count : distinct_counts) {
+		product *= static_cast<double>(MaxValue<idx_t>(distinct_count.distinct_count, 1));
+	}
+	product *= pow(0.95, static_cast<double>(distinct_counts.size() - 1));
+	const auto multiplier = 1.0 - exp(-static_cast<double>(input_cardinality) / product);
+	const auto estimate = multiplier == 0 ? static_cast<double>(input_cardinality) : product * multiplier;
+	return LossyNumericCast<idx_t>(MinValue(estimate, static_cast<double>(input_cardinality)));
+}
+
 RelationStats RelationStatisticsHelper::ExtractAggregationStats(LogicalAggregate &aggr, RelationStats &child_stats) {
 	RelationStats stats;
 	// TODO: look at child distinct count to better estimate cardinality.
 	stats.cardinality = child_stats.cardinality;
 	stats.column_distinct_count = child_stats.column_distinct_count;
-	vector<double> distinct_counts;
+	vector<DistinctCount> distinct_counts;
 	for (auto &g_set : aggr.grouping_sets) {
-		vector<double> set_distinct_counts;
+		vector<DistinctCount> set_distinct_counts;
 		for (auto &ind : g_set) {
 			auto &group = aggr.GetGroupExpression(ind);
 			if (group.GetExpressionClass() != ExpressionClass::BOUND_COLUMN_REF) {
@@ -505,8 +522,9 @@ RelationStats RelationStatisticsHelper::ExtractAggregationStats(LogicalAggregate
 				// be grouped by. Hopefully this can be fixed with duckdb-internal#606
 				continue;
 			}
-			double distinct_count = static_cast<double>(child_stats.column_distinct_count[col_index].distinct_count);
-			set_distinct_counts.push_back(distinct_count == 0 ? 1 : distinct_count);
+			auto distinct_count = child_stats.column_distinct_count[col_index];
+			distinct_count.distinct_count = MaxValue<idx_t>(distinct_count.distinct_count, 1);
+			set_distinct_counts.push_back(distinct_count);
 		}
 		// We use the grouping set with the most group key columns for cardinality estimation
 		if (set_distinct_counts.size() > distinct_counts.size()) {
@@ -514,35 +532,8 @@ RelationStats RelationStatisticsHelper::ExtractAggregationStats(LogicalAggregate
 		}
 	}
 
-	double new_card;
-	if (distinct_counts.empty()) {
-		// We have no good statistics on distinct count.
-		// most likely we are running on parquet files. Therefore we divide by 2.
-		new_card = static_cast<double>(child_stats.cardinality) / 2.0;
-	} else {
-		// Multiply distinct counts
-		double product = 1;
-		for (const auto &distinct_count : distinct_counts) {
-			product *= distinct_count;
-		}
-
-		// Assume slight correlation for each grouping column
-		const auto correction = pow(0.95, static_cast<double>(distinct_counts.size() - 1));
-		product *= correction;
-
-		// Estimate using the "Occupancy Problem",
-		// where "product" is number of bins, and "child_stats.cardinality" is number of balls
-		const auto mult = 1.0 - exp(-static_cast<double>(child_stats.cardinality) / product);
-		if (mult == 0) { // Can become 0 with very large estimates due to double imprecision
-			new_card = static_cast<double>(child_stats.cardinality);
-		} else {
-			new_card = product * mult;
-		}
-		new_card = MinValue(new_card, static_cast<double>(child_stats.cardinality));
-	}
-
 	// an ungrouped aggregate has 1 row
-	stats.cardinality = aggr.groups.empty() ? 1 : LossyNumericCast<idx_t>(new_card);
+	stats.cardinality = aggr.groups.empty() ? 1 : EstimateDistinctCardinality(distinct_counts, child_stats.cardinality);
 	stats.column_names = child_stats.column_names;
 	stats.stats_initialized = true;
 	const auto aggr_column_bindings = aggr.GetColumnBindings();
@@ -552,7 +543,7 @@ RelationStats RelationStatisticsHelper::ExtractAggregationStats(LogicalAggregate
 		const auto &binding = aggr_column_bindings[column_index];
 		if (binding.table_index == aggr.group_index && column_index < distinct_counts.size()) {
 			// Group column that we have the HLL of
-			stats.column_distinct_count.emplace_back(LossyNumericCast<idx_t>(distinct_counts[column_index]),
+			stats.column_distinct_count.emplace_back(distinct_counts[column_index].distinct_count,
 			                                         DistinctCountSource::HLL);
 		} else {
 			// Non-group column, or we don't have the HLL
