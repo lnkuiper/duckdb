@@ -49,6 +49,7 @@ blacklist = [
     "PipelineExternalInputSupport",
     "PipelineSourceConsumption",
     "ProducerState",
+    "ProjectionMode",
     "RecursiveDependencyMode",
     "RuntimeFilterCastMode",
     "SourceFinishNotificationState",
