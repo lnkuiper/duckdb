@@ -202,8 +202,7 @@ DistinctCount RelationStatisticsHelper::GetDistinctCount(LogicalGet &get, Client
 	return GetDistinctCountFromStats(*column_statistics, base_table_cardinality);
 }
 
-RelationStats RelationStatisticsHelper::ExtractGetStats(LogicalGet &get, ClientContext &context,
-                                                         bool update_estimate) {
+RelationStats RelationStatisticsHelper::ExtractGetStats(LogicalGet &get, ClientContext &context, bool update_estimate) {
 	auto return_stats = RelationStats();
 
 	auto base_table_cardinality = get.EstimateCardinality(context);
@@ -486,7 +485,7 @@ RelationStats RelationStatisticsHelper::ExtractWindowStats(LogicalWindow &window
 }
 
 idx_t RelationStatisticsHelper::EstimateDistinctCardinality(const vector<DistinctCount> &distinct_counts,
-                                                             idx_t input_cardinality) {
+                                                            idx_t input_cardinality) {
 	if (distinct_counts.empty()) {
 		return input_cardinality / 2;
 	}
