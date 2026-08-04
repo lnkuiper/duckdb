@@ -7,6 +7,7 @@ add_library_unity(
   duplicate_eliminated_domain_properties.cpp
   filter_pushdown_alias.cpp
   join_order_conflict_detector.cpp
+  projection_pullup.cpp
   union_alls.cpp)
 
 set(UNITTEST_OBJECT_FILES
