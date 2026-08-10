@@ -1,0 +1,117 @@
+# name: test/optimizer/statistics/current_domain_cardinality.test
+# description: Current-domain estimates for filters and grouping
+# group: [statistics]
+
+statement ok
+SET profiling_renderer_settings = MAP {'operator_casing': 'upper'};
+
+statement ok
+CREATE TABLE current_domain_values AS
+SELECT range::INTEGER k, (range % 10)::INTEGER repeated
+FROM range(1000);
+
+statement ok
+ANALYZE current_domain_values;
+
+# The scan keeps its ordinary row estimate, while the grouping estimate uses the
+# directly bounded current domain of the filtered key.
+query II
+EXPLAIN SELECT k, count(*) FROM current_domain_values WHERE k < 100 GROUP BY k;
+----
+physical_plan	<REGEX>:(?s).*PERFECT_HASH_GROUP_BY.*~100 rows.*SEQ_SCAN.*Filters: k < 100.*
+
+query I rowsort
+SELECT k FROM current_domain_values WHERE k < 5 GROUP BY k;
+----
+0
+1
+2
+3
+4
+
+# IN/OR bounds are deduplicated and combined before the single-key group estimate.
+query II
+EXPLAIN SELECT k, count(*) FROM current_domain_values WHERE k IN (2, 4, 4, 8) GROUP BY k;
+----
+physical_plan	<REGEX>:(?s).*PERFECT_HASH_GROUP_BY.*~3 rows.*
+
+query II
+EXPLAIN SELECT k, count(*) FROM current_domain_values WHERE k = 2 OR k = 8 GROUP BY k;
+----
+physical_plan	<REGEX>:(?s).*PERFECT_HASH_GROUP_BY.*~2 rows.*
+
+# LIMIT, OFFSET and LIMIT PERCENT all reduce the current domain.
+query II
+EXPLAIN SELECT k, count(*) FROM (SELECT k FROM current_domain_values LIMIT 10 OFFSET 999) limited GROUP BY k;
+----
+physical_plan	<REGEX>:(?s).*PERFECT_HASH_GROUP_BY.*~1 row.*
+
+query II
+EXPLAIN SELECT k, count(*) FROM (SELECT k FROM current_domain_values LIMIT 10 PERCENT) limited GROUP BY k;
+----
+physical_plan	<REGEX>:(?s).*PERFECT_HASH_GROUP_BY.*~100 rows.*
+
+statement ok
+CREATE TABLE current_domain_union_left AS SELECT range::INTEGER k FROM range(10);
+
+statement ok
+CREATE TABLE current_domain_union_right AS SELECT (range + 10)::INTEGER k FROM range(10);
+
+statement ok
+ANALYZE current_domain_union_left;
+
+statement ok
+ANALYZE current_domain_union_right;
+
+# Set-operation domains combine by ordinal instead of depending on the first child.
+query II
+EXPLAIN SELECT k, count(*)
+FROM (
+	SELECT k FROM current_domain_union_left
+	UNION ALL
+	SELECT k FROM current_domain_union_right
+) unioned
+GROUP BY k;
+----
+physical_plan	<REGEX>:(?s).*PERFECT_HASH_GROUP_BY.*~20 rows.*
+
+# Volatile zero-argument expressions are not constant singleton domains.
+statement ok
+CREATE SEQUENCE current_domain_group_seq START 1;
+
+query II
+EXPLAIN SELECT x, count(*)
+FROM (SELECT nextval('current_domain_group_seq') x FROM range(100)) generated
+GROUP BY x;
+----
+physical_plan	<REGEX>:(?s).*HASH_GROUP_BY.*~100 rows.*
+
+query I
+SELECT count(*)
+FROM (
+	SELECT x
+	FROM (SELECT nextval('current_domain_group_seq') x FROM range(100)) generated
+	GROUP BY x
+) groups;
+----
+100
+
+statement ok
+CREATE SEQUENCE current_domain_composed_seq START 1;
+
+query II
+EXPLAIN SELECT x, count(*)
+FROM (SELECT nextval('current_domain_composed_seq') + 1 x FROM range(100)) generated
+GROUP BY x;
+----
+physical_plan	<REGEX>:(?s).*HASH_GROUP_BY.*~100 rows.*
+
+query I
+SELECT count(*)
+FROM (
+	SELECT x
+	FROM (SELECT nextval('current_domain_composed_seq') + 1 x FROM range(100)) generated
+	GROUP BY x
+) groups;
+----
+100

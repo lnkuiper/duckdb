@@ -5,6 +5,7 @@
 #include "duckdb/common/pair.hpp"
 #include "duckdb/optimizer/join_order/cardinality_estimator.hpp"
 #include "duckdb/optimizer/join_order/cost_model.hpp"
+#include "duckdb/optimizer/join_order/join_plan_domain_propagator.hpp"
 #include "duckdb/optimizer/join_order/plan_enumerator.hpp"
 #include "duckdb/planner/expression/list.hpp"
 #include "duckdb/planner/operator/list.hpp"
@@ -38,7 +39,11 @@ static optional<RelationStats> CombineReorderableStats(const vector<ColumnBindin
 		if (!source) {
 			return {};
 		}
-		result.columns.emplace_back(binding, source->distinct_count, source->name);
+		result.columns.emplace_back(binding, source->total_domain, source->current_domain, source->name,
+		                            source->current_domain_info);
+		if (relation_stats.size() > 1) {
+			result.columns.back().current_domain_info.InvalidateStructuralEvidence();
+		}
 	}
 	result.Verify(bindings);
 	return result;
@@ -90,6 +95,16 @@ unique_ptr<LogicalOperator> JoinOrderOptimizer::Optimize(unique_ptr<LogicalOpera
 		// Initialize the leaf/single node plans
 		plan_enumerator.InitLeafPlans();
 		if (plan_enumerator.SolveJoinOrder()) {
+			unordered_set<RelationIndex> bindings;
+			for (idx_t relation_idx = 0; relation_idx < relation_stats.size(); relation_idx++) {
+				bindings.emplace(relation_idx);
+			}
+			auto &root = query_graph_manager.set_manager.GetJoinRelation(bindings);
+			auto propagated_stats = JoinPlanDomainPropagator::Propagate(
+			    plan_enumerator.GetPlans(), query_graph_manager.GetPredicateModel(), relation_stats, root);
+			if (propagated_stats) {
+				relation_stats = std::move(*propagated_stats);
+			}
 			// now reconstruct a logical plan from the query graph plan
 			query_graph_manager.plans = plan_enumerator.GetPlans();
 			new_logical_plan = query_graph_manager.Reconstruct(std::move(plan));

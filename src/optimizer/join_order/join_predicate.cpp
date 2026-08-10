@@ -115,6 +115,14 @@ optional_ptr<JoinRelationSet> JoinPredicate::GetRightSetOptional() const {
 	return filter.get().right_set;
 }
 
+optional_ptr<JoinRelationSet> JoinPredicate::GetSemanticLeftSetOptional() const {
+	return filter.get().semantic_left_set;
+}
+
+optional_ptr<JoinRelationSet> JoinPredicate::GetSemanticRightSetOptional() const {
+	return filter.get().semantic_right_set;
+}
+
 const ColumnBinding &JoinPredicate::GetStatsBinding(bool left) const {
 	return left ? filter.get().left_binding : filter.get().right_binding;
 }

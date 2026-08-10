@@ -48,6 +48,8 @@ public:
 	JoinRelationSet &GetRightSet() const;
 	optional_ptr<JoinRelationSet> GetLeftSetOptional() const;
 	optional_ptr<JoinRelationSet> GetRightSetOptional() const;
+	optional_ptr<JoinRelationSet> GetSemanticLeftSetOptional() const;
+	optional_ptr<JoinRelationSet> GetSemanticRightSetOptional() const;
 	const ColumnBinding &GetStatsBinding(bool left) const;
 	const ColumnBinding &GetEqualityBinding(bool left) const;
 	bool HasValidJoinEndpoints() const;

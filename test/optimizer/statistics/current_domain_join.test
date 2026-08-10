@@ -1,0 +1,74 @@
+# name: test/optimizer/statistics/current_domain_join.test
+# description: Current-domain propagation over the selected join tree
+# group: [statistics]
+
+statement ok
+SET profiling_renderer_settings = MAP {'operator_casing': 'upper'};
+
+statement ok
+CREATE TABLE domain_join_large AS SELECT range::INTEGER k FROM range(1000);
+
+statement ok
+CREATE TABLE domain_join_sparse AS SELECT ((range % 100) * 10)::INTEGER k FROM range(1000);
+
+statement ok
+ANALYZE domain_join_large;
+
+statement ok
+ANALYZE domain_join_sparse;
+
+# Join multiplicity keeps the row estimate high, while the chosen-tree domain
+# pass narrows the grouping key to the estimated equality intersection.
+query II
+EXPLAIN SELECT domain_join_large.k, count(*)
+FROM domain_join_large
+JOIN domain_join_sparse USING (k)
+GROUP BY domain_join_large.k;
+----
+physical_plan	<REGEX>:(?s).*PERFECT_HASH_GROUP_BY.*~10[0-9] rows.*HASH_JOIN.*~1,000 rows.*
+
+# Projection aliases retain the propagated normalized-binding domain.
+query II
+EXPLAIN SELECT joined_key, count(*)
+FROM (
+	SELECT domain_join_large.k joined_key
+	FROM domain_join_large
+	JOIN domain_join_sparse USING (k)
+) projected
+GROUP BY joined_key;
+----
+physical_plan	<REGEX>:(?s).*PERFECT_HASH_GROUP_BY.*~10[0-9] rows.*HASH_JOIN.*~1,000 rows.*
+
+statement ok
+CREATE TABLE domain_join_small AS SELECT ((range % 20) * 50)::INTEGER k FROM range(1000);
+
+statement ok
+ANALYZE domain_join_small;
+
+# Each selected equality step contributes one current-domain intersection.
+query II
+EXPLAIN SELECT domain_join_large.k, count(*)
+FROM domain_join_large
+JOIN domain_join_sparse USING (k)
+JOIN domain_join_small USING (k)
+GROUP BY domain_join_large.k;
+----
+physical_plan	<REGEX>:(?s).*PERFECT_HASH_GROUP_BY.*~[1-9] rows.*HASH_JOIN.*
+
+# A left join does not narrow the preserved input's domain.
+query II
+EXPLAIN SELECT domain_join_large.k, count(*)
+FROM domain_join_large
+LEFT JOIN domain_join_sparse USING (k)
+GROUP BY domain_join_large.k;
+----
+physical_plan	<REGEX>:(?s).*PERFECT_HASH_GROUP_BY.*~1,000 rows.*HASH_JOIN.*Join Type: LEFT.*
+
+# Cross products preserve input domains.
+query II
+EXPLAIN SELECT domain_join_large.k, count(*)
+FROM domain_join_large
+CROSS JOIN domain_join_sparse
+GROUP BY domain_join_large.k;
+----
+physical_plan	<REGEX>:(?s).*PERFECT_HASH_GROUP_BY.*~1,000 rows.*CROSS_PRODUCT.*
