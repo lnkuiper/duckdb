@@ -47,6 +47,7 @@ public:
 private:
 	double GetNumerator(JoinRelationSet &set);
 	double GetSubgraphCardinality(const Subgraph2Denominator &subgraph);
+	bool IsCardinalityEmpty(JoinRelationSet &set);
 	optional<double> EstimateTopLevelSemiAnti(JoinRelationSet &set);
 	DenomInfo GetDenominator(JoinRelationSet &set);
 	void ProcessDenominatorEdge(FilterInfoWithTotalDomains &edge, JoinRelationSet &requested_set,

@@ -323,7 +323,8 @@ double CardinalityEstimator::GetNumerator(JoinRelationSet &set) {
 		if (entry == state->relation_set_2_cardinality.end()) {
 			continue;
 		}
-		numerator *= entry->second.cardinality_before_filters;
+		auto cardinality = entry->second.cardinality_before_filters;
+		numerator *= cardinality == 0 ? 1 : cardinality;
 	}
 	return numerator;
 }
@@ -346,6 +347,18 @@ double CardinalityEstimator::GetSubgraphCardinality(const Subgraph2Denominator &
 	return numerator / (subgraph.denom <= 0 ? 1 : subgraph.denom);
 }
 
+bool CardinalityEstimator::IsCardinalityEmpty(JoinRelationSet &set) {
+	auto semi_anti_result = EstimateTopLevelSemiAnti(set);
+	if (semi_anti_result) {
+		return *semi_anti_result <= 0;
+	}
+	auto denom = GetDenominator(set);
+	Subgraph2Denominator subgraph;
+	subgraph.numerator_relations = &denom.numerator_relations;
+	subgraph.denom = denom.denominator;
+	return GetSubgraphCardinality(subgraph) <= 0;
+}
+
 optional<double> CardinalityEstimator::EstimateTopLevelSemiAnti(JoinRelationSet &set) {
 	for (auto predicate_ref : predicate_model.GetPredicates()) {
 		auto &predicate = predicate_ref.get();
@@ -362,7 +375,10 @@ optional<double> CardinalityEstimator::EstimateTopLevelSemiAnti(JoinRelationSet 
 			continue;
 		}
 		auto preserved_cardinality = EstimateCardinalityWithSet<double>(*semantic_left);
-		auto rhs_cardinality = EstimateCardinalityWithSet<double>(*semantic_right) <= 0 ? 0 : 1;
+		if (IsCardinalityEmpty(*semantic_left)) {
+			preserved_cardinality = 0;
+		}
+		auto rhs_cardinality = IsCardinalityEmpty(*semantic_right) ? 0 : 1;
 		return RelationStatisticsHelper::EstimateSemiAntiJoinFallback(preserved_cardinality, rhs_cardinality,
 		                                                              predicate.GetJoinType())
 		    .cardinality;
@@ -541,8 +557,8 @@ double CardinalityEstimator::CalculateSemiAntiJoinDenom(Subgraph2Denominator &le
 	auto &rhs = left_is_preserved ? right : left;
 	auto preserved_cardinality = GetSubgraphCardinality(preserved);
 	auto semantic_rhs = predicate.GetSemanticRightSetOptional();
-	auto rhs_estimate = semantic_rhs ? EstimateCardinalityWithSet<double>(*semantic_rhs) : GetSubgraphCardinality(rhs);
-	auto rhs_cardinality = rhs_estimate <= 0 ? 0 : 1;
+	auto rhs_is_empty = semantic_rhs ? IsCardinalityEmpty(*semantic_rhs) : GetSubgraphCardinality(rhs) <= 0;
+	auto rhs_cardinality = rhs_is_empty ? 0 : 1;
 	auto estimate = RelationStatisticsHelper::EstimateSemiAntiJoinFallback(preserved_cardinality, rhs_cardinality,
 	                                                                       predicate.GetJoinType());
 	if (estimate.cardinality <= 0) {

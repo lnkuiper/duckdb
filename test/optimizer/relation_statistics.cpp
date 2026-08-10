@@ -379,6 +379,44 @@ TEST_CASE("Nested empty SEMI remains exact in the enumeration cache", "[optimize
 	}
 }
 
+TEST_CASE("Empty multi-relation preserved SEMI remains exact", "[optimizer][relation_statistics]") {
+	JoinRelationSetManager set_manager;
+	auto &nonempty_set = set_manager.GetJoinRelation(RelationIndex(0));
+	auto &empty_set = set_manager.GetJoinRelation(RelationIndex(1));
+	auto &rhs_set = set_manager.GetJoinRelation(RelationIndex(2));
+	auto &preserved_set = set_manager.Union(nonempty_set, empty_set);
+	auto &root_set = set_manager.Union(preserved_set, rhs_set);
+	auto nonempty_binding = ColumnBinding(TableIndex(0), ProjectionIndex(0));
+	auto empty_binding = ColumnBinding(TableIndex(1), ProjectionIndex(0));
+	auto rhs_binding = ColumnBinding(TableIndex(2), ProjectionIndex(0));
+
+	auto comparison = BoundComparisonExpression::Create(
+	    ExpressionType::COMPARE_EQUAL, make_uniq<BoundColumnRefExpression>(LogicalType::INTEGER, nonempty_binding),
+	    make_uniq<BoundColumnRefExpression>(LogicalType::INTEGER, rhs_binding));
+	FilterInfo filter(std::move(comparison), root_set, 0, JoinType::SEMI);
+	filter.SetLeftSet(preserved_set);
+	filter.SetRightSet(rhs_set);
+	filter.left_binding = nonempty_binding;
+	filter.right_binding = rhs_binding;
+	filter.source_operator_index = optional_idx(0);
+	filter.semantic_left_set = preserved_set;
+	filter.semantic_right_set = rhs_set;
+
+	JoinPredicateModel predicate_model;
+	predicate_model.RegisterPredicate(filter, JoinPredicateClass::SEMI_ANTI_JOIN, nonempty_binding, rhs_binding);
+	CardinalityEstimator estimator(set_manager, predicate_model);
+	estimator.InitEquivalentRelations();
+	auto nonempty_stats = CreateStats({nonempty_binding}, {100}, 100);
+	auto empty_stats = CreateStats({empty_binding}, {0}, 0);
+	auto rhs_stats = CreateStats({rhs_binding}, {100}, 100);
+	estimator.InitCardinalityEstimatorProps(nonempty_set, nonempty_stats);
+	estimator.InitCardinalityEstimatorProps(empty_set, empty_stats);
+	estimator.InitCardinalityEstimatorProps(rhs_set, rhs_stats);
+
+	REQUIRE(estimator.EstimateCardinalityWithSet<idx_t>(root_set) == 0);
+	REQUIRE(estimator.EstimateCardinalityWithSet<idx_t>(preserved_set) == 100);
+}
+
 TEST_CASE("Selected join plans propagate equality intersections", "[optimizer][relation_statistics]") {
 	JoinRelationSetManager set_manager;
 	auto &left_set = set_manager.GetJoinRelation(RelationIndex(0));
