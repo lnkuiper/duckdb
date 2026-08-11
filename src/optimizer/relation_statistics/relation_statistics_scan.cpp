@@ -110,55 +110,6 @@ static DistinctCount GetDistinctCountFromStats(BaseStatistics &base_stats, idx_t
 	return DistinctCount(0, DistinctCountSource::CARDINALITY);
 }
 
-template <class T>
-static bool GetSignedMinMaxValues(const BaseStatistics &base_stats, int64_t &minimum, int64_t &maximum) {
-	minimum = static_cast<int64_t>(NumericStats::Min(base_stats).GetValueUnsafe<T>());
-	maximum = static_cast<int64_t>(NumericStats::Max(base_stats).GetValueUnsafe<T>());
-	return true;
-}
-
-template <class T>
-static bool GetUnsignedMinMaxValues(const BaseStatistics &base_stats, int64_t &minimum, int64_t &maximum) {
-	auto min_value = NumericStats::Min(base_stats).GetValueUnsafe<T>();
-	auto max_value = NumericStats::Max(base_stats).GetValueUnsafe<T>();
-	if (max_value > static_cast<T>(NumericLimits<int64_t>::Maximum())) {
-		return false;
-	}
-	minimum = static_cast<int64_t>(min_value);
-	maximum = static_cast<int64_t>(max_value);
-	return true;
-}
-
-static bool GetDiscreteMinMaxValues(const BaseStatistics &base_stats, int64_t &minimum, int64_t &maximum) {
-	if (base_stats.GetStatsType() != StatisticsType::NUMERIC_STATS || !NumericStats::HasMinMax(base_stats)) {
-		return false;
-	}
-	switch (base_stats.GetType().InternalType()) {
-	case PhysicalType::BOOL:
-		minimum = NumericStats::Min(base_stats).GetValueUnsafe<bool>() ? 1 : 0;
-		maximum = NumericStats::Max(base_stats).GetValueUnsafe<bool>() ? 1 : 0;
-		return true;
-	case PhysicalType::INT8:
-		return GetSignedMinMaxValues<int8_t>(base_stats, minimum, maximum);
-	case PhysicalType::INT16:
-		return GetSignedMinMaxValues<int16_t>(base_stats, minimum, maximum);
-	case PhysicalType::INT32:
-		return GetSignedMinMaxValues<int32_t>(base_stats, minimum, maximum);
-	case PhysicalType::INT64:
-		return GetSignedMinMaxValues<int64_t>(base_stats, minimum, maximum);
-	case PhysicalType::UINT8:
-		return GetUnsignedMinMaxValues<uint8_t>(base_stats, minimum, maximum);
-	case PhysicalType::UINT16:
-		return GetUnsignedMinMaxValues<uint16_t>(base_stats, minimum, maximum);
-	case PhysicalType::UINT32:
-		return GetUnsignedMinMaxValues<uint32_t>(base_stats, minimum, maximum);
-	case PhysicalType::UINT64:
-		return GetUnsignedMinMaxValues<uint64_t>(base_stats, minimum, maximum);
-	default:
-		return false;
-	}
-}
-
 unique_ptr<BaseStatistics> RelationStatisticsHelper::GetColumnStatistics(LogicalGet &get, ClientContext &context,
                                                                          const ColumnIndex &column_id) {
 	if (!get.bind_data || (!get.function.statistics && !get.function.statistics_extended)) {
@@ -227,16 +178,7 @@ RelationStats RelationStatisticsHelper::ExtractGetStats(LogicalGet &get, ClientC
 			}
 			auto &filter =
 			    ExpressionFilter::GetExpressionFilter(entry.Filter(), "RelationStatisticsHelper::ExtractGetStats");
-			optional<int64_t> minimum_value;
-			optional<int64_t> maximum_value;
-			int64_t stats_minimum;
-			int64_t stats_maximum;
-			if (column_statistics && GetDiscreteMinMaxValues(*column_statistics, stats_minimum, stats_maximum)) {
-				minimum_value = stats_minimum;
-				maximum_value = stats_maximum;
-			}
-			auto direct_bound =
-			    EstimateDirectFilterDomain(*filter.expr, {}, total_domain.distinct_count, minimum_value, maximum_value);
+			auto direct_bound = EstimateDirectFilterDomain(*filter.expr, {}, total_domain.distinct_count);
 			if (direct_bound.IsValid()) {
 				current_domain = DistinctCount(MinValue(current_domain.distinct_count, direct_bound.GetIndex()),
 				                               DistinctCountSource::CARDINALITY);

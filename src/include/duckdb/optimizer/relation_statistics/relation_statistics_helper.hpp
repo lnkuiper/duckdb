@@ -88,8 +88,7 @@ public:
 	static SemiAntiJoinCardinalityEstimate
 	EstimateSemiAntiJoinCardinality(LogicalComparisonJoin &join, const RelationStats &left, const RelationStats &right);
 	static optional_idx EstimateDirectFilterDomain(const Expression &expression, optional<ColumnBinding> target_binding,
-	                                               idx_t maximum_domain, optional<int64_t> minimum_value = {},
-	                                               optional<int64_t> maximum_value = {});
+	                                               idx_t maximum_domain);
 
 private:
 	static unique_ptr<BaseStatistics> GetColumnStatistics(LogicalGet &get, ClientContext &context,

@@ -36,7 +36,6 @@ public:
 	bool SolveJoinOrder();
 	void InitLeafPlans();
 
-	reference_map_t<JoinRelationSet, unique_ptr<DPJoinNode>> &GetPlans();
 	const reference_map_t<JoinRelationSet, unique_ptr<DPJoinNode>> &GetPlans() const;
 
 private:

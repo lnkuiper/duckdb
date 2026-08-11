@@ -80,10 +80,6 @@ static vector<unordered_set<RelationIndex>> GetAllNeighborSets(vector<RelationIn
 	return ret;
 }
 
-reference_map_t<JoinRelationSet, unique_ptr<DPJoinNode>> &PlanEnumerator::GetPlans() {
-	return plans;
-}
-
 const reference_map_t<JoinRelationSet, unique_ptr<DPJoinNode>> &PlanEnumerator::GetPlans() const {
 	return plans;
 }

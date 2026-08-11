@@ -4,7 +4,6 @@
 #include "duckdb.hpp"
 #include "duckdb/optimizer/join_order/cardinality_estimator.hpp"
 #include "duckdb/optimizer/join_order/join_order_optimizer.hpp"
-#include "duckdb/optimizer/join_order/join_plan_domain_propagator.hpp"
 #include "duckdb/optimizer/join_order/relation_manager.hpp"
 #include "duckdb/optimizer/relation_statistics/relation_statistics_extractor.hpp"
 #include "duckdb/optimizer/relation_statistics/relation_statistics_helper.hpp"
@@ -99,7 +98,7 @@ TEST_CASE("Current domains use multiplicity-aware row survival", "[optimizer][re
 	            .distinct_count == 0);
 }
 
-TEST_CASE("Direct filter domains recognize equality IN ranges and conjunctions", "[optimizer][relation_statistics]") {
+TEST_CASE("Direct filter domains recognize equality IN and conjunctions", "[optimizer][relation_statistics]") {
 	auto binding = ColumnBinding(TableIndex(10), ProjectionIndex(0));
 	auto equality = CreateComparison(binding, ExpressionType::COMPARE_EQUAL, 42);
 	auto equality_bound = RelationStatisticsHelper::EstimateDirectFilterDomain(*equality, binding, 1000);
@@ -119,8 +118,14 @@ TEST_CASE("Direct filter domains recognize equality IN ranges and conjunctions",
 	    ExpressionType::CONJUNCTION_AND, CreateComparison(binding, ExpressionType::COMPARE_GREATERTHANOREQUALTO, 10),
 	    CreateComparison(binding, ExpressionType::COMPARE_LESSTHAN, 20));
 	auto range_bound = RelationStatisticsHelper::EstimateDirectFilterDomain(*range, binding, 1000);
-	REQUIRE(range_bound.IsValid());
-	REQUIRE(range_bound.GetIndex() == 10);
+	REQUIRE_FALSE(range_bound.IsValid());
+
+	auto conjunction = make_uniq<BoundConjunctionExpression>(
+	    ExpressionType::CONJUNCTION_AND, CreateComparison(binding, ExpressionType::COMPARE_EQUAL, 10),
+	    CreateComparison(binding, ExpressionType::COMPARE_LESSTHAN, 20));
+	auto conjunction_bound = RelationStatisticsHelper::EstimateDirectFilterDomain(*conjunction, binding, 1000);
+	REQUIRE(conjunction_bound.IsValid());
+	REQUIRE(conjunction_bound.GetIndex() == 1);
 
 	auto disjunction = make_uniq<BoundConjunctionExpression>(
 	    ExpressionType::CONJUNCTION_OR, CreateComparison(binding, ExpressionType::COMPARE_EQUAL, 10),
@@ -185,9 +190,8 @@ TEST_CASE("Current-domain eligibility distinguishes direct and cross-column filt
 	auto range_stats = RelationStatisticsHelper::ExtractFilterStats(range_filter, child_stats);
 	REQUIRE(range_stats);
 	REQUIRE(range_stats->columns[0].current_domain.distinct_count == 200);
-	REQUIRE(range_stats->columns[0].current_domain_info.direct_bound.IsValid());
-	REQUIRE(range_stats->columns[0].current_domain_info.direct_bound.GetIndex() == 500);
-	REQUIRE(range_stats->columns[0].GetSemiAntiCurrentDomain().GetIndex() == 500);
+	REQUIRE_FALSE(range_stats->columns[0].current_domain_info.direct_bound.IsValid());
+	REQUIRE_FALSE(range_stats->columns[0].GetSemiAntiCurrentDomain().IsValid());
 }
 
 TEST_CASE("Single-key aggregate uniqueness survives HAVING row estimation", "[optimizer][relation_statistics]") {
@@ -415,274 +419,6 @@ TEST_CASE("Empty multi-relation preserved SEMI remains exact", "[optimizer][rela
 
 	REQUIRE(estimator.EstimateCardinalityWithSet<idx_t>(root_set) == 0);
 	REQUIRE(estimator.EstimateCardinalityWithSet<idx_t>(preserved_set) == 100);
-}
-
-TEST_CASE("Selected join plans propagate equality intersections", "[optimizer][relation_statistics]") {
-	JoinRelationSetManager set_manager;
-	auto &left_set = set_manager.GetJoinRelation(RelationIndex(0));
-	auto &right_set = set_manager.GetJoinRelation(RelationIndex(1));
-	auto &root_set = set_manager.Union(left_set, right_set);
-	auto left_binding = ColumnBinding(TableIndex(0), ProjectionIndex(0));
-	auto second_left_binding = ColumnBinding(TableIndex(0), ProjectionIndex(1));
-	auto right_binding = ColumnBinding(TableIndex(1), ProjectionIndex(0));
-	auto comparison = BoundComparisonExpression::Create(
-	    ExpressionType::COMPARE_EQUAL, make_uniq<BoundColumnRefExpression>(LogicalType::INTEGER, left_binding),
-	    make_uniq<BoundColumnRefExpression>(LogicalType::INTEGER, right_binding));
-	FilterInfo filter(std::move(comparison), root_set, 0, JoinType::INNER);
-	filter.SetLeftSet(left_set);
-	filter.SetRightSet(right_set);
-	filter.left_binding = left_binding;
-	filter.right_binding = right_binding;
-	auto second_comparison = BoundComparisonExpression::Create(
-	    ExpressionType::COMPARE_EQUAL, make_uniq<BoundColumnRefExpression>(LogicalType::INTEGER, second_left_binding),
-	    make_uniq<BoundColumnRefExpression>(LogicalType::INTEGER, right_binding));
-	FilterInfo second_filter(std::move(second_comparison), root_set, 1, JoinType::INNER);
-	second_filter.SetLeftSet(left_set);
-	second_filter.SetRightSet(right_set);
-	second_filter.left_binding = second_left_binding;
-	second_filter.right_binding = right_binding;
-
-	JoinPredicateModel predicate_model;
-	auto &predicate =
-	    predicate_model.RegisterPredicate(filter, JoinPredicateClass::INNER_EQUALITY, left_binding, right_binding);
-	auto &second_predicate = predicate_model.RegisterPredicate(second_filter, JoinPredicateClass::INNER_EQUALITY,
-	                                                           second_left_binding, right_binding);
-	predicate.SetEqualityClassIndex(optional_idx(0));
-	second_predicate.SetEqualityClassIndex(optional_idx(0));
-	JoinEqualityClass equality_class;
-	equality_class.index = 0;
-	equality_class.columns.insert(left_binding);
-	equality_class.columns.insert(second_left_binding);
-	equality_class.columns.insert(right_binding);
-	equality_class.relations.insert(RelationIndex(0));
-	equality_class.relations.insert(RelationIndex(1));
-	equality_class.edges.emplace_back(predicate, RelationIndex(0), RelationIndex(1), left_binding, right_binding);
-	equality_class.edges.emplace_back(second_predicate, RelationIndex(0), RelationIndex(1), second_left_binding,
-	                                  right_binding);
-	predicate_model.AddEqualityClass(std::move(equality_class));
-
-	reference_map_t<JoinRelationSet, unique_ptr<DPJoinNode>> plans;
-	plans[left_set] = make_uniq<DPJoinNode>(left_set);
-	plans[left_set]->cardinality = 1000;
-	plans[right_set] = make_uniq<DPJoinNode>(right_set);
-	plans[right_set]->cardinality = 1000;
-	vector<reference<JoinPredicate>> predicates {predicate, second_predicate};
-	plans[root_set] = make_uniq<DPJoinNode>(root_set, nullptr, std::move(predicates), false, right_set, left_set, 0);
-	plans[root_set]->cardinality = 1000;
-
-	auto left_stats = CreateStats(
-	    {ColumnBinding(TableIndex(10), ProjectionIndex(0)), ColumnBinding(TableIndex(10), ProjectionIndex(1))},
-	    {1000, 1000}, 1000);
-	left_stats.columns[0].current_domain_info.UpdateDirectBound(1000);
-	left_stats.columns[1].current_domain = DistinctCount(500, DistinctCountSource::CARDINALITY);
-	auto right_stats = CreateStats({ColumnBinding(TableIndex(20), ProjectionIndex(0))}, {100}, 1000);
-	auto propagated = JoinPlanDomainPropagator::Propagate(plans, predicate_model, {left_stats, right_stats}, root_set);
-	REQUIRE(propagated);
-	REQUIRE(propagated->at(0).columns[0].current_domain.distinct_count == 50);
-	REQUIRE(propagated->at(0).columns[1].current_domain.distinct_count == 50);
-	REQUIRE(propagated->at(1).columns[0].current_domain.distinct_count == 50);
-	REQUIRE(propagated->at(0).columns[0].total_domain.distinct_count == 1000);
-	REQUIRE(propagated->at(1).columns[0].total_domain.distinct_count == 100);
-	REQUIRE(!propagated->at(0).columns[0].current_domain_info.IsEligibleForSemiAnti());
-}
-
-TEST_CASE("Selected cross and left joins invalidate structural domain evidence", "[optimizer][relation_statistics]") {
-	for (auto node_type : {JoinOrderOperatorType::CROSS_PRODUCT, JoinOrderOperatorType::LEFT}) {
-		JoinRelationSetManager set_manager;
-		auto &left_set = set_manager.GetJoinRelation(RelationIndex(0));
-		auto &right_set = set_manager.GetJoinRelation(RelationIndex(1));
-		auto &root_set = set_manager.Union(left_set, right_set);
-
-		reference_map_t<JoinRelationSet, unique_ptr<DPJoinNode>> plans;
-		plans[left_set] = make_uniq<DPJoinNode>(left_set);
-		plans[left_set]->cardinality = 10;
-		plans[right_set] = make_uniq<DPJoinNode>(right_set);
-		plans[right_set]->cardinality = 10;
-		auto join_operator =
-		    make_uniq<JoinOrderOperator>(0, node_type, left_set, right_set, root_set, vector<JoinCondition>());
-		plans[root_set] =
-		    make_uniq<DPJoinNode>(root_set, *join_operator, vector<reference<JoinPredicate>>(),
-		                          node_type == JoinOrderOperatorType::CROSS_PRODUCT, left_set, right_set, 0);
-		plans[root_set]->cardinality = node_type == JoinOrderOperatorType::CROSS_PRODUCT ? 100 : 10;
-
-		auto left_stats = CreateStats({ColumnBinding(TableIndex(10), ProjectionIndex(0))}, {10}, 10);
-		auto right_stats = CreateStats({ColumnBinding(TableIndex(20), ProjectionIndex(0))}, {10}, 10);
-		left_stats.columns[0].current_domain_info.UpdateDirectBound(10);
-		right_stats.columns[0].current_domain_info.is_unique = true;
-		JoinPredicateModel predicate_model;
-		auto propagated =
-		    JoinPlanDomainPropagator::Propagate(plans, predicate_model, {left_stats, right_stats}, root_set);
-		REQUIRE(propagated);
-		REQUIRE(!propagated->at(0).columns[0].current_domain_info.IsEligibleForSemiAnti());
-		REQUIRE(!propagated->at(1).columns[0].current_domain_info.IsEligibleForSemiAnti());
-	}
-}
-
-TEST_CASE("Selected SEMI refinement leaves cached ancestor cardinalities unchanged",
-          "[optimizer][relation_statistics]") {
-	JoinRelationSetManager set_manager;
-	auto &left_set = set_manager.GetJoinRelation(RelationIndex(0));
-	auto &right_set = set_manager.GetJoinRelation(RelationIndex(1));
-	auto &third_set = set_manager.GetJoinRelation(RelationIndex(2));
-	auto &semi_set = set_manager.Union(left_set, right_set);
-	auto &root_set = set_manager.Union(semi_set, third_set);
-	auto left_binding = ColumnBinding(TableIndex(0), ProjectionIndex(0));
-	auto right_binding = ColumnBinding(TableIndex(1), ProjectionIndex(0));
-
-	auto comparison = BoundComparisonExpression::Create(
-	    ExpressionType::COMPARE_EQUAL, make_uniq<BoundColumnRefExpression>(LogicalType::INTEGER, left_binding),
-	    make_uniq<BoundColumnRefExpression>(LogicalType::INTEGER, right_binding));
-	FilterInfo filter(std::move(comparison), semi_set, 0, JoinType::SEMI);
-	filter.SetLeftSet(left_set);
-	filter.SetRightSet(right_set);
-	filter.left_binding = left_binding;
-	filter.right_binding = right_binding;
-	filter.source_operator_index = optional_idx(0);
-	JoinPredicateModel predicate_model;
-	auto &predicate =
-	    predicate_model.RegisterPredicate(filter, JoinPredicateClass::SEMI_ANTI_JOIN, left_binding, right_binding);
-
-	auto duplicate_comparison = BoundComparisonExpression::Create(
-	    ExpressionType::COMPARE_EQUAL, make_uniq<BoundColumnRefExpression>(LogicalType::INTEGER, left_binding),
-	    make_uniq<BoundColumnRefExpression>(LogicalType::INTEGER, right_binding));
-	FilterInfo duplicate_filter(std::move(duplicate_comparison), semi_set, 1, JoinType::SEMI);
-	duplicate_filter.SetLeftSet(left_set);
-	duplicate_filter.SetRightSet(right_set);
-	duplicate_filter.left_binding = left_binding;
-	duplicate_filter.right_binding = right_binding;
-	duplicate_filter.source_operator_index = optional_idx(0);
-	auto &duplicate_predicate = predicate_model.RegisterPredicate(duplicate_filter, JoinPredicateClass::SEMI_ANTI_JOIN,
-	                                                              left_binding, right_binding);
-
-	auto semi_operator = make_uniq<JoinOrderOperator>(0, JoinOrderOperatorType::SEMI, left_set, right_set, semi_set,
-	                                                  vector<JoinCondition>());
-	semi_operator->left_total_set = left_set;
-	semi_operator->right_total_set = right_set;
-	reference_map_t<JoinRelationSet, unique_ptr<DPJoinNode>> plans;
-	plans[left_set] = make_uniq<DPJoinNode>(left_set);
-	plans[left_set]->cardinality = 1000;
-	plans[right_set] = make_uniq<DPJoinNode>(right_set);
-	plans[right_set]->cardinality = 100;
-	plans[third_set] = make_uniq<DPJoinNode>(third_set);
-	plans[third_set]->cardinality = 10;
-	vector<reference<JoinPredicate>> semi_predicates {predicate, duplicate_predicate};
-	plans[semi_set] =
-	    make_uniq<DPJoinNode>(semi_set, *semi_operator, std::move(semi_predicates), false, left_set, right_set, 0);
-	plans[semi_set]->cardinality = 200;
-	plans[root_set] =
-	    make_uniq<DPJoinNode>(root_set, nullptr, vector<reference<JoinPredicate>>(), true, semi_set, third_set, 0);
-	plans[root_set]->cardinality = 400;
-
-	auto left_stats = CreateStats({left_binding}, {1000}, 1000);
-	auto right_stats = CreateStats({right_binding}, {1000}, 100);
-	right_stats.columns[0].current_domain = DistinctCount(100, DistinctCountSource::EXACT);
-	right_stats.columns[0].current_domain_info.is_unique = true;
-	auto third_stats = CreateStats({ColumnBinding(TableIndex(2), ProjectionIndex(0))}, {10}, 10);
-	auto propagated =
-	    JoinPlanDomainPropagator::Propagate(plans, predicate_model, {left_stats, right_stats, third_stats}, root_set);
-	REQUIRE(propagated);
-	REQUIRE(plans[semi_set]->cardinality == 100);
-	REQUIRE(plans[root_set]->cardinality == 400);
-
-	plans[semi_set]->cardinality = 200;
-	auto unsupported_right_stats = right_stats;
-	unsupported_right_stats.columns[0].current_domain_info.InvalidateStructuralEvidence();
-	auto unsupported = JoinPlanDomainPropagator::Propagate(
-	    plans, predicate_model, {left_stats, unsupported_right_stats, third_stats}, root_set);
-	REQUIRE(unsupported);
-	REQUIRE(plans[semi_set]->cardinality == 200);
-	REQUIRE(plans[root_set]->cardinality == 400);
-}
-
-TEST_CASE("Selected equality domains are association independent", "[optimizer][relation_statistics]") {
-	JoinRelationSetManager set_manager;
-	auto &a_set = set_manager.GetJoinRelation(RelationIndex(0));
-	auto &b_set = set_manager.GetJoinRelation(RelationIndex(1));
-	auto &c_set = set_manager.GetJoinRelation(RelationIndex(2));
-	auto &ab_set = set_manager.Union(a_set, b_set);
-	auto &bc_set = set_manager.Union(b_set, c_set);
-	auto &root_set = set_manager.Union(ab_set, c_set);
-	auto a_binding = ColumnBinding(TableIndex(0), ProjectionIndex(0));
-	auto b_binding = ColumnBinding(TableIndex(1), ProjectionIndex(0));
-	auto c_binding = ColumnBinding(TableIndex(2), ProjectionIndex(0));
-
-	auto ab_comparison = BoundComparisonExpression::Create(
-	    ExpressionType::COMPARE_EQUAL, make_uniq<BoundColumnRefExpression>(LogicalType::INTEGER, a_binding),
-	    make_uniq<BoundColumnRefExpression>(LogicalType::INTEGER, b_binding));
-	FilterInfo ab_filter(std::move(ab_comparison), ab_set, 0, JoinType::INNER);
-	ab_filter.SetLeftSet(a_set);
-	ab_filter.SetRightSet(b_set);
-	ab_filter.left_binding = a_binding;
-	ab_filter.right_binding = b_binding;
-	auto bc_comparison = BoundComparisonExpression::Create(
-	    ExpressionType::COMPARE_EQUAL, make_uniq<BoundColumnRefExpression>(LogicalType::INTEGER, b_binding),
-	    make_uniq<BoundColumnRefExpression>(LogicalType::INTEGER, c_binding));
-	FilterInfo bc_filter(std::move(bc_comparison), bc_set, 1, JoinType::INNER);
-	bc_filter.SetLeftSet(b_set);
-	bc_filter.SetRightSet(c_set);
-	bc_filter.left_binding = b_binding;
-	bc_filter.right_binding = c_binding;
-
-	JoinPredicateModel predicate_model;
-	auto &ab_predicate =
-	    predicate_model.RegisterPredicate(ab_filter, JoinPredicateClass::INNER_EQUALITY, a_binding, b_binding);
-	auto &bc_predicate =
-	    predicate_model.RegisterPredicate(bc_filter, JoinPredicateClass::INNER_EQUALITY, b_binding, c_binding);
-	ab_predicate.SetEqualityClassIndex(optional_idx(0));
-	bc_predicate.SetEqualityClassIndex(optional_idx(0));
-	JoinEqualityClass equality_class;
-	equality_class.index = 0;
-	equality_class.columns.insert(a_binding);
-	equality_class.columns.insert(b_binding);
-	equality_class.columns.insert(c_binding);
-	equality_class.relations.insert(RelationIndex(0));
-	equality_class.relations.insert(RelationIndex(1));
-	equality_class.relations.insert(RelationIndex(2));
-	equality_class.edges.emplace_back(ab_predicate, RelationIndex(0), RelationIndex(1), a_binding, b_binding);
-	equality_class.edges.emplace_back(bc_predicate, RelationIndex(1), RelationIndex(2), b_binding, c_binding);
-	predicate_model.AddEqualityClass(std::move(equality_class));
-
-	vector<RelationStats> relation_stats;
-	for (idx_t relation_idx = 0; relation_idx < 3; relation_idx++) {
-		relation_stats.push_back(
-		    CreateStats({ColumnBinding(TableIndex(10 + relation_idx), ProjectionIndex(0))}, {4}, 4));
-	}
-	relation_stats[0].columns[0].current_domain = DistinctCount(2, DistinctCountSource::CARDINALITY);
-	relation_stats[1].columns[0].current_domain = DistinctCount(3, DistinctCountSource::CARDINALITY);
-	relation_stats[2].columns[0].current_domain = DistinctCount(3, DistinctCountSource::CARDINALITY);
-
-	auto propagate = [&](bool left_associative) {
-		reference_map_t<JoinRelationSet, unique_ptr<DPJoinNode>> plans;
-		for (auto relation_set : {&a_set, &b_set, &c_set}) {
-			plans[*relation_set] = make_uniq<DPJoinNode>(*relation_set);
-			plans[*relation_set]->cardinality = 4;
-		}
-		if (left_associative) {
-			vector<reference<JoinPredicate>> ab_predicates {ab_predicate};
-			plans[ab_set] = make_uniq<DPJoinNode>(ab_set, nullptr, std::move(ab_predicates), false, a_set, b_set, 0);
-			plans[ab_set]->cardinality = 4;
-			vector<reference<JoinPredicate>> bc_predicates {bc_predicate};
-			plans[root_set] =
-			    make_uniq<DPJoinNode>(root_set, nullptr, std::move(bc_predicates), false, ab_set, c_set, 0);
-		} else {
-			vector<reference<JoinPredicate>> bc_predicates {bc_predicate};
-			plans[bc_set] = make_uniq<DPJoinNode>(bc_set, nullptr, std::move(bc_predicates), false, b_set, c_set, 0);
-			plans[bc_set]->cardinality = 4;
-			vector<reference<JoinPredicate>> ab_predicates {ab_predicate};
-			plans[root_set] =
-			    make_uniq<DPJoinNode>(root_set, nullptr, std::move(ab_predicates), false, a_set, bc_set, 0);
-		}
-		plans[root_set]->cardinality = 4;
-		return JoinPlanDomainPropagator::Propagate(plans, predicate_model, relation_stats, root_set);
-	};
-	auto left_associative = propagate(true);
-	auto right_associative = propagate(false);
-	REQUIRE(left_associative);
-	REQUIRE(right_associative);
-	for (idx_t relation_idx = 0; relation_idx < 3; relation_idx++) {
-		REQUIRE(left_associative->at(relation_idx).columns[0].current_domain.distinct_count == 1);
-		REQUIRE(right_associative->at(relation_idx).columns[0].current_domain.distinct_count == 1);
-	}
 }
 
 TEST_CASE("Relation statistics follow projection output bindings", "[optimizer][relation_statistics]") {

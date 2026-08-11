@@ -1,11 +1,7 @@
 #include "duckdb/optimizer/relation_statistics/relation_statistics_helper.hpp"
 
-#include "duckdb/common/operator/add.hpp"
-#include "duckdb/common/operator/subtract.hpp"
-#include "duckdb/common/types/hugeint.hpp"
 #include "duckdb/common/types/value_map.hpp"
 #include "duckdb/common/unordered_set.hpp"
-#include "duckdb/planner/expression/bound_between_expression.hpp"
 #include "duckdb/planner/expression/bound_comparison_expression.hpp"
 #include "duckdb/planner/expression/bound_constant_expression.hpp"
 #include "duckdb/planner/expression/list.hpp"
@@ -49,11 +45,6 @@ optional<DistinctCount> RelationStatisticsHelper::SelectTotalDomain(const vector
 	return fallback;
 }
 
-struct DiscreteInterval {
-	optional<int64_t> lower;
-	optional<int64_t> upper;
-};
-
 static bool MatchesTargetColumn(const Expression &expression, optional<ColumnBinding> target_binding) {
 	if (expression.GetExpressionClass() == ExpressionClass::BOUND_COLUMN_REF) {
 		return !target_binding || expression.Cast<BoundColumnRefExpression>().Binding() == *target_binding;
@@ -61,344 +52,9 @@ static bool MatchesTargetColumn(const Expression &expression, optional<ColumnBin
 	return !target_binding && expression.GetExpressionClass() == ExpressionClass::BOUND_REF;
 }
 
-static bool TryGetDiscreteValue(const Expression &expression, int64_t &result) {
-	if (expression.GetExpressionClass() != ExpressionClass::BOUND_CONSTANT) {
-		return false;
-	}
-	auto &value = expression.Cast<BoundConstantExpression>().GetValue();
-	if (value.IsNull()) {
-		return false;
-	}
-	switch (value.type().id()) {
-	case LogicalTypeId::BOOLEAN:
-		result = value.GetValueUnsafe<bool>() ? 1 : 0;
-		return true;
-	case LogicalTypeId::TINYINT:
-		result = value.GetValueUnsafe<int8_t>();
-		return true;
-	case LogicalTypeId::SMALLINT:
-		result = value.GetValueUnsafe<int16_t>();
-		return true;
-	case LogicalTypeId::INTEGER:
-		result = value.GetValueUnsafe<int32_t>();
-		return true;
-	case LogicalTypeId::BIGINT:
-		result = value.GetValueUnsafe<int64_t>();
-		return true;
-	case LogicalTypeId::UTINYINT:
-		result = value.GetValueUnsafe<uint8_t>();
-		return true;
-	case LogicalTypeId::USMALLINT:
-		result = value.GetValueUnsafe<uint16_t>();
-		return true;
-	case LogicalTypeId::UINTEGER:
-		result = value.GetValueUnsafe<uint32_t>();
-		return true;
-	case LogicalTypeId::UBIGINT: {
-		auto input = value.GetValueUnsafe<uint64_t>();
-		if (input > static_cast<uint64_t>(NumericLimits<int64_t>::Maximum())) {
-			return false;
-		}
-		result = static_cast<int64_t>(input);
-		return true;
-	}
-	case LogicalTypeId::HUGEINT:
-		return Hugeint::TryCast(value.GetValueUnsafe<hugeint_t>(), result);
-	case LogicalTypeId::DATE:
-		result = value.GetValueUnsafe<date_t>().days;
-		return true;
-	default:
-		return false;
-	}
-}
-
-static ExpressionType FlipComparison(ExpressionType type) {
-	switch (type) {
-	case ExpressionType::COMPARE_LESSTHAN:
-		return ExpressionType::COMPARE_GREATERTHAN;
-	case ExpressionType::COMPARE_LESSTHANOREQUALTO:
-		return ExpressionType::COMPARE_GREATERTHANOREQUALTO;
-	case ExpressionType::COMPARE_GREATERTHAN:
-		return ExpressionType::COMPARE_LESSTHAN;
-	case ExpressionType::COMPARE_GREATERTHANOREQUALTO:
-		return ExpressionType::COMPARE_LESSTHANOREQUALTO;
-	default:
-		return type;
-	}
-}
-
-static bool TryGetComparisonInterval(const Expression &expression, optional<ColumnBinding> target_binding,
-                                     DiscreteInterval &result) {
-	if (!BoundComparisonExpression::IsComparison(expression)) {
-		return false;
-	}
-	auto &comparison = expression.Cast<BoundFunctionExpression>();
-	auto &left = BoundComparisonExpression::Left(comparison);
-	auto &right = BoundComparisonExpression::Right(comparison);
-	ExpressionType comparison_type = comparison.GetExpressionType();
-	optional_ptr<const Expression> constant;
-	if (MatchesTargetColumn(left, target_binding)) {
-		constant = right;
-	} else if (MatchesTargetColumn(right, target_binding)) {
-		constant = left;
-		comparison_type = FlipComparison(comparison_type);
-	} else {
-		return false;
-	}
-	int64_t value;
-	if (!TryGetDiscreteValue(*constant, value)) {
-		return false;
-	}
-	switch (comparison_type) {
-	case ExpressionType::COMPARE_EQUAL:
-		result.lower = value;
-		result.upper = value;
-		return true;
-	case ExpressionType::COMPARE_GREATERTHAN:
-		if (!TryAddOperator::Operation(value, int64_t(1), value)) {
-			return false;
-		}
-		result.lower = value;
-		return true;
-	case ExpressionType::COMPARE_GREATERTHANOREQUALTO:
-		result.lower = value;
-		return true;
-	case ExpressionType::COMPARE_LESSTHAN:
-		if (!TrySubtractOperator::Operation(value, int64_t(1), value)) {
-			return false;
-		}
-		result.upper = value;
-		return true;
-	case ExpressionType::COMPARE_LESSTHANOREQUALTO:
-		result.upper = value;
-		return true;
-	default:
-		return false;
-	}
-}
-
-static void NormalizeIntervals(vector<DiscreteInterval> &intervals) {
-	std::sort(intervals.begin(), intervals.end(), [](const DiscreteInterval &left, const DiscreteInterval &right) {
-		if (!left.lower || !right.lower) {
-			return !left.lower && right.lower;
-		}
-		if (*left.lower != *right.lower) {
-			return *left.lower < *right.lower;
-		}
-		if (!left.upper || !right.upper) {
-			return left.upper && !right.upper;
-		}
-		return *left.upper < *right.upper;
-	});
-	vector<DiscreteInterval> merged;
-	for (auto &interval : intervals) {
-		if (merged.empty()) {
-			merged.push_back(interval);
-			continue;
-		}
-		auto &last = merged.back();
-		auto overlaps = !last.upper || !interval.lower || *interval.lower <= *last.upper;
-		auto adjacent = last.upper && interval.lower && *last.upper < NumericLimits<int64_t>::Maximum() &&
-		                *interval.lower == *last.upper + 1;
-		if (!overlaps && !adjacent) {
-			merged.push_back(interval);
-			continue;
-		}
-		if (!last.upper || !interval.upper) {
-			last.upper.reset();
-		} else {
-			last.upper = MaxValue(*last.upper, *interval.upper);
-		}
-	}
-	intervals = std::move(merged);
-}
-
-static void IntersectIntervals(vector<DiscreteInterval> left, vector<DiscreteInterval> right,
-                               vector<DiscreteInterval> &result) {
-	NormalizeIntervals(left);
-	NormalizeIntervals(right);
-	idx_t left_idx = 0;
-	idx_t right_idx = 0;
-	while (left_idx < left.size() && right_idx < right.size()) {
-		auto &left_interval = left[left_idx];
-		auto &right_interval = right[right_idx];
-		DiscreteInterval intersection;
-		if (left_interval.lower && right_interval.lower) {
-			intersection.lower = MaxValue(*left_interval.lower, *right_interval.lower);
-		} else {
-			intersection.lower = left_interval.lower ? left_interval.lower : right_interval.lower;
-		}
-		if (left_interval.upper && right_interval.upper) {
-			intersection.upper = MinValue(*left_interval.upper, *right_interval.upper);
-		} else {
-			intersection.upper = left_interval.upper ? left_interval.upper : right_interval.upper;
-		}
-		if (!intersection.lower || !intersection.upper || *intersection.lower <= *intersection.upper) {
-			result.push_back(intersection);
-		}
-		if (!left_interval.upper) {
-			right_idx++;
-		} else if (!right_interval.upper) {
-			left_idx++;
-		} else if (*left_interval.upper < *right_interval.upper) {
-			left_idx++;
-		} else {
-			right_idx++;
-		}
-	}
-}
-
-static bool TryGetDiscreteIntervals(const Expression &expression, optional<ColumnBinding> target_binding,
-                                    vector<DiscreteInterval> &result) {
-	DiscreteInterval comparison_interval;
-	if (TryGetComparisonInterval(expression, target_binding, comparison_interval)) {
-		result.push_back(comparison_interval);
-		return true;
-	}
-	if (expression.GetExpressionType() == ExpressionType::COMPARE_BETWEEN &&
-	    expression.GetExpressionClass() == ExpressionClass::BOUND_FUNCTION) {
-		auto &between = expression.Cast<BoundFunctionExpression>();
-		if (!MatchesTargetColumn(BoundBetweenExpression::Input(between), target_binding)) {
-			return false;
-		}
-		int64_t lower;
-		int64_t upper;
-		if (!TryGetDiscreteValue(BoundBetweenExpression::LowerBound(between), lower) ||
-		    !TryGetDiscreteValue(BoundBetweenExpression::UpperBound(between), upper)) {
-			return false;
-		}
-		if (!BoundBetweenExpression::LowerInclusive(between) && !TryAddOperator::Operation(lower, int64_t(1), lower)) {
-			return false;
-		}
-		if (!BoundBetweenExpression::UpperInclusive(between) &&
-		    !TrySubtractOperator::Operation(upper, int64_t(1), upper)) {
-			return false;
-		}
-		if (lower <= upper) {
-			result.push_back({lower, upper});
-		}
-		return true;
-	}
-	if (expression.GetExpressionType() == ExpressionType::COMPARE_IN &&
-	    expression.GetExpressionClass() == ExpressionClass::BOUND_OPERATOR) {
-		auto &children = expression.Cast<BoundOperatorExpression>().GetChildren();
-		if (children.empty() || !MatchesTargetColumn(*children[0], target_binding)) {
-			return false;
-		}
-		for (idx_t child_idx = 1; child_idx < children.size(); child_idx++) {
-			int64_t value;
-			if (!TryGetDiscreteValue(*children[child_idx], value)) {
-				return false;
-			}
-			result.push_back({value, value});
-		}
-		return true;
-	}
-	if (expression.GetExpressionClass() != ExpressionClass::BOUND_CONJUNCTION) {
-		return false;
-	}
-	auto &conjunction = expression.Cast<BoundConjunctionExpression>();
-	if (conjunction.GetChildren().empty()) {
-		return false;
-	}
-	if (expression.GetExpressionType() == ExpressionType::CONJUNCTION_OR) {
-		for (auto &child : conjunction.GetChildren()) {
-			vector<DiscreteInterval> child_intervals;
-			if (!TryGetDiscreteIntervals(*child, target_binding, child_intervals)) {
-				return false;
-			}
-			result.insert(result.end(), child_intervals.begin(), child_intervals.end());
-		}
-		NormalizeIntervals(result);
-		return true;
-	}
-	if (expression.GetExpressionType() != ExpressionType::CONJUNCTION_AND) {
-		return false;
-	}
-	result.push_back({});
-	bool found_supported = false;
-	for (auto &child : conjunction.GetChildren()) {
-		vector<DiscreteInterval> child_intervals;
-		if (!TryGetDiscreteIntervals(*child, target_binding, child_intervals)) {
-			continue;
-		}
-		found_supported = true;
-		vector<DiscreteInterval> intersection;
-		IntersectIntervals(result, child_intervals, intersection);
-		result = std::move(intersection);
-	}
-	return found_supported;
-}
-
-static optional_idx CountDiscreteIntervals(vector<DiscreteInterval> intervals, idx_t maximum_domain,
-                                           optional<int64_t> minimum_value, optional<int64_t> maximum_value) {
-	if (intervals.empty()) {
-		return optional_idx(0);
-	}
-	for (auto &interval : intervals) {
-		if (!interval.lower) {
-			interval.lower = minimum_value;
-		}
-		if (!interval.upper) {
-			interval.upper = maximum_value;
-		}
-		if (!interval.lower || !interval.upper) {
-			return {};
-		}
-		interval.lower = MaxValue(*interval.lower, minimum_value ? *minimum_value : *interval.lower);
-		interval.upper = MinValue(*interval.upper, maximum_value ? *maximum_value : *interval.upper);
-	}
-	intervals.erase(std::remove_if(intervals.begin(), intervals.end(),
-	                               [](const DiscreteInterval &interval) { return *interval.lower > *interval.upper; }),
-	                intervals.end());
-	if (intervals.empty()) {
-		return optional_idx(0);
-	}
-	std::sort(intervals.begin(), intervals.end(), [](const DiscreteInterval &left, const DiscreteInterval &right) {
-		return *left.lower < *right.lower || (*left.lower == *right.lower && *left.upper < *right.upper);
-	});
-	vector<DiscreteInterval> merged;
-	for (auto &interval : intervals) {
-		if (merged.empty()) {
-			merged.push_back(interval);
-			continue;
-		}
-		auto &last = merged.back();
-		auto adjacent = *last.upper < NumericLimits<int64_t>::Maximum() && *interval.lower == *last.upper + 1;
-		if (*interval.lower <= *last.upper || adjacent) {
-			last.upper = MaxValue(*last.upper, *interval.upper);
-		} else {
-			merged.push_back(interval);
-		}
-	}
-	idx_t count = 0;
-	for (auto &interval : merged) {
-		hugeint_t span;
-		if (!TrySubtractOperator::Operation(hugeint_t(*interval.upper), hugeint_t(*interval.lower), span) ||
-		    !TryAddOperator::Operation(span, hugeint_t(1), span)) {
-			return {};
-		}
-		uint64_t interval_count;
-		if (!Hugeint::TryCast(span, interval_count) || interval_count >= maximum_domain - count) {
-			return optional_idx(maximum_domain);
-		}
-		count += static_cast<idx_t>(interval_count);
-	}
-	return optional_idx(count);
-}
-
 optional_idx RelationStatisticsHelper::EstimateDirectFilterDomain(const Expression &expression,
                                                                   optional<ColumnBinding> target_binding,
-                                                                  idx_t maximum_domain, optional<int64_t> minimum_value,
-                                                                  optional<int64_t> maximum_value) {
-	vector<DiscreteInterval> intervals;
-	if (TryGetDiscreteIntervals(expression, target_binding, intervals)) {
-		auto count = CountDiscreteIntervals(std::move(intervals), maximum_domain, minimum_value, maximum_value);
-		if (count.IsValid()) {
-			return count;
-		}
-	}
-
+                                                                  idx_t maximum_domain) {
 	if (BoundComparisonExpression::IsComparison(expression)) {
 		auto &comparison = expression.Cast<BoundFunctionExpression>();
 		if (comparison.GetExpressionType() != ExpressionType::COMPARE_EQUAL) {
@@ -445,8 +101,7 @@ optional_idx RelationStatisticsHelper::EstimateDirectFilterDomain(const Expressi
 	if (expression.GetExpressionType() == ExpressionType::CONJUNCTION_AND) {
 		optional_idx result;
 		for (auto &child : conjunction.GetChildren()) {
-			auto child_bound =
-			    EstimateDirectFilterDomain(*child, target_binding, maximum_domain, minimum_value, maximum_value);
+			auto child_bound = EstimateDirectFilterDomain(*child, target_binding, maximum_domain);
 			if (!child_bound.IsValid()) {
 				continue;
 			}
@@ -459,8 +114,7 @@ optional_idx RelationStatisticsHelper::EstimateDirectFilterDomain(const Expressi
 	}
 	idx_t result = 0;
 	for (auto &child : conjunction.GetChildren()) {
-		auto child_bound =
-		    EstimateDirectFilterDomain(*child, target_binding, maximum_domain, minimum_value, maximum_value);
+		auto child_bound = EstimateDirectFilterDomain(*child, target_binding, maximum_domain);
 		if (!child_bound.IsValid()) {
 			return {};
 		}
