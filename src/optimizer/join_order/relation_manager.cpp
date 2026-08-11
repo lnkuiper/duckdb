@@ -332,11 +332,11 @@ static optional<RelationStats> CombineNonReorderableStats(LogicalOperator &op, c
 			return {};
 		}
 		result.columns.emplace_back(bindings[column_idx], source->total_domain, source->current_domain, source->name,
-		                            source->current_domain_info);
+		                            source->current_domain_evidence);
 		result.columns.back().current_domain.distinct_count =
 		    MinValue(result.columns.back().current_domain.distinct_count, result.cardinality);
 		if (ordinal_set_output || op.type == LogicalOperatorType::LOGICAL_ASOF_JOIN) {
-			result.columns.back().current_domain_info.InvalidateStructuralEvidence();
+			result.columns.back().current_domain_evidence.Invalidate();
 		}
 	}
 	result.Verify(bindings);
@@ -582,7 +582,7 @@ bool RelationManager::ExtractJoinRelations(JoinOrderOptimizer &optimizer, Logica
 			for (auto &column : output_stats->columns) {
 				column.total_domain = DistinctCount(cte_cardinality, DistinctCountSource::CARDINALITY);
 				column.current_domain = column.total_domain;
-				column.current_domain_info.InvalidateStructuralEvidence();
+				column.current_domain_evidence.Invalidate();
 			}
 		}
 		if (!output_stats || !AddRelation(input_op, parent, *output_stats)) {

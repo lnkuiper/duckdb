@@ -9,7 +9,7 @@ namespace duckdb {
 
 static void InvalidateCurrentDomainEvidence(RelationStats &stats) {
 	for (auto &column : stats.columns) {
-		column.current_domain_info.InvalidateStructuralEvidence();
+		column.current_domain_evidence.Invalidate();
 	}
 }
 
@@ -31,7 +31,7 @@ ProjectChildStats(LogicalOperator &op, const vector<reference<const RelationStat
 			return {};
 		}
 		result.columns.emplace_back(binding, source->total_domain, source->current_domain, source->name,
-		                            source->current_domain_info);
+		                            source->current_domain_evidence);
 	}
 	result.Verify(op.GetColumnBindings());
 	return result;
@@ -91,7 +91,7 @@ SemiAntiJoinCardinalityEstimate RelationStatisticsHelper::EstimateSemiAntiJoinCa
 		if (!seen_domains.insert(evidence_key).second) {
 			continue;
 		}
-		auto rhs_current_domain = rhs_column->GetSemiAntiCurrentDomain();
+		auto rhs_current_domain = rhs_column->GetSemiAntiJoinDomainSize();
 		if (!rhs_current_domain.IsValid()) {
 			has_residual = true;
 			continue;
@@ -121,7 +121,7 @@ static optional<RelationStats> ExtractGetWithChildStats(LogicalGet &get, ClientC
 			return {};
 		}
 		result.columns.emplace_back(binding, child_column->total_domain, child_column->current_domain,
-		                            child_column->name, child_column->current_domain_info);
+		                            child_column->name, child_column->current_domain_evidence);
 	}
 	result.Verify(get.GetColumnBindings());
 	return result;
@@ -137,7 +137,7 @@ static optional<RelationStats> ExtractUnnestStats(LogicalOperator &op, const Rel
 		auto child_column = child_stats.GetColumnStats(binding);
 		if (child_column) {
 			result.columns.emplace_back(binding, child_column->total_domain, child_column->current_domain,
-			                            child_column->name, child_column->current_domain_info);
+			                            child_column->name, child_column->current_domain_evidence);
 		} else if (binding.table_index == unnest.unnest_index) {
 			result.columns.emplace_back(binding, DistinctCount(result.cardinality, DistinctCountSource::CARDINALITY),
 			                            Identifier("unnest"));
@@ -188,7 +188,7 @@ static optional<RelationStats> ExtractComparisonJoinStats(LogicalComparisonJoin 
 		auto column = child_stats[0].get().GetColumnStats(binding);
 		if (column) {
 			mark_result.columns.emplace_back(binding, column->total_domain, column->current_domain, column->name,
-			                                 column->current_domain_info);
+			                                 column->current_domain_evidence);
 		} else if (binding.table_index == join.mark_index) {
 			mark_result.columns.emplace_back(
 			    binding, DistinctCount(MinValue<idx_t>(cardinality, 3), DistinctCountSource::CARDINALITY),
@@ -294,8 +294,7 @@ static optional<RelationStats> ExtractSetOperationStats(LogicalSetOperation &set
 		}
 		current_domain.distinct_count = MinValue(current_domain.distinct_count, result.cardinality);
 		total_domain.distinct_count = MaxValue(total_domain.distinct_count, current_domain.distinct_count);
-		result.columns.emplace_back(bindings[column_idx], total_domain, current_domain, first_column.name,
-		                            CurrentDomainInfo(CurrentDomainProvenance::MODELED));
+		result.columns.emplace_back(bindings[column_idx], total_domain, current_domain, first_column.name);
 	}
 	result.Verify(bindings);
 	return result;

@@ -1551,25 +1551,6 @@ CryptoHashFunction EnumUtil::FromString<CryptoHashFunction>(const char *value) {
 	return static_cast<CryptoHashFunction>(StringUtil::StringToEnum(GetCryptoHashFunctionValues(), 3, "CryptoHashFunction", value));
 }
 
-const StringUtil::EnumStringLiteral *GetCurrentDomainProvenanceValues() {
-	static constexpr StringUtil::EnumStringLiteral values[] {
-		{ static_cast<uint32_t>(CurrentDomainProvenance::UNKNOWN), "UNKNOWN" },
-		{ static_cast<uint32_t>(CurrentDomainProvenance::BASE), "BASE" },
-		{ static_cast<uint32_t>(CurrentDomainProvenance::MODELED), "MODELED" }
-	};
-	return values;
-}
-
-template<>
-const char* EnumUtil::ToChars<CurrentDomainProvenance>(CurrentDomainProvenance value) {
-	return StringUtil::EnumToString(GetCurrentDomainProvenanceValues(), 3, "CurrentDomainProvenance", static_cast<uint32_t>(value));
-}
-
-template<>
-CurrentDomainProvenance EnumUtil::FromString<CurrentDomainProvenance>(const char *value) {
-	return static_cast<CurrentDomainProvenance>(StringUtil::StringToEnum(GetCurrentDomainProvenanceValues(), 3, "CurrentDomainProvenance", value));
-}
-
 const StringUtil::EnumStringLiteral *GetDataFileTypeValues() {
 	static constexpr StringUtil::EnumStringLiteral values[] {
 		{ static_cast<uint32_t>(DataFileType::FILE_DOES_NOT_EXIST), "FILE_DOES_NOT_EXIST" },

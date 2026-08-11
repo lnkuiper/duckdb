@@ -17,8 +17,8 @@
 namespace duckdb {
 
 GenerateJoinRelation::GenerateJoinRelation(optional_ptr<JoinRelationSet> set, unique_ptr<LogicalOperator> op_p,
-                                           idx_t cardinality_p, bool exactly_empty_p)
-    : set(set), op(std::move(op_p)), cardinality(cardinality_p), exactly_empty(exactly_empty_p) {
+                                           idx_t cardinality_p)
+    : set(set), op(std::move(op_p)), cardinality(cardinality_p) {
 }
 
 QueryGraphManager::QueryGraphManager(ClientContext &context) : context(context), relation_manager(context) {
@@ -617,10 +617,6 @@ EstimateSelectedSemiAntiJoin(const JoinOrderOperator &join_operator, const Gener
 		return {};
 	}
 	auto join_type = GetJoinType(join_operator.type);
-	if (right.exactly_empty) {
-		return RelationStatisticsHelper::EstimateSemiAntiJoinFallback(static_cast<double>(left.cardinality), 0,
-		                                                              join_type);
-	}
 	if (right.set->count != 1) {
 		return {};
 	}
@@ -659,7 +655,7 @@ EstimateSelectedSemiAntiJoin(const JoinOrderOperator &join_operator, const Gener
 		if (!preserved_column || !rhs_column) {
 			return {};
 		}
-		auto rhs_current_domain = rhs_column->GetSemiAntiCurrentDomain();
+		auto rhs_current_domain = rhs_column->GetSemiAntiJoinDomainSize();
 		auto total_domain =
 		    RelationStatisticsHelper::SelectTotalDomain({preserved_column->total_domain, rhs_column->total_domain});
 		if (!rhs_current_domain.IsValid() || !total_domain || total_domain->distinct_count == 0) {
@@ -720,7 +716,6 @@ GenerateJoinRelation QueryGraphManager::GenerateJoins(vector<unique_ptr<LogicalO
 	}
 	auto &node = dp_entry->second;
 	auto result_cardinality = node->cardinality;
-	bool exactly_empty = false;
 	if (!dp_entry->second->is_leaf) {
 		// generate the left and right children
 		auto left = GenerateJoins(extracted_relations, node->left_set, relation_stats);
@@ -752,7 +747,7 @@ GenerateJoinRelation QueryGraphManager::GenerateJoins(vector<unique_ptr<LogicalO
 			}
 			auto semi_anti_estimate =
 			    EstimateSelectedSemiAntiJoin(*descriptor, left, right, predicate_model, relation_stats);
-			if (semi_anti_estimate && !semi_anti_estimate->IsFallback()) {
+			if (semi_anti_estimate && semi_anti_estimate->source == SemiAntiJoinCardinalitySource::SUPPORTED_DOMAIN) {
 				result_cardinality = LossyNumericCast<idx_t>(semi_anti_estimate->cardinality);
 			}
 
@@ -765,21 +760,8 @@ GenerateJoinRelation QueryGraphManager::GenerateJoins(vector<unique_ptr<LogicalO
 				filter->filter.reset();
 			}
 			if (descriptor->type == JoinOrderOperatorType::CROSS_PRODUCT) {
-				exactly_empty = left.exactly_empty || right.exactly_empty;
 				result_operator = LogicalCrossProduct::Create(std::move(left.op), std::move(right.op));
 			} else {
-				switch (descriptor->type) {
-				case JoinOrderOperatorType::INNER:
-				case JoinOrderOperatorType::SEMI:
-					exactly_empty = left.exactly_empty || right.exactly_empty;
-					break;
-				case JoinOrderOperatorType::LEFT:
-				case JoinOrderOperatorType::ANTI:
-					exactly_empty = left.exactly_empty;
-					break;
-				default:
-					throw InternalException("Unsupported reconstructed join operator type");
-				}
 				auto join = make_uniq<LogicalComparisonJoin>(GetJoinType(descriptor->type));
 				join->children.push_back(std::move(left.op));
 				join->children.push_back(std::move(right.op));
@@ -794,11 +776,9 @@ GenerateJoinRelation QueryGraphManager::GenerateJoins(vector<unique_ptr<LogicalO
 			}
 		} else if (node->predicates.empty()) {
 			// no filters, create a cross product
-			exactly_empty = left.exactly_empty || right.exactly_empty;
 			result_operator = LogicalCrossProduct::Create(std::move(left.op), std::move(right.op));
 		} else {
 			// we have filters, create a join node
-			exactly_empty = left.exactly_empty || right.exactly_empty;
 			auto join = make_uniq<LogicalComparisonJoin>(JoinType::INNER);
 			// Here we optimize build side probe side. Our build side is the right side
 			// So the right plans should have lower cardinalities.
@@ -853,9 +833,6 @@ GenerateJoinRelation QueryGraphManager::GenerateJoins(vector<unique_ptr<LogicalO
 		D_ASSERT(extracted_relations[node->set.relations[0].index]);
 		result_relation = &node->set;
 		result_operator = std::move(extracted_relations[result_relation->relations[0].index]);
-		auto relation_index = result_relation->relations[0].index;
-		exactly_empty = node->cardinality == 0 ||
-		                (relation_index < relation_stats.size() && relation_stats[relation_index].cardinality == 0);
 	}
 	// TODO: this is where estimated properties start coming into play.
 	//  when creating the result operator, we should ask the cost model and cardinality estimator what
@@ -988,7 +965,7 @@ GenerateJoinRelation QueryGraphManager::GenerateJoins(vector<unique_ptr<LogicalO
 		}
 	}
 	result_operator->SetEstimatedCardinality(result_cardinality);
-	auto result = GenerateJoinRelation(result_relation, std::move(result_operator), result_cardinality, exactly_empty);
+	auto result = GenerateJoinRelation(result_relation, std::move(result_operator), result_cardinality);
 	return result;
 }
 

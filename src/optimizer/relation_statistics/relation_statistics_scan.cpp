@@ -168,9 +168,7 @@ RelationStats RelationStatisticsHelper::ExtractGetStats(LogicalGet &get, ClientC
 			total_domain = DistinctCount(base_table_cardinality, DistinctCountSource::CARDINALITY);
 		}
 		auto current_domain = EstimateCurrentDomain(total_domain, base_table_cardinality, cardinality_after_filters);
-		CurrentDomainInfo current_domain_info(cardinality_after_filters < base_table_cardinality
-		                                          ? CurrentDomainProvenance::MODELED
-		                                          : CurrentDomainProvenance::BASE);
+		CurrentDomainEvidence current_domain_evidence;
 		for (auto &entry : get.table_filters) {
 			if (ExpressionFilter::IsOptionalFilter(entry.Filter()) ||
 			    get.GetColumnIndex(entry.GetIndex()) != column_id) {
@@ -182,12 +180,12 @@ RelationStats RelationStatisticsHelper::ExtractGetStats(LogicalGet &get, ClientC
 			if (direct_bound.IsValid()) {
 				current_domain = DistinctCount(MinValue(current_domain.distinct_count, direct_bound.GetIndex()),
 				                               DistinctCountSource::CARDINALITY);
-				current_domain_info.UpdateDirectBound(direct_bound.GetIndex());
+				current_domain_evidence.TightenFilterDomainBound(direct_bound.GetIndex());
 			}
 		}
 		result.columns.emplace_back(binding, total_domain, current_domain,
 		                            Identifier(get.GetName() + "." + get.GetColumnName(column_id)),
-		                            current_domain_info);
+		                            current_domain_evidence);
 	}
 	result.stats_initialized = true;
 	D_ASSERT(base_table_cardinality >= cardinality_after_filters);

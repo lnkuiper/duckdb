@@ -38,8 +38,8 @@ static RelationStats CreateStats(const vector<ColumnBinding> &bindings, const ve
 	result.stats_initialized = true;
 	for (idx_t column_idx = 0; column_idx < bindings.size(); column_idx++) {
 		auto domain = DistinctCount(distinct_counts[column_idx], DistinctCountSource::EXACT);
-		result.columns.emplace_back(bindings[column_idx], domain, domain, Identifier("column_" + to_string(column_idx)),
-		                            CurrentDomainInfo(CurrentDomainProvenance::BASE));
+		result.columns.emplace_back(bindings[column_idx], domain, domain,
+		                            Identifier("column_" + to_string(column_idx)));
 	}
 	result.Verify(bindings);
 	return result;
@@ -149,8 +149,8 @@ TEST_CASE("Single-column groups use the current domain directly", "[optimizer][r
 	REQUIRE(stats->cardinality == 100);
 	REQUIRE(stats->columns[0].total_domain.distinct_count == 1000);
 	REQUIRE(stats->columns[0].current_domain.distinct_count == 100);
-	REQUIRE(stats->columns[0].current_domain_info.is_unique);
-	REQUIRE(stats->columns[0].current_domain_info.IsEligibleForSemiAnti());
+	REQUIRE(stats->columns[0].current_domain_evidence.is_unique);
+	REQUIRE(stats->columns[0].GetSemiAntiJoinDomainSize().IsValid());
 }
 
 TEST_CASE("Current-domain eligibility distinguishes direct and cross-column filters",
@@ -168,14 +168,11 @@ TEST_CASE("Current-domain eligibility distinguishes direct and cross-column filt
 
 	auto stats = RelationStatisticsHelper::ExtractFilterStats(filter, child_stats);
 	REQUIRE(stats);
-	REQUIRE(stats->columns[0].current_domain_info.provenance == CurrentDomainProvenance::MODELED);
-	REQUIRE(stats->columns[0].current_domain_info.direct_bound.IsValid());
-	REQUIRE(stats->columns[0].current_domain_info.direct_bound.GetIndex() == 1);
-	REQUIRE(stats->columns[0].GetSemiAntiCurrentDomain().GetIndex() == 1);
-	REQUIRE(stats->columns[0].current_domain_info.IsEligibleForSemiAnti());
-	REQUIRE(stats->columns[1].current_domain_info.provenance == CurrentDomainProvenance::MODELED);
-	REQUIRE(!stats->columns[1].current_domain_info.direct_bound.IsValid());
-	REQUIRE(!stats->columns[1].current_domain_info.IsEligibleForSemiAnti());
+	REQUIRE(stats->columns[0].current_domain_evidence.filter_domain_bound.IsValid());
+	REQUIRE(stats->columns[0].current_domain_evidence.filter_domain_bound.GetIndex() == 1);
+	REQUIRE(stats->columns[0].GetSemiAntiJoinDomainSize().GetIndex() == 1);
+	REQUIRE(!stats->columns[1].current_domain_evidence.filter_domain_bound.IsValid());
+	REQUIRE(!stats->columns[1].GetSemiAntiJoinDomainSize().IsValid());
 
 	auto range = BoundBetweenExpression::Create(make_uniq<BoundColumnRefExpression>(LogicalType::INTEGER, bindings[0]),
 	                                            make_uniq<BoundConstantExpression>(Value::INTEGER(1)),
@@ -190,8 +187,8 @@ TEST_CASE("Current-domain eligibility distinguishes direct and cross-column filt
 	auto range_stats = RelationStatisticsHelper::ExtractFilterStats(range_filter, child_stats);
 	REQUIRE(range_stats);
 	REQUIRE(range_stats->columns[0].current_domain.distinct_count == 200);
-	REQUIRE_FALSE(range_stats->columns[0].current_domain_info.direct_bound.IsValid());
-	REQUIRE_FALSE(range_stats->columns[0].GetSemiAntiCurrentDomain().IsValid());
+	REQUIRE_FALSE(range_stats->columns[0].current_domain_evidence.filter_domain_bound.IsValid());
+	REQUIRE_FALSE(range_stats->columns[0].GetSemiAntiJoinDomainSize().IsValid());
 }
 
 TEST_CASE("Single-key aggregate uniqueness survives HAVING row estimation", "[optimizer][relation_statistics]") {
@@ -207,15 +204,14 @@ TEST_CASE("Single-key aggregate uniqueness survives HAVING row estimation", "[op
 	auto aggregate_stats = RelationStatisticsHelper::ExtractAggregationStats(*aggregate, child_stats);
 	REQUIRE(aggregate_stats);
 	auto aggregate_bindings = aggregate->GetColumnBindings();
-	REQUIRE(aggregate_stats->columns[0].current_domain_info.is_unique);
+	REQUIRE(aggregate_stats->columns[0].current_domain_evidence.is_unique);
 
 	LogicalFilter having(CreateComparison(aggregate_bindings[1], ExpressionType::COMPARE_GREATERTHAN, 0));
 	having.children.push_back(std::move(aggregate));
 	auto having_stats = RelationStatisticsHelper::ExtractFilterStats(having, *aggregate_stats);
 	REQUIRE(having_stats);
-	REQUIRE(having_stats->columns[0].current_domain_info.provenance == CurrentDomainProvenance::MODELED);
-	REQUIRE(having_stats->columns[0].current_domain_info.is_unique);
-	REQUIRE(having_stats->columns[0].current_domain_info.IsEligibleForSemiAnti());
+	REQUIRE(having_stats->columns[0].current_domain_evidence.is_unique);
+	REQUIRE(having_stats->columns[0].GetSemiAntiJoinDomainSize().IsValid());
 }
 
 TEST_CASE("Limit statistics include offsets and percentages", "[optimizer][relation_statistics]") {
@@ -296,7 +292,7 @@ TEST_CASE("Logical semi and anti estimates require supported equality evidence",
 	auto left_stats = CreateStats({left_binding}, {1000}, 1000);
 	auto right_stats = CreateStats({right_binding}, {1000}, 100);
 	right_stats.columns[0].current_domain = DistinctCount(100, DistinctCountSource::EXACT);
-	right_stats.columns[0].current_domain_info.is_unique = true;
+	right_stats.columns[0].current_domain_evidence.is_unique = true;
 
 	LogicalComparisonJoin null_safe_join(JoinType::SEMI);
 	null_safe_join.conditions.emplace_back(make_uniq<BoundColumnRefExpression>(LogicalType::INTEGER, left_binding),
@@ -425,8 +421,8 @@ TEST_CASE("Relation statistics follow projection output bindings", "[optimizer][
 	auto child_table = TableIndex(10);
 	auto child_bindings = LogicalOperator::GenerateColumnBindings(child_table, 2);
 	auto child_stats = CreateStats(child_bindings, {7, 13}, 20);
-	child_stats.columns[1].current_domain_info.UpdateDirectBound(13);
-	child_stats.columns[1].current_domain_info.is_unique = true;
+	child_stats.columns[1].current_domain_evidence.TightenFilterDomainBound(13);
+	child_stats.columns[1].current_domain_evidence.is_unique = true;
 
 	vector<unique_ptr<Expression>> expressions;
 	expressions.push_back(make_uniq<BoundColumnRefExpression>(LogicalType::INTEGER, child_bindings[1]));
@@ -440,12 +436,12 @@ TEST_CASE("Relation statistics follow projection output bindings", "[optimizer][
 	REQUIRE(stats->MatchesBindings(output_bindings));
 	REQUIRE(stats->columns[0].total_domain.distinct_count == 13);
 	REQUIRE(stats->columns[0].current_domain.distinct_count == 13);
-	REQUIRE(stats->columns[0].current_domain_info.direct_bound.IsValid());
-	REQUIRE(stats->columns[0].current_domain_info.direct_bound.GetIndex() == 13);
-	REQUIRE(stats->columns[0].current_domain_info.is_unique);
+	REQUIRE(stats->columns[0].current_domain_evidence.filter_domain_bound.IsValid());
+	REQUIRE(stats->columns[0].current_domain_evidence.filter_domain_bound.GetIndex() == 13);
+	REQUIRE(stats->columns[0].current_domain_evidence.is_unique);
 	REQUIRE(stats->columns[1].total_domain.distinct_count == 1);
 	REQUIRE(stats->columns[1].current_domain.source == DistinctCountSource::EXACT);
-	REQUIRE(!stats->columns[1].current_domain_info.IsEligibleForSemiAnti());
+	REQUIRE(!stats->columns[1].GetSemiAntiJoinDomainSize().IsValid());
 	REQUIRE(stats->columns[2].current_domain.distinct_count == 7);
 }
 
@@ -511,15 +507,14 @@ TEST_CASE("Set operations invalidate SEMI and ANTI coverage evidence", "[optimiz
 	auto right = CreateConstantProjection(TableIndex(20), 1);
 	auto left_stats = CreateStats(left->GetColumnBindings(), {10}, 10);
 	auto right_stats = CreateStats(right->GetColumnBindings(), {10}, 10);
-	left_stats.columns[0].current_domain_info.UpdateDirectBound(10);
-	left_stats.columns[0].current_domain_info.is_unique = true;
+	left_stats.columns[0].current_domain_evidence.TightenFilterDomainBound(10);
+	left_stats.columns[0].current_domain_evidence.is_unique = true;
 	LogicalSetOperation setop(TableIndex(30), 1, std::move(left), std::move(right), LogicalOperatorType::LOGICAL_UNION,
 	                          true);
 	vector<reference<const RelationStats>> child_stats {left_stats, right_stats};
 	auto stats = RelationStatisticsHelper::ExtractOperatorStats(setop, *connection.context, child_stats);
 	REQUIRE(stats);
-	REQUIRE(stats->columns[0].current_domain_info.provenance == CurrentDomainProvenance::MODELED);
-	REQUIRE(!stats->columns[0].current_domain_info.IsEligibleForSemiAnti());
+	REQUIRE(!stats->columns[0].GetSemiAntiJoinDomainSize().IsValid());
 }
 
 TEST_CASE("Relation statistics extraction is cached by operator", "[optimizer][relation_statistics]") {
@@ -560,13 +555,12 @@ TEST_CASE("Relation statistics follow SQL scan, filter and projection bindings",
 	REQUIRE(filtered_scan_stats);
 	idx_t direct_columns = 0;
 	for (auto &column : filtered_scan_stats->columns) {
-		REQUIRE(column.current_domain_info.provenance == CurrentDomainProvenance::MODELED);
-		if (column.current_domain_info.direct_bound.IsValid()) {
+		if (column.current_domain_evidence.filter_domain_bound.IsValid()) {
 			direct_columns++;
-			REQUIRE(column.current_domain_info.direct_bound.GetIndex() == 1);
-			REQUIRE(column.GetSemiAntiCurrentDomain().GetIndex() == 1);
+			REQUIRE(column.current_domain_evidence.filter_domain_bound.GetIndex() == 1);
+			REQUIRE(column.GetSemiAntiJoinDomainSize().GetIndex() == 1);
 		} else {
-			REQUIRE(!column.current_domain_info.IsEligibleForSemiAnti());
+			REQUIRE(!column.GetSemiAntiJoinDomainSize().IsValid());
 		}
 	}
 	REQUIRE(direct_columns == 1);
@@ -581,8 +575,7 @@ TEST_CASE("Relation statistics follow SQL scan, filter and projection bindings",
 	REQUIRE(scan_stats->columns[0].total_domain.distinct_count > 0);
 	REQUIRE(scan_stats->columns[0].total_domain.distinct_count <= 100);
 	REQUIRE(scan_stats->columns[0].current_domain.distinct_count <= scan_stats->columns[0].total_domain.distinct_count);
-	REQUIRE(scan_stats->columns[0].current_domain_info.provenance == CurrentDomainProvenance::BASE);
-	REQUIRE(!scan_stats->columns[0].current_domain_info.IsEligibleForSemiAnti());
+	REQUIRE(!scan_stats->columns[0].GetSemiAntiJoinDomainSize().IsValid());
 	connection.Rollback();
 }
 
@@ -593,8 +586,8 @@ TEST_CASE("Operator statistics remain aligned across unary and join operators", 
 	auto right_bindings = LogicalOperator::GenerateColumnBindings(TableIndex(20), 1);
 	auto left_stats = CreateStats(left_bindings, {7, 11}, 100);
 	auto right_stats = CreateStats(right_bindings, {3}, 4);
-	left_stats.columns[0].current_domain_info.UpdateDirectBound(7);
-	left_stats.columns[0].current_domain_info.is_unique = true;
+	left_stats.columns[0].current_domain_evidence.TightenFilterDomainBound(7);
+	left_stats.columns[0].current_domain_evidence.is_unique = true;
 
 	vector<unique_ptr<Expression>> projection_expressions;
 	projection_expressions.push_back(make_uniq<BoundConstantExpression>(Value::INTEGER(1)));
@@ -630,7 +623,7 @@ TEST_CASE("Operator statistics remain aligned across unary and join operators", 
 	REQUIRE(cross_stats);
 	REQUIRE(cross_stats->cardinality == 400);
 	REQUIRE(cross_stats->MatchesBindings(cross_product->GetColumnBindings()));
-	REQUIRE(!cross_stats->columns[0].current_domain_info.IsEligibleForSemiAnti());
+	REQUIRE(!cross_stats->columns[0].GetSemiAntiJoinDomainSize().IsValid());
 
 	LogicalComparisonJoin semi_join(JoinType::SEMI);
 	semi_join.children.push_back(CreateConstantProjection(TableIndex(10), 2));
@@ -639,7 +632,7 @@ TEST_CASE("Operator statistics remain aligned across unary and join operators", 
 	REQUIRE(semi_stats);
 	REQUIRE(semi_stats->cardinality == 20);
 	REQUIRE(semi_stats->MatchesBindings(semi_join.GetColumnBindings()));
-	REQUIRE(!semi_stats->columns[0].current_domain_info.IsEligibleForSemiAnti());
+	REQUIRE(!semi_stats->columns[0].GetSemiAntiJoinDomainSize().IsValid());
 
 	for (auto join_type :
 	     {JoinType::INNER, JoinType::LEFT, JoinType::RIGHT, JoinType::OUTER, JoinType::ANTI, JoinType::RIGHT_ANTI}) {
@@ -701,8 +694,8 @@ TEST_CASE("Semi and anti operator statistics preserve the correct side", "[optim
 	auto ineligible_anti_stats = extract(JoinType::ANTI, full_left_stats, sparse_right_stats);
 	REQUIRE(ineligible_anti_stats);
 	REQUIRE(ineligible_anti_stats->cardinality == 200);
-	sparse_left_stats.columns[0].current_domain_info.UpdateDirectBound(100);
-	sparse_right_stats.columns[0].current_domain_info.UpdateDirectBound(100);
+	sparse_left_stats.columns[0].current_domain_evidence.TightenFilterDomainBound(100);
+	sparse_right_stats.columns[0].current_domain_evidence.TightenFilterDomainBound(100);
 	auto semi_stats = extract(JoinType::SEMI, full_left_stats, sparse_right_stats);
 	REQUIRE(semi_stats);
 	REQUIRE(semi_stats->cardinality == 100);
@@ -736,7 +729,7 @@ TEST_CASE("Delim semi and anti joins use domain coverage", "[optimizer][relation
 	auto right_stats = CreateStats({right_binding}, {1000}, 100);
 	right_stats.filter_strength = 0.1;
 	right_stats.columns[0].current_domain = DistinctCount(100, DistinctCountSource::EXACT);
-	right_stats.columns[0].current_domain_info.UpdateDirectBound(100);
+	right_stats.columns[0].current_domain_evidence.TightenFilterDomainBound(100);
 	LogicalComparisonJoin delim_join(JoinType::SEMI, LogicalOperatorType::LOGICAL_DELIM_JOIN);
 	delim_join.conditions.emplace_back(make_uniq<BoundColumnRefExpression>(LogicalType::INTEGER, left_binding),
 	                                   make_uniq<BoundColumnRefExpression>(LogicalType::INTEGER, right_binding),
@@ -805,9 +798,9 @@ TEST_CASE("Distinct statistics derive cardinality before relation registration",
 	matching_distinct.children.push_back(CreateConstantProjection(TableIndex(30), 2));
 	auto matching_stats = RelationStatisticsHelper::ExtractDistinctStats(matching_distinct, child_stats);
 	REQUIRE(matching_stats);
-	REQUIRE(matching_stats->columns[0].current_domain_info.is_unique);
-	REQUIRE(matching_stats->columns[0].current_domain_info.IsEligibleForSemiAnti());
-	REQUIRE(!matching_stats->columns[1].current_domain_info.is_unique);
+	REQUIRE(matching_stats->columns[0].current_domain_evidence.is_unique);
+	REQUIRE(matching_stats->columns[0].GetSemiAntiJoinDomainSize().IsValid());
+	REQUIRE(!matching_stats->columns[1].current_domain_evidence.is_unique);
 
 	auto single_child = CreateConstantProjection(TableIndex(40), 1);
 	auto single_child_stats = CreateStats(single_child->GetColumnBindings(), {5}, 20);
@@ -817,8 +810,8 @@ TEST_CASE("Distinct statistics derive cardinality before relation registration",
 	auto single_stats =
 	    RelationStatisticsHelper::ExtractOperatorStats(single_distinct, *connection.context, single_children);
 	REQUIRE(single_stats);
-	REQUIRE(single_stats->columns[0].current_domain_info.is_unique);
-	REQUIRE(single_stats->columns[0].current_domain_info.IsEligibleForSemiAnti());
+	REQUIRE(single_stats->columns[0].current_domain_evidence.is_unique);
+	REQUIRE(single_stats->columns[0].GetSemiAntiJoinDomainSize().IsValid());
 
 	auto distinct_on_child = CreateConstantProjection(TableIndex(50), 1);
 	auto output_binding = distinct_on_child->GetColumnBindings()[0];
@@ -830,8 +823,8 @@ TEST_CASE("Distinct statistics derive cardinality before relation registration",
 	unrelated_distinct.children.push_back(std::move(distinct_on_child));
 	auto unrelated_stats = RelationStatisticsHelper::ExtractDistinctStats(unrelated_distinct, distinct_on_stats);
 	REQUIRE(unrelated_stats);
-	REQUIRE(!unrelated_stats->columns[0].current_domain_info.is_unique);
-	REQUIRE(!unrelated_stats->columns[0].current_domain_info.IsEligibleForSemiAnti());
+	REQUIRE(!unrelated_stats->columns[0].current_domain_evidence.is_unique);
+	REQUIRE(!unrelated_stats->columns[0].GetSemiAntiJoinDomainSize().IsValid());
 
 	RelationManager relation_manager(*connection.context);
 	REQUIRE(relation_manager.AddRelation(distinct, nullptr, child_stats));
@@ -915,7 +908,7 @@ TEST_CASE("Linear recursive CTE statistics preserve their output layout", "[opti
 	REQUIRE(stats.columns[0].total_domain.distinct_count == stats.cardinality);
 	REQUIRE(stats.columns[0].current_domain.distinct_count == stats.cardinality);
 	REQUIRE(stats.columns[0].total_domain.source == DistinctCountSource::CARDINALITY);
-	REQUIRE(!stats.columns[0].current_domain_info.IsEligibleForSemiAnti());
+	REQUIRE(!stats.columns[0].GetSemiAntiJoinDomainSize().IsValid());
 	connection.Rollback();
 }
 
@@ -947,7 +940,7 @@ TEST_CASE("Recursive CTE join terms use fixpoint cardinality fallbacks", "[optim
 	REQUIRE(stats.columns[0].total_domain.distinct_count == stats.cardinality);
 	REQUIRE(stats.columns[0].current_domain.distinct_count == stats.cardinality);
 	REQUIRE(stats.columns[0].total_domain.source == DistinctCountSource::CARDINALITY);
-	REQUIRE(!stats.columns[0].current_domain_info.IsEligibleForSemiAnti());
+	REQUIRE(!stats.columns[0].GetSemiAntiJoinDomainSize().IsValid());
 	connection.Rollback();
 }
 

@@ -6,27 +6,14 @@ DistinctCount::DistinctCount(idx_t distinct_count, DistinctCountSource source)
     : distinct_count(distinct_count), source(source) {
 }
 
-CurrentDomainInfo::CurrentDomainInfo(CurrentDomainProvenance provenance, optional_idx direct_bound, bool is_unique)
-    : provenance(provenance), direct_bound(direct_bound), is_unique(is_unique) {
-}
-
-bool CurrentDomainInfo::IsEligibleForSemiAnti() const {
-	return direct_bound.IsValid() || is_unique;
-}
-
-void CurrentDomainInfo::UpdateDirectBound(idx_t bound) {
-	if (!direct_bound.IsValid() || bound < direct_bound.GetIndex()) {
-		direct_bound = optional_idx(bound);
+void CurrentDomainEvidence::TightenFilterDomainBound(idx_t bound) {
+	if (!filter_domain_bound.IsValid() || bound < filter_domain_bound.GetIndex()) {
+		filter_domain_bound = optional_idx(bound);
 	}
 }
 
-void CurrentDomainInfo::MarkModeled() {
-	provenance = CurrentDomainProvenance::MODELED;
-}
-
-void CurrentDomainInfo::InvalidateStructuralEvidence() {
-	MarkModeled();
-	direct_bound = optional_idx();
+void CurrentDomainEvidence::Invalidate() {
+	filter_domain_bound = optional_idx();
 	is_unique = false;
 }
 
@@ -36,19 +23,20 @@ RelationColumnStats::RelationColumnStats(ColumnBinding binding, DistinctCount do
 
 RelationColumnStats::RelationColumnStats(ColumnBinding binding, DistinctCount total_domain,
                                          DistinctCount current_domain, Identifier name,
-                                         CurrentDomainInfo current_domain_info)
+                                         CurrentDomainEvidence current_domain_evidence)
     : binding(binding), total_domain(total_domain), current_domain(current_domain),
-      current_domain_info(current_domain_info), name(std::move(name)) {
+      current_domain_evidence(current_domain_evidence), name(std::move(name)) {
 }
 
-optional_idx RelationColumnStats::GetSemiAntiCurrentDomain() const {
+optional_idx RelationColumnStats::GetSemiAntiJoinDomainSize() const {
 	optional_idx result;
-	if (current_domain_info.is_unique) {
+	if (current_domain_evidence.is_unique) {
 		result = optional_idx(current_domain.distinct_count);
 	}
-	if (current_domain_info.direct_bound.IsValid()) {
-		auto direct_bound = current_domain_info.direct_bound.GetIndex();
-		result = optional_idx(result.IsValid() ? MinValue(result.GetIndex(), direct_bound) : direct_bound);
+	if (current_domain_evidence.filter_domain_bound.IsValid()) {
+		auto filter_domain_bound = current_domain_evidence.filter_domain_bound.GetIndex();
+		result =
+		    optional_idx(result.IsValid() ? MinValue(result.GetIndex(), filter_domain_bound) : filter_domain_bound);
 	}
 	return result;
 }

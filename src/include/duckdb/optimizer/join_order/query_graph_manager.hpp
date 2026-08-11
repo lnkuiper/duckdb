@@ -25,14 +25,12 @@ class QueryGraphEdges;
 
 struct GenerateJoinRelation {
 public:
-	GenerateJoinRelation(optional_ptr<JoinRelationSet> set, unique_ptr<LogicalOperator> op_p, idx_t cardinality_p,
-	                     bool exactly_empty_p);
+	GenerateJoinRelation(optional_ptr<JoinRelationSet> set, unique_ptr<LogicalOperator> op_p, idx_t cardinality_p);
 
 public:
 	optional_ptr<JoinRelationSet> set;
 	unique_ptr<LogicalOperator> op;
 	idx_t cardinality;
-	bool exactly_empty;
 };
 
 //! The QueryGraphManager manages the process of extracting the reorderable and nonreorderable operations

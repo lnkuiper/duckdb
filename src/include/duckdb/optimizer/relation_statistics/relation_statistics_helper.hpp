@@ -44,10 +44,6 @@ enum class SemiAntiJoinCardinalitySource : uint8_t { FALLBACK, SUPPORTED_DOMAIN,
 struct SemiAntiJoinCardinalityEstimate {
 	double cardinality;
 	SemiAntiJoinCardinalitySource source;
-
-	bool IsFallback() const {
-		return source == SemiAntiJoinCardinalitySource::FALLBACK;
-	}
 };
 
 class RelationStatisticsHelper {

@@ -17,8 +17,6 @@ namespace duckdb {
 
 enum class DistinctCountSource : uint8_t { CARDINALITY, MIN_MAX, HLL, EXACT };
 
-enum class CurrentDomainProvenance : uint8_t { UNKNOWN, BASE, MODELED };
-
 struct DistinctCount {
 public:
 	DistinctCount(idx_t distinct_count, DistinctCountSource source);
@@ -28,29 +26,22 @@ public:
 	DistinctCountSource source;
 };
 
-struct CurrentDomainInfo {
+struct CurrentDomainEvidence {
 public:
-	explicit CurrentDomainInfo(CurrentDomainProvenance provenance = CurrentDomainProvenance::UNKNOWN,
-	                           optional_idx direct_bound = {}, bool is_unique = false);
+	void TightenFilterDomainBound(idx_t bound);
+	void Invalidate();
 
 public:
-	bool IsEligibleForSemiAnti() const;
-	void UpdateDirectBound(idx_t bound);
-	void MarkModeled();
-	void InvalidateStructuralEvidence();
-
-public:
-	CurrentDomainProvenance provenance;
-	optional_idx direct_bound;
-	bool is_unique;
+	optional_idx filter_domain_bound;
+	bool is_unique = false;
 };
 
 struct RelationColumnStats {
 public:
 	RelationColumnStats(ColumnBinding binding, DistinctCount domain, Identifier name);
 	RelationColumnStats(ColumnBinding binding, DistinctCount total_domain, DistinctCount current_domain,
-	                    Identifier name, CurrentDomainInfo current_domain_info = CurrentDomainInfo());
-	optional_idx GetSemiAntiCurrentDomain() const;
+	                    Identifier name, CurrentDomainEvidence current_domain_evidence = CurrentDomainEvidence());
+	optional_idx GetSemiAntiJoinDomainSize() const;
 
 public:
 	ColumnBinding binding;
@@ -58,8 +49,8 @@ public:
 	DistinctCount total_domain;
 	//! The estimated number of values from the total domain that are currently present.
 	DistinctCount current_domain;
-	//! Describes how current_domain was derived and which structural bounds survive later row filtering.
-	CurrentDomainInfo current_domain_info;
+	//! Structural evidence that permits using current_domain for SEMI/ANTI joins.
+	CurrentDomainEvidence current_domain_evidence;
 	Identifier name;
 };
 

@@ -79,7 +79,7 @@ static optional<RelationStats> CombineReorderableStats(const vector<ColumnBindin
 			return {};
 		}
 		result.columns.emplace_back(binding, source->total_domain, source->current_domain, source->name,
-		                            source->current_domain_info);
+		                            source->current_domain_evidence);
 		auto &column = result.columns.back();
 		auto equality_entry = equality_bounds.find(normalized);
 		if (equality_entry != equality_bounds.end()) {
@@ -90,7 +90,7 @@ static optional<RelationStats> CombineReorderableStats(const vector<ColumnBindin
 		column.current_domain.distinct_count = MinValue(column.current_domain.distinct_count,
 		                                                MinValue(column.total_domain.distinct_count, root_cardinality));
 		if (relation_stats.size() > 1) {
-			column.current_domain_info.InvalidateStructuralEvidence();
+			column.current_domain_evidence.Invalidate();
 		}
 	}
 	result.Verify(bindings);
