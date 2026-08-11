@@ -162,6 +162,8 @@ enum class CopyToType : uint8_t;
 
 enum class CryptoHashFunction : uint8_t;
 
+enum class CurrentDomainProvenance : uint8_t;
+
 enum class DataFileType : uint8_t;
 
 enum class DateCastResult : uint8_t;
@@ -477,6 +479,8 @@ enum class SecretSerializationType : uint8_t;
 enum class SegmentTreeVerifyMode : uint8_t;
 
 enum class SelectivityOptionalFilterType : uint8_t;
+
+enum class SemiAntiJoinCardinalitySource : uint8_t;
 
 enum class SequenceInfo : uint8_t;
 
@@ -805,6 +809,9 @@ const char* EnumUtil::ToChars<CopyToType>(CopyToType value);
 
 template<>
 const char* EnumUtil::ToChars<CryptoHashFunction>(CryptoHashFunction value);
+
+template<>
+const char* EnumUtil::ToChars<CurrentDomainProvenance>(CurrentDomainProvenance value);
 
 template<>
 const char* EnumUtil::ToChars<DataFileType>(DataFileType value);
@@ -1281,6 +1288,9 @@ template<>
 const char* EnumUtil::ToChars<SelectivityOptionalFilterType>(SelectivityOptionalFilterType value);
 
 template<>
+const char* EnumUtil::ToChars<SemiAntiJoinCardinalitySource>(SemiAntiJoinCardinalitySource value);
+
+template<>
 const char* EnumUtil::ToChars<SequenceInfo>(SequenceInfo value);
 
 template<>
@@ -1673,6 +1683,9 @@ CopyToType EnumUtil::FromString<CopyToType>(const char *value);
 
 template<>
 CryptoHashFunction EnumUtil::FromString<CryptoHashFunction>(const char *value);
+
+template<>
+CurrentDomainProvenance EnumUtil::FromString<CurrentDomainProvenance>(const char *value);
 
 template<>
 DataFileType EnumUtil::FromString<DataFileType>(const char *value);
@@ -2147,6 +2160,9 @@ SegmentTreeVerifyMode EnumUtil::FromString<SegmentTreeVerifyMode>(const char *va
 
 template<>
 SelectivityOptionalFilterType EnumUtil::FromString<SelectivityOptionalFilterType>(const char *value);
+
+template<>
+SemiAntiJoinCardinalitySource EnumUtil::FromString<SemiAntiJoinCardinalitySource>(const char *value);
 
 template<>
 SequenceInfo EnumUtil::FromString<SequenceInfo>(const char *value);

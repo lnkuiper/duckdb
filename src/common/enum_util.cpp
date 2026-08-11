@@ -166,6 +166,7 @@
 #include "duckdb/optimizer/compressed_materialization.hpp"
 #include "duckdb/optimizer/join_order/join_order_operator.hpp"
 #include "duckdb/optimizer/relation_statistics/relation_statistics.hpp"
+#include "duckdb/optimizer/relation_statistics/relation_statistics_helper.hpp"
 #include "duckdb/optimizer/remove_unused_columns.hpp"
 #include "duckdb/optimizer/rule/like_optimizations.hpp"
 #include "duckdb/parallel/async_result.hpp"
@@ -1548,6 +1549,25 @@ const char* EnumUtil::ToChars<CryptoHashFunction>(CryptoHashFunction value) {
 template<>
 CryptoHashFunction EnumUtil::FromString<CryptoHashFunction>(const char *value) {
 	return static_cast<CryptoHashFunction>(StringUtil::StringToEnum(GetCryptoHashFunctionValues(), 3, "CryptoHashFunction", value));
+}
+
+const StringUtil::EnumStringLiteral *GetCurrentDomainProvenanceValues() {
+	static constexpr StringUtil::EnumStringLiteral values[] {
+		{ static_cast<uint32_t>(CurrentDomainProvenance::UNKNOWN), "UNKNOWN" },
+		{ static_cast<uint32_t>(CurrentDomainProvenance::BASE), "BASE" },
+		{ static_cast<uint32_t>(CurrentDomainProvenance::MODELED), "MODELED" }
+	};
+	return values;
+}
+
+template<>
+const char* EnumUtil::ToChars<CurrentDomainProvenance>(CurrentDomainProvenance value) {
+	return StringUtil::EnumToString(GetCurrentDomainProvenanceValues(), 3, "CurrentDomainProvenance", static_cast<uint32_t>(value));
+}
+
+template<>
+CurrentDomainProvenance EnumUtil::FromString<CurrentDomainProvenance>(const char *value) {
+	return static_cast<CurrentDomainProvenance>(StringUtil::StringToEnum(GetCurrentDomainProvenanceValues(), 3, "CurrentDomainProvenance", value));
 }
 
 const StringUtil::EnumStringLiteral *GetDataFileTypeValues() {
@@ -5228,6 +5248,25 @@ const char* EnumUtil::ToChars<SelectivityOptionalFilterType>(SelectivityOptional
 template<>
 SelectivityOptionalFilterType EnumUtil::FromString<SelectivityOptionalFilterType>(const char *value) {
 	return static_cast<SelectivityOptionalFilterType>(StringUtil::StringToEnum(GetSelectivityOptionalFilterTypeValues(), 3, "SelectivityOptionalFilterType", value));
+}
+
+const StringUtil::EnumStringLiteral *GetSemiAntiJoinCardinalitySourceValues() {
+	static constexpr StringUtil::EnumStringLiteral values[] {
+		{ static_cast<uint32_t>(SemiAntiJoinCardinalitySource::FALLBACK), "FALLBACK" },
+		{ static_cast<uint32_t>(SemiAntiJoinCardinalitySource::SUPPORTED_DOMAIN), "SUPPORTED_DOMAIN" },
+		{ static_cast<uint32_t>(SemiAntiJoinCardinalitySource::EMPTY_RHS), "EMPTY_RHS" }
+	};
+	return values;
+}
+
+template<>
+const char* EnumUtil::ToChars<SemiAntiJoinCardinalitySource>(SemiAntiJoinCardinalitySource value) {
+	return StringUtil::EnumToString(GetSemiAntiJoinCardinalitySourceValues(), 3, "SemiAntiJoinCardinalitySource", static_cast<uint32_t>(value));
+}
+
+template<>
+SemiAntiJoinCardinalitySource EnumUtil::FromString<SemiAntiJoinCardinalitySource>(const char *value) {
+	return static_cast<SemiAntiJoinCardinalitySource>(StringUtil::StringToEnum(GetSemiAntiJoinCardinalitySourceValues(), 3, "SemiAntiJoinCardinalitySource", value));
 }
 
 const StringUtil::EnumStringLiteral *GetSequenceInfoValues() {

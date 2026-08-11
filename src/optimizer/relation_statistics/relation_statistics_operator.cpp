@@ -104,8 +104,8 @@ SemiAntiJoinCardinalityEstimate RelationStatisticsHelper::EstimateSemiAntiJoinCa
 		domains.push_back(
 		    {total_domain->distinct_count, rhs_current_domain.GetIndex(), lhs_preserved->binding, rhs_column->binding});
 	}
-	return EstimateSemiAntiJoinCardinality(preserved.cardinality, rhs.cardinality, rhs.filter_strength, join.join_type,
-	                                       domains, has_residual);
+	return EstimateSemiAntiJoinCardinality(static_cast<double>(preserved.cardinality), rhs.cardinality,
+	                                       rhs.filter_strength, join.join_type, domains, has_residual);
 }
 
 static optional<RelationStats> ExtractGetWithChildStats(LogicalGet &get, ClientContext &context,

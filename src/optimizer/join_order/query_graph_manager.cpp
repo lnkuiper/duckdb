@@ -618,7 +618,8 @@ EstimateSelectedSemiAntiJoin(const JoinOrderOperator &join_operator, const Gener
 	}
 	auto join_type = GetJoinType(join_operator.type);
 	if (right.exactly_empty) {
-		return RelationStatisticsHelper::EstimateSemiAntiJoinFallback(left.cardinality, 0, join_type);
+		return RelationStatisticsHelper::EstimateSemiAntiJoinFallback(static_cast<double>(left.cardinality), 0,
+		                                                              join_type);
 	}
 	if (right.set->count != 1) {
 		return {};
@@ -678,9 +679,9 @@ EstimateSelectedSemiAntiJoin(const JoinOrderOperator &join_operator, const Gener
 	if (rhs_relation_index >= relation_stats.size()) {
 		return {};
 	}
-	return RelationStatisticsHelper::EstimateSemiAntiJoinCardinality(left.cardinality, right.cardinality,
-	                                                                 relation_stats[rhs_relation_index].filter_strength,
-	                                                                 join_type, domains, false);
+	return RelationStatisticsHelper::EstimateSemiAntiJoinCardinality(
+	    static_cast<double>(left.cardinality), right.cardinality, relation_stats[rhs_relation_index].filter_strength,
+	    join_type, domains, false);
 }
 
 static void OrientInnerConditions(RelationManager &relation_manager, JoinRelationSetManager &set_manager,

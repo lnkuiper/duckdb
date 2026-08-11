@@ -30,8 +30,8 @@ public:
 
 struct CurrentDomainInfo {
 public:
-	CurrentDomainInfo(CurrentDomainProvenance provenance = CurrentDomainProvenance::UNKNOWN,
-	                  optional_idx direct_bound = {}, bool is_unique = false);
+	explicit CurrentDomainInfo(CurrentDomainProvenance provenance = CurrentDomainProvenance::UNKNOWN,
+	                           optional_idx direct_bound = {}, bool is_unique = false);
 
 public:
 	bool IsEligibleForSemiAnti() const;
@@ -49,7 +49,7 @@ struct RelationColumnStats {
 public:
 	RelationColumnStats(ColumnBinding binding, DistinctCount domain, Identifier name);
 	RelationColumnStats(ColumnBinding binding, DistinctCount total_domain, DistinctCount current_domain,
-	                    Identifier name, CurrentDomainInfo current_domain_info = {});
+	                    Identifier name, CurrentDomainInfo current_domain_info = CurrentDomainInfo());
 	optional_idx GetSemiAntiCurrentDomain() const;
 
 public:

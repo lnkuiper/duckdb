@@ -55,7 +55,9 @@ bool DomainEstimate::HasReliableDistinctCount() const {
 }
 
 idx_t DomainEstimate::GetReliableDistinctCount() const {
-	D_ASSERT(HasReliableDistinctCount());
+	if (!estimate || (estimate->source != DistinctCountSource::HLL && estimate->source != DistinctCountSource::EXACT)) {
+		throw InternalException("Attempted to access an unreliable distinct count");
+	}
 	return estimate->distinct_count;
 }
 
