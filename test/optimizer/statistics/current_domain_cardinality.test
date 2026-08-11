@@ -7,7 +7,7 @@ SET profiling_renderer_settings = MAP {'operator_casing': 'upper'};
 
 statement ok
 CREATE TABLE current_domain_values AS
-SELECT range::INTEGER k, (range % 10)::INTEGER repeated
+SELECT range::INTEGER k, (range % 100)::INTEGER repeated
 FROM range(1000);
 
 statement ok
@@ -40,6 +40,12 @@ EXPLAIN SELECT k, count(*) FROM current_domain_values WHERE k = 2 OR k = 8 GROUP
 ----
 physical_plan	<REGEX>:(?s).*PERFECT_HASH_GROUP_BY.*~2 rows.*
 
+# A supported equality remains the tightest bound in a conjunction.
+query II
+EXPLAIN SELECT k, count(*) FROM current_domain_values WHERE k = 10 AND k < 20 GROUP BY k;
+----
+physical_plan	<REGEX>:(?s).*PERFECT_HASH_GROUP_BY.*~1 row.*SEQ_SCAN.*Filters: k = 10.*
+
 # LIMIT, OFFSET and LIMIT PERCENT all reduce the current domain.
 query II
 EXPLAIN SELECT k, count(*) FROM (SELECT k FROM current_domain_values LIMIT 10 OFFSET 999) limited GROUP BY k;
@@ -50,6 +56,22 @@ query II
 EXPLAIN SELECT k, count(*) FROM (SELECT k FROM current_domain_values LIMIT 10 PERCENT) limited GROUP BY k;
 ----
 physical_plan	<REGEX>:(?s).*PERFECT_HASH_GROUP_BY.*~100 rows.*
+
+# Repeated values use multiplicity-aware row survival below a LIMIT.
+query II
+EXPLAIN SELECT repeated, count(*)
+FROM (SELECT repeated FROM current_domain_values LIMIT 100) limited
+GROUP BY repeated;
+----
+physical_plan	<REGEX>:(?s).*PERFECT_HASH_GROUP_BY.*~65 rows.*STREAMING_LIMIT.*Limit: 100.*
+
+# Direct evidence follows its column through a window and projection.
+query II
+EXPLAIN SELECT k, count(*)
+FROM (SELECT k, row_number() OVER () rn FROM current_domain_values WHERE k = 20) windowed
+GROUP BY k;
+----
+physical_plan	<REGEX>:(?s).*PERFECT_HASH_GROUP_BY.*~1 row.*STREAMING_WINDOW.*SEQ_SCAN.*Filters: k = 20.*
 
 statement ok
 CREATE TABLE current_domain_union_left AS SELECT range::INTEGER k FROM range(10);
@@ -115,3 +137,25 @@ FROM (
 ) groups;
 ----
 100
+
+# Recursive CTE outputs use their fixpoint fallback cardinality.
+query II
+EXPLAIN WITH RECURSIVE vals(i) AS (
+	SELECT 1
+	UNION ALL
+	SELECT i + 1 FROM vals WHERE i < 10
+)
+SELECT i FROM vals;
+----
+physical_plan	<REGEX>:(?s).*REC_CTE.*CTE Name: vals.*~1,001 rows.*REC_CTE_SCAN.*~1 row.*
+
+# Join terms in a recursive CTE retain the same fallback and output layout.
+query II
+EXPLAIN WITH RECURSIVE vals(i) AS (
+	SELECT 1
+	UNION ALL
+	SELECT i + 1 FROM vals, (VALUES (1)) extra(j) WHERE i < 10
+)
+SELECT i FROM vals;
+----
+physical_plan	<REGEX>:(?s).*REC_CTE.*CTE Name: vals.*~1,001 rows.*CROSS_PRODUCT.*REC_CTE_SCAN.*~1 row.*
