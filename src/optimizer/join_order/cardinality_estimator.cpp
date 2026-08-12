@@ -513,7 +513,7 @@ static double GetEffectiveDenom(double denom) {
 }
 
 double CardinalityEstimator::CalculateInnerJoinDenom(double base_denom, FilterInfoWithTotalDomains &filter) {
-	auto effective_d = filter.GetDistinctCount();
+	auto effective_d = GetEffectiveDenom(filter.GetDistinctCount());
 	auto comparison_type = filter.GetComparisonType();
 	if (comparison_type == ExpressionType::INVALID) {
 		return base_denom * effective_d;
@@ -572,7 +572,7 @@ double CardinalityEstimator::CalculateSemiAntiJoinDenom(Subgraph2Denominator &le
 // Given two subgraphs, compute the updated denominator for the join between them.
 double CardinalityEstimator::CalculateUpdatedDenom(Subgraph2Denominator left, Subgraph2Denominator right,
                                                    FilterInfoWithTotalDomains &filter) {
-	double base_denom = left.denom * right.denom;
+	double base_denom = GetEffectiveDenom(left.denom) * GetEffectiveDenom(right.denom);
 	switch (filter.GetPredicate().GetJoinType()) {
 	case JoinType::LEFT:
 		return CalculateLeftJoinDenom(left, right, filter);

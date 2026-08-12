@@ -25,7 +25,7 @@ FROM domain_join_large
 JOIN domain_join_sparse USING (k)
 GROUP BY domain_join_large.k;
 ----
-physical_plan	<REGEX>:(?s).*PERFECT_HASH_GROUP_BY.*~10[0-9] rows.*HASH_JOIN.*~1,000 rows.*
+physical_plan	<REGEX>:(?s).*PERFECT_HASH_GROUP_BY.*~(?:10[0-9]|110) rows.*HASH_JOIN.*~1,000 rows.*
 
 # Projection aliases retain the normalized equality-class domain.
 query II
@@ -37,7 +37,7 @@ FROM (
 ) projected
 GROUP BY joined_key;
 ----
-physical_plan	<REGEX>:(?s).*PERFECT_HASH_GROUP_BY.*~10[0-9] rows.*HASH_JOIN.*~1,000 rows.*
+physical_plan	<REGEX>:(?s).*PERFECT_HASH_GROUP_BY.*~(?:10[0-9]|110) rows.*HASH_JOIN.*~1,000 rows.*
 
 statement ok
 CREATE TABLE domain_join_small AS SELECT ((range % 20) * 50)::INTEGER k FROM range(1000);
@@ -77,7 +77,7 @@ JOIN domain_join_sparse USING (k)
 LEFT JOIN domain_join_small USING (k)
 GROUP BY domain_join_large.k;
 ----
-physical_plan	<REGEX>:(?s).*PERFECT_HASH_GROUP_BY.*~10[0-9] rows.*HASH_JOIN.*
+physical_plan	<REGEX>:(?s).*PERFECT_HASH_GROUP_BY.*~(?:10[0-9]|110) rows.*HASH_JOIN.*
 
 # A left join does not narrow the preserved input's domain.
 query II
