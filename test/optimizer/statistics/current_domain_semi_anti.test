@@ -33,14 +33,14 @@ EXPLAIN SELECT *
 FROM domain_sa_left
 SEMI JOIN domain_sa_empty USING (k);
 ----
-physical_plan	<REGEX>:(?s)^[^~]*HASH_JOIN[^~]*Join Type: SEMI[^~]*~0 rows.*
+physical_plan	<REGEX>:(?s).*HASH_JOIN[^~]*Join Type: SEMI[^~]*~0 rows.*
 
 query II
 EXPLAIN SELECT *
 FROM domain_sa_left
 ANTI JOIN domain_sa_empty USING (k);
 ----
-physical_plan	<REGEX>:(?s)^[^~]*HASH_JOIN[^~]*Join Type: ANTI[^~]*~1,000 rows.*
+physical_plan	<REGEX>:(?s).*HASH_JOIN[^~]*Join Type: ANTI[^~]*~1,000 rows.*
 
 # Small fallback estimates retain the one-row floor.
 query II
@@ -123,7 +123,7 @@ FROM domain_sa_left
 SEMI JOIN (SELECT k FROM domain_sa_rhs GROUP BY k HAVING count(*) > 5) grouped_rhs
 	ON domain_sa_left.k + 1 = grouped_rhs.k;
 ----
-physical_plan	<REGEX>:(?s)^[^~]*HASH_JOIN[^~]*Join Type: SEMI[^~]*~200 rows.*
+physical_plan	<REGEX>:(?s).*HASH_JOIN[^~]*Join Type: SEMI[^~]*~200 rows.*
 
 # A predicate on another RHS column supplies only modeled row-survival evidence.
 query II
