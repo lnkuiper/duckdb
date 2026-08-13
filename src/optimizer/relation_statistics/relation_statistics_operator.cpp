@@ -13,6 +13,12 @@ static void InvalidateCurrentDomainEvidence(RelationStats &stats) {
 	}
 }
 
+static void CapCurrentDomainsToCardinality(RelationStats &stats) {
+	for (auto &column : stats.columns) {
+		column.current_domain.distinct_count = MinValue(column.current_domain.distinct_count, stats.cardinality);
+	}
+}
+
 static optional<RelationStats>
 ProjectChildStats(LogicalOperator &op, const vector<reference<const RelationStats>> &children, idx_t cardinality) {
 	RelationStats result;
@@ -33,6 +39,7 @@ ProjectChildStats(LogicalOperator &op, const vector<reference<const RelationStat
 		result.columns.emplace_back(binding, source->total_domain, source->current_domain, source->name,
 		                            source->current_domain_evidence);
 	}
+	CapCurrentDomainsToCardinality(result);
 	result.Verify(op.GetColumnBindings());
 	return result;
 }
@@ -123,6 +130,7 @@ static optional<RelationStats> ExtractGetWithChildStats(LogicalGet &get, ClientC
 		result.columns.emplace_back(binding, child_column->total_domain, child_column->current_domain,
 		                            child_column->name, child_column->current_domain_evidence);
 	}
+	CapCurrentDomainsToCardinality(result);
 	result.Verify(get.GetColumnBindings());
 	return result;
 }

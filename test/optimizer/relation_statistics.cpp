@@ -200,9 +200,9 @@ TEST_CASE("Delim SEMI and ANTI joins use domain coverage", "[optimizer][relation
 	auto left_binding = ColumnBinding(TableIndex(10), ProjectionIndex(0));
 	auto right_binding = ColumnBinding(TableIndex(20), ProjectionIndex(0));
 	auto left_stats = CreateStats({left_binding}, {1000}, 1000);
-	auto right_stats = CreateStats({right_binding}, {1000}, 100);
+	auto right_stats = CreateStats({right_binding}, {100}, 100);
+	right_stats.columns[0].total_domain = DistinctCount(1000, DistinctCountSource::EXACT);
 	right_stats.filter_strength = 0.1;
-	right_stats.columns[0].current_domain = DistinctCount(100, DistinctCountSource::EXACT);
 	right_stats.columns[0].current_domain_evidence.TightenFilterDomainBound(100);
 	LogicalComparisonJoin delim_join(JoinType::SEMI, LogicalOperatorType::LOGICAL_DELIM_JOIN);
 	delim_join.conditions.emplace_back(make_uniq<BoundColumnRefExpression>(LogicalType::INTEGER, left_binding),
