@@ -62,6 +62,7 @@ public:
 	optional_idx FindColumn(ColumnBinding binding) const;
 	optional_ptr<const RelationColumnStats> GetColumnStats(ColumnBinding binding) const;
 	bool MatchesBindings(const vector<ColumnBinding> &bindings) const;
+	void CapCurrentDomainsToCardinality();
 	void Verify(const vector<ColumnBinding> &bindings) const;
 
 public:

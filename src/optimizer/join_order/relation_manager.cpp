@@ -333,12 +333,11 @@ static optional<RelationStats> CombineNonReorderableStats(LogicalOperator &op, c
 		}
 		result.columns.emplace_back(bindings[column_idx], source->total_domain, source->current_domain, source->name,
 		                            source->current_domain_evidence);
-		result.columns.back().current_domain.distinct_count =
-		    MinValue(result.columns.back().current_domain.distinct_count, result.cardinality);
 		if (ordinal_set_output || op.type == LogicalOperatorType::LOGICAL_ASOF_JOIN) {
 			result.columns.back().current_domain_evidence.Invalidate();
 		}
 	}
+	result.CapCurrentDomainsToCardinality();
 	result.Verify(bindings);
 	return result;
 }

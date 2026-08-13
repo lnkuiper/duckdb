@@ -73,6 +73,12 @@ bool RelationStats::MatchesBindings(const vector<ColumnBinding> &bindings) const
 	return true;
 }
 
+void RelationStats::CapCurrentDomainsToCardinality() {
+	for (auto &column : columns) {
+		column.current_domain.distinct_count = MinValue(column.current_domain.distinct_count, cardinality);
+	}
+}
+
 void RelationStats::Verify(const vector<ColumnBinding> &bindings) const {
 	D_ASSERT(!stats_initialized || MatchesBindings(bindings));
 	if (!stats_initialized) {

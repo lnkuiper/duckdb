@@ -87,12 +87,13 @@ static optional<RelationStats> CombineReorderableStats(const vector<ColumnBindin
 			    DistinctCount(MinValue(column.current_domain.distinct_count, equality_entry->second),
 			                  DistinctCountSource::CARDINALITY);
 		}
-		column.current_domain.distinct_count = MinValue(column.current_domain.distinct_count,
-		                                                MinValue(column.total_domain.distinct_count, root_cardinality));
+		column.current_domain.distinct_count =
+		    MinValue(column.current_domain.distinct_count, column.total_domain.distinct_count);
 		if (relation_stats.size() > 1) {
 			column.current_domain_evidence.Invalidate();
 		}
 	}
+	result.CapCurrentDomainsToCardinality();
 	result.Verify(bindings);
 	return result;
 }

@@ -371,7 +371,6 @@ optional<RelationStats> RelationStatisticsHelper::ExtractAggregationStats(Logica
 		if (group.GetExpressionClass() == ExpressionClass::BOUND_COLUMN_REF) {
 			current_domain =
 			    child_stats.GetColumnStats(group.Cast<BoundColumnRefExpression>().Binding())->current_domain;
-			current_domain.distinct_count = MinValue(current_domain.distinct_count, result.cardinality);
 		}
 		if (aggregate.groups.size() == 1 && aggregate.grouping_sets.size() == 1 &&
 		    aggregate.grouping_sets[0].size() == 1 && aggregate.grouping_sets[0].count(ProjectionIndex(0)) > 0) {
@@ -391,6 +390,7 @@ optional<RelationStats> RelationStatisticsHelper::ExtractAggregationStats(Logica
 		                            DistinctCount(grouping_count, DistinctCountSource::CARDINALITY),
 		                            Identifier("grouping"));
 	}
+	result.CapCurrentDomainsToCardinality();
 	result.Verify(bindings);
 	return result;
 }
@@ -470,9 +470,7 @@ optional<RelationStats> RelationStatisticsHelper::ExtractDistinctStats(LogicalDi
 		}
 	}
 	result->cardinality = EstimateDistinctCardinality(distinct_counts, child_stats.cardinality);
-	for (auto &column : result->columns) {
-		column.current_domain.distinct_count = MinValue(column.current_domain.distinct_count, result->cardinality);
-	}
+	result->CapCurrentDomainsToCardinality();
 	if (result->columns.size() == 1 && distinct.distinct_targets.empty()) {
 		result->columns[0].current_domain_evidence.is_unique = true;
 	} else if (distinct.distinct_targets.size() == 1) {
