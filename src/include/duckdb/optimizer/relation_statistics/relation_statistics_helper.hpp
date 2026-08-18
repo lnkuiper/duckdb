@@ -35,15 +35,13 @@ class LogicalWindow;
 struct SemiAntiJoinDomain {
 	idx_t total_domain;
 	idx_t rhs_current_domain;
-	optional<ColumnBinding> preserved_binding;
-	optional<ColumnBinding> rhs_binding;
+	ColumnBinding preserved_binding;
+	ColumnBinding rhs_binding;
 };
-
-enum class SemiAntiJoinCardinalitySource : uint8_t { FALLBACK, SUPPORTED_DOMAIN, EMPTY_RHS };
 
 struct SemiAntiJoinCardinalityEstimate {
 	double cardinality;
-	SemiAntiJoinCardinalitySource source;
+	bool used_domain_evidence;
 };
 
 class RelationStatisticsHelper {

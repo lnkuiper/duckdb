@@ -595,16 +595,6 @@ static optional_ptr<const RelationColumnStats> GetSelectedJoinColumn(const vecto
 	return relation.columns[column_index];
 }
 
-static optional_ptr<const JoinPredicate> FindPredicate(const JoinPredicateModel &predicate_model, idx_t filter_index) {
-	for (auto predicate_ref : predicate_model.GetPredicates()) {
-		auto &predicate = predicate_ref.get();
-		if (predicate.GetFilter().filter_index == filter_index) {
-			return predicate;
-		}
-	}
-	return nullptr;
-}
-
 static optional<SemiAntiJoinCardinalityEstimate>
 EstimateSelectedSemiAntiJoin(const JoinOrderOperator &join_operator, const GenerateJoinRelation &left,
                              const GenerateJoinRelation &right, const JoinPredicateModel &predicate_model,
@@ -622,9 +612,8 @@ EstimateSelectedSemiAntiJoin(const JoinOrderOperator &join_operator, const Gener
 	}
 
 	vector<SemiAntiJoinDomain> domains;
-	unordered_set<string> seen_domains;
 	for (auto predicate_index : join_operator.costing_predicate_indices) {
-		auto predicate = FindPredicate(predicate_model, predicate_index);
+		auto predicate = predicate_model.GetPredicateByFilterIndex(predicate_index);
 		if (!predicate || predicate->GetJoinType() != join_type || !predicate->HasValidEqualityBindings() ||
 		    (predicate->GetComparisonType() != ExpressionType::COMPARE_EQUAL &&
 		     predicate->GetComparisonType() != ExpressionType::COMPARE_NOT_DISTINCT_FROM)) {
@@ -655,14 +644,20 @@ EstimateSelectedSemiAntiJoin(const JoinOrderOperator &join_operator, const Gener
 		if (!preserved_column || !rhs_column) {
 			return {};
 		}
-		auto rhs_current_domain = rhs_column->GetSemiAntiJoinDomainSize();
+		auto rhs_current_domain = rhs_column->GetSupportedSemiAntiDomainSize();
 		auto total_domain =
 		    RelationStatisticsHelper::SelectTotalDomain({preserved_column->total_domain, rhs_column->total_domain});
 		if (!rhs_current_domain.IsValid() || !total_domain || total_domain->distinct_count == 0) {
 			return {};
 		}
-		auto evidence_key = preserved_binding.ToString() + "=" + rhs_binding.ToString();
-		if (seen_domains.insert(evidence_key).second) {
+		bool seen_domain = false;
+		for (auto &domain : domains) {
+			if (domain.preserved_binding == preserved_binding && domain.rhs_binding == rhs_binding) {
+				seen_domain = true;
+				break;
+			}
+		}
+		if (!seen_domain) {
 			domains.push_back(
 			    {total_domain->distinct_count, rhs_current_domain.GetIndex(), preserved_binding, rhs_binding});
 		}
@@ -676,7 +671,7 @@ EstimateSelectedSemiAntiJoin(const JoinOrderOperator &join_operator, const Gener
 		return {};
 	}
 	return RelationStatisticsHelper::EstimateSemiAntiJoinCardinality(
-	    static_cast<double>(left.cardinality), right.cardinality, relation_stats[rhs_relation_index].filter_strength,
+	    static_cast<double>(left.cardinality), right.cardinality, relation_stats[rhs_relation_index].row_retention,
 	    join_type, domains, false);
 }
 
@@ -747,7 +742,7 @@ GenerateJoinRelation QueryGraphManager::GenerateJoins(vector<unique_ptr<LogicalO
 			}
 			auto semi_anti_estimate =
 			    EstimateSelectedSemiAntiJoin(*descriptor, left, right, predicate_model, relation_stats);
-			if (semi_anti_estimate && semi_anti_estimate->source == SemiAntiJoinCardinalitySource::SUPPORTED_DOMAIN) {
+			if (semi_anti_estimate && semi_anti_estimate->used_domain_evidence) {
 				result_cardinality = LossyNumericCast<idx_t>(semi_anti_estimate->cardinality);
 			}
 

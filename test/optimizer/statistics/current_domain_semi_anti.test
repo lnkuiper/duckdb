@@ -211,6 +211,19 @@ SEMI JOIN (
 ----
 physical_plan	<REGEX>:(?s).*HASH_JOIN.*Join Type: SEMI.*~200 rows.*UNION.*
 
+# Unsupported generic joins do not propagate child evidence into selected SEMI refinement.
+query II
+EXPLAIN SELECT *
+FROM domain_sa_left
+SEMI JOIN (
+	SELECT source.k
+	FROM domain_sa_rhs source
+	JOIN domain_sa_left joined ON source.k2 + joined.k > 0
+	WHERE source.k = 20
+) generic_join_rhs USING (k);
+----
+physical_plan	<REGEX>:(?s).*HASH_JOIN.*Join Type: SEMI.*~200 rows.*
+
 # Composite base-domain counts also remain on the fallback.
 query II
 EXPLAIN SELECT *

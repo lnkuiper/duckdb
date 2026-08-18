@@ -237,6 +237,18 @@ void JoinPredicateModel::AddDirectEqualityPairClass(JoinRelationSet &pair, idx_t
 	summary.second_relation_bindings.insert(second_binding);
 }
 
+optional_ptr<const JoinPredicate> JoinPredicateModel::GetPredicateByFilterIndex(idx_t filter_index) const {
+	if (filter_index >= all_predicates.size()) {
+		return nullptr;
+	}
+	auto &predicate = all_predicates[filter_index].get();
+	D_ASSERT(predicate.GetIndex() == filter_index);
+	if (predicate.GetFilter().filter_index != filter_index) {
+		return nullptr;
+	}
+	return predicate;
+}
+
 const vector<reference<JoinPredicate>> &JoinPredicateModel::GetPredicates() const {
 	return all_predicates;
 }

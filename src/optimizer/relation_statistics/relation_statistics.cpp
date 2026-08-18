@@ -6,15 +6,31 @@ DistinctCount::DistinctCount(idx_t distinct_count, DistinctCountSource source)
     : distinct_count(distinct_count), source(source) {
 }
 
-void CurrentDomainEvidence::TightenFilterDomainBound(idx_t bound) {
+void SemiAntiJoinDomainEvidence::TightenFilterDomainBound(idx_t bound) {
 	if (!filter_domain_bound.IsValid() || bound < filter_domain_bound.GetIndex()) {
 		filter_domain_bound = optional_idx(bound);
 	}
 }
 
-void CurrentDomainEvidence::Invalidate() {
+void SemiAntiJoinDomainEvidence::MarkUnique() {
+	is_unique = true;
+}
+
+void SemiAntiJoinDomainEvidence::Invalidate() {
 	filter_domain_bound = optional_idx();
 	is_unique = false;
+}
+
+optional_idx SemiAntiJoinDomainEvidence::GetSupportedDomainSize(idx_t current_domain) const {
+	optional_idx result;
+	if (is_unique) {
+		result = optional_idx(current_domain);
+	}
+	if (filter_domain_bound.IsValid()) {
+		result = optional_idx(result.IsValid() ? MinValue(result.GetIndex(), filter_domain_bound.GetIndex())
+		                                       : filter_domain_bound.GetIndex());
+	}
+	return result;
 }
 
 RelationColumnStats::RelationColumnStats(ColumnBinding binding, DistinctCount domain, Identifier name)
@@ -23,25 +39,16 @@ RelationColumnStats::RelationColumnStats(ColumnBinding binding, DistinctCount do
 
 RelationColumnStats::RelationColumnStats(ColumnBinding binding, DistinctCount total_domain,
                                          DistinctCount current_domain, Identifier name,
-                                         CurrentDomainEvidence current_domain_evidence)
+                                         SemiAntiJoinDomainEvidence semi_anti_join_domain_evidence)
     : binding(binding), total_domain(total_domain), current_domain(current_domain),
-      current_domain_evidence(current_domain_evidence), name(std::move(name)) {
+      semi_anti_join_domain_evidence(semi_anti_join_domain_evidence), name(std::move(name)) {
 }
 
-optional_idx RelationColumnStats::GetSemiAntiJoinDomainSize() const {
-	optional_idx result;
-	if (current_domain_evidence.is_unique) {
-		result = optional_idx(current_domain.distinct_count);
-	}
-	if (current_domain_evidence.filter_domain_bound.IsValid()) {
-		auto filter_domain_bound = current_domain_evidence.filter_domain_bound.GetIndex();
-		result =
-		    optional_idx(result.IsValid() ? MinValue(result.GetIndex(), filter_domain_bound) : filter_domain_bound);
-	}
-	return result;
+optional_idx RelationColumnStats::GetSupportedSemiAntiDomainSize() const {
+	return semi_anti_join_domain_evidence.GetSupportedDomainSize(current_domain.distinct_count);
 }
 
-RelationStats::RelationStats() : cardinality(1), filter_strength(1), stats_initialized(false) {
+RelationStats::RelationStats() : cardinality(1), row_retention(1), stats_initialized(false) {
 }
 
 optional_idx RelationStats::FindColumn(ColumnBinding binding) const {
@@ -84,7 +91,7 @@ void RelationStats::Verify(const vector<ColumnBinding> &bindings) const {
 	if (!stats_initialized) {
 		return;
 	}
-	D_ASSERT(filter_strength >= 0 && filter_strength <= 1);
+	D_ASSERT(row_retention >= 0 && row_retention <= 1);
 	for (auto &column : columns) {
 		(void)column;
 		D_ASSERT(column.current_domain.distinct_count <= column.total_domain.distinct_count);

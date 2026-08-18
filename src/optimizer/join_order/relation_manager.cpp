@@ -294,19 +294,7 @@ static optional<RelationStats> CombineNonReorderableStats(LogicalOperator &op, c
 	for (auto &stats : child_stats) {
 		result.cardinality = MaxValue(result.cardinality, stats.cardinality);
 	}
-	if (op.type == LogicalOperatorType::LOGICAL_UNION) {
-		auto &setop = op.Cast<LogicalSetOperation>();
-		if (setop.setop_all) {
-			result.cardinality = 0;
-			for (auto &stats : child_stats) {
-				result.cardinality += stats.cardinality;
-			}
-		}
-	} else if (op.type == LogicalOperatorType::LOGICAL_INTERSECT && child_stats.size() == 2) {
-		result.cardinality = MinValue(child_stats[0].cardinality, child_stats[1].cardinality);
-	} else if (op.type == LogicalOperatorType::LOGICAL_EXCEPT && child_stats.size() == 2) {
-		result.cardinality = child_stats[0].cardinality;
-	} else if (op.type == LogicalOperatorType::LOGICAL_ASOF_JOIN && child_stats.size() == 2) {
+	if (op.type == LogicalOperatorType::LOGICAL_ASOF_JOIN && child_stats.size() == 2) {
 		auto &join = op.Cast<LogicalComparisonJoin>();
 		result.cardinality = join.join_type == JoinType::RIGHT || join.join_type == JoinType::OUTER
 		                         ? child_stats[1].cardinality
@@ -314,9 +302,6 @@ static optional<RelationStats> CombineNonReorderableStats(LogicalOperator &op, c
 	}
 
 	auto bindings = op.GetColumnBindings();
-	auto ordinal_set_output = op.type == LogicalOperatorType::LOGICAL_UNION ||
-	                          op.type == LogicalOperatorType::LOGICAL_INTERSECT ||
-	                          op.type == LogicalOperatorType::LOGICAL_EXCEPT;
 	for (idx_t column_idx = 0; column_idx < bindings.size(); column_idx++) {
 		optional_ptr<const RelationColumnStats> source;
 		for (auto &stats : child_stats) {
@@ -325,17 +310,10 @@ static optional<RelationStats> CombineNonReorderableStats(LogicalOperator &op, c
 				break;
 			}
 		}
-		if (!source && ordinal_set_output && !child_stats.empty() && column_idx < child_stats[0].columns.size()) {
-			source = child_stats[0].columns[column_idx];
-		}
 		if (!source) {
 			return {};
 		}
-		result.columns.emplace_back(bindings[column_idx], source->total_domain, source->current_domain, source->name,
-		                            source->current_domain_evidence);
-		if (ordinal_set_output || op.type == LogicalOperatorType::LOGICAL_ASOF_JOIN) {
-			result.columns.back().current_domain_evidence.Invalidate();
-		}
+		result.columns.emplace_back(bindings[column_idx], source->total_domain, source->current_domain, source->name);
 	}
 	result.CapCurrentDomainsToCardinality();
 	result.Verify(bindings);
@@ -581,7 +559,7 @@ bool RelationManager::ExtractJoinRelations(JoinOrderOptimizer &optimizer, Logica
 			for (auto &column : output_stats->columns) {
 				column.total_domain = DistinctCount(cte_cardinality, DistinctCountSource::CARDINALITY);
 				column.current_domain = column.total_domain;
-				column.current_domain_evidence.Invalidate();
+				column.semi_anti_join_domain_evidence.Invalidate();
 			}
 		}
 		if (!output_stats || !AddRelation(input_op, parent, *output_stats)) {

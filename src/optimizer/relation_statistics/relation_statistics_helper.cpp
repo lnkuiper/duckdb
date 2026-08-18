@@ -1,11 +1,11 @@
 #include "duckdb/optimizer/relation_statistics/relation_statistics_helper.hpp"
 
 #include "duckdb/common/types/value_map.hpp"
-#include "duckdb/common/unordered_set.hpp"
 #include "duckdb/planner/expression/bound_comparison_expression.hpp"
 #include "duckdb/planner/expression/bound_constant_expression.hpp"
 #include "duckdb/planner/expression/list.hpp"
 #include "duckdb/planner/expression_iterator.hpp"
+#include "duckdb/planner/column_binding_map.hpp"
 #include "duckdb/planner/operator/list.hpp"
 
 #include <math.h>
@@ -179,7 +179,7 @@ optional<RelationStats> RelationStatisticsHelper::ExtractProjectionStats(Logical
 		auto &expression = *projection.expressions[expression_idx];
 		auto expression_binding = GetChildColumnBinding(expression);
 		DistinctCount distinct_count(result.cardinality, DistinctCountSource::CARDINALITY);
-		CurrentDomainEvidence current_domain_evidence;
+		SemiAntiJoinDomainEvidence semi_anti_join_domain_evidence;
 		if (expression_binding.expression_is_constant) {
 			distinct_count = DistinctCount(MinValue<idx_t>(result.cardinality, 1), DistinctCountSource::EXACT);
 		} else if (expression_binding.FoundColumnRef()) {
@@ -194,11 +194,11 @@ optional<RelationStats> RelationStatisticsHelper::ExtractProjectionStats(Logical
 			auto child_column = child_stats.GetColumnStats(expression_binding.child_binding);
 			current_domain = child_column->current_domain;
 			if (expression.GetExpressionClass() == ExpressionClass::BOUND_COLUMN_REF) {
-				current_domain_evidence = child_column->current_domain_evidence;
+				semi_anti_join_domain_evidence = child_column->semi_anti_join_domain_evidence;
 			}
 		}
 		result.columns.emplace_back(bindings[expression_idx], distinct_count, current_domain,
-		                            Identifier(expression.GetName()), current_domain_evidence);
+		                            Identifier(expression.GetName()), semi_anti_join_domain_evidence);
 	}
 	result.Verify(bindings);
 	return result;
@@ -250,7 +250,7 @@ void RelationStatisticsHelper::ApplyCardinality(RelationStats &stats, idx_t outp
 		    MinValue(column.current_domain.distinct_count, column.total_domain.distinct_count);
 	}
 	if (input_cardinality > 0 && output_cardinality < input_cardinality) {
-		stats.filter_strength *= double(output_cardinality) / double(input_cardinality);
+		stats.row_retention *= double(output_cardinality) / double(input_cardinality);
 	}
 	stats.cardinality = output_cardinality;
 }
@@ -271,11 +271,12 @@ SemiAntiJoinCardinalityEstimate RelationStatisticsHelper::EstimateSemiAntiJoinFa
                                                                                        JoinType join_type) {
 	auto is_anti = join_type == JoinType::ANTI || join_type == JoinType::RIGHT_ANTI;
 	if (rhs_cardinality == 0) {
-		return {is_anti ? MaxValue(0.0, preserved_cardinality) : 0, SemiAntiJoinCardinalitySource::EMPTY_RHS};
+		return {is_anti ? MaxValue(0.0, preserved_cardinality) : 0, false};
 	}
-	return {RoundSemiAntiCardinality(preserved_cardinality, DEFAULT_SELECTIVITY),
-	        SemiAntiJoinCardinalitySource::FALLBACK};
+	return {RoundSemiAntiCardinality(preserved_cardinality, DEFAULT_SELECTIVITY), false};
 }
+
+static constexpr double MAX_BASE_CARDINALITY_TO_DOMAIN_RATIO = 8;
 
 SemiAntiJoinCardinalityEstimate RelationStatisticsHelper::EstimateSemiAntiJoinCardinality(
     double preserved_cardinality, idx_t rhs_cardinality, double rhs_row_retention, JoinType join_type,
@@ -289,9 +290,8 @@ SemiAntiJoinCardinalityEstimate RelationStatisticsHelper::EstimateSemiAntiJoinCa
 	double strongest_fraction = 1;
 	idx_t strongest_total_domain = 0;
 	idx_t maximum_total_domain = 0;
-	unordered_set<string> preserved_bindings;
-	unordered_set<string> rhs_bindings;
-	bool has_complete_binding_evidence = !domains.empty();
+	column_binding_set_t preserved_bindings;
+	column_binding_set_t rhs_bindings;
 	for (auto &domain : domains) {
 		if (domain.total_domain == 0) {
 			return fallback;
@@ -303,18 +303,13 @@ SemiAntiJoinCardinalityEstimate RelationStatisticsHelper::EstimateSemiAntiJoinCa
 			strongest_total_domain = domain.total_domain;
 		}
 		maximum_total_domain = MaxValue(maximum_total_domain, domain.total_domain);
-		if (!domain.preserved_binding || !domain.rhs_binding) {
-			has_complete_binding_evidence = false;
-			continue;
-		}
-		preserved_bindings.insert(domain.preserved_binding->ToString());
-		rhs_bindings.insert(domain.rhs_binding->ToString());
+		preserved_bindings.insert(domain.preserved_binding);
+		rhs_bindings.insert(domain.rhs_binding);
 	}
-	if (domains.size() >= 2 && has_complete_binding_evidence && preserved_bindings.size() >= 2 &&
-	    rhs_bindings.size() >= 2 && maximum_total_domain > 0) {
+	if (domains.size() >= 2 && preserved_bindings.size() >= 2 && rhs_bindings.size() >= 2 && maximum_total_domain > 0) {
 		auto retention = MaxValue(0.0, MinValue(rhs_row_retention, 1.0));
 		auto rhs_base_cardinality = retention > 0 ? double(rhs_cardinality) / retention : double(rhs_cardinality);
-		if (rhs_base_cardinality <= double(maximum_total_domain) * 8 &&
+		if (rhs_base_cardinality <= double(maximum_total_domain) * MAX_BASE_CARDINALITY_TO_DOMAIN_RATIO &&
 		    (strongest_total_domain == 0 || double(strongest_total_domain) <= rhs_base_cardinality)) {
 			match_fraction = MaxValue(match_fraction, MinValue(strongest_fraction, retention));
 		}
@@ -322,8 +317,7 @@ SemiAntiJoinCardinalityEstimate RelationStatisticsHelper::EstimateSemiAntiJoinCa
 	match_fraction = MaxValue(0.0, MinValue(match_fraction, 1.0));
 	auto is_anti = join_type == JoinType::ANTI || join_type == JoinType::RIGHT_ANTI;
 	auto selectivity = is_anti ? 1 - match_fraction : match_fraction;
-	return {RoundSemiAntiCardinality(preserved_cardinality, selectivity),
-	        SemiAntiJoinCardinalitySource::SUPPORTED_DOMAIN};
+	return {RoundSemiAntiCardinality(preserved_cardinality, selectivity), true};
 }
 
 optional<RelationStats> RelationStatisticsHelper::ExtractAggregationStats(LogicalAggregate &aggregate,
@@ -358,14 +352,14 @@ optional<RelationStats> RelationStatisticsHelper::ExtractAggregationStats(Logica
 	for (idx_t group_idx = 0; group_idx < aggregate.groups.size(); group_idx++) {
 		auto &group = *aggregate.groups[group_idx];
 		DistinctCount distinct_count(result.cardinality, DistinctCountSource::CARDINALITY);
-		CurrentDomainEvidence current_domain_evidence;
+		SemiAntiJoinDomainEvidence semi_anti_join_domain_evidence;
 		if (group.GetExpressionClass() == ExpressionClass::BOUND_COLUMN_REF) {
 			auto child_column = child_stats.GetColumnStats(group.Cast<BoundColumnRefExpression>().Binding());
 			if (!child_column) {
 				return {};
 			}
 			distinct_count = child_column->total_domain;
-			current_domain_evidence = child_column->current_domain_evidence;
+			semi_anti_join_domain_evidence = child_column->semi_anti_join_domain_evidence;
 		}
 		auto current_domain = distinct_count;
 		if (group.GetExpressionClass() == ExpressionClass::BOUND_COLUMN_REF) {
@@ -374,10 +368,10 @@ optional<RelationStats> RelationStatisticsHelper::ExtractAggregationStats(Logica
 		}
 		if (aggregate.groups.size() == 1 && aggregate.grouping_sets.size() == 1 &&
 		    aggregate.grouping_sets[0].size() == 1 && aggregate.grouping_sets[0].count(ProjectionIndex(0)) > 0) {
-			current_domain_evidence.is_unique = true;
+			semi_anti_join_domain_evidence.MarkUnique();
 		}
 		result.columns.emplace_back(bindings[result.columns.size()], distinct_count, current_domain,
-		                            Identifier(group.GetName()), current_domain_evidence);
+		                            Identifier(group.GetName()), semi_anti_join_domain_evidence);
 	}
 	for (auto &expression : aggregate.expressions) {
 		result.columns.emplace_back(bindings[result.columns.size()],
@@ -405,7 +399,7 @@ optional<RelationStats> RelationStatisticsHelper::ExtractWindowStats(LogicalWind
 		auto child_column = child_stats.GetColumnStats(binding);
 		if (child_column) {
 			result.columns.emplace_back(binding, child_column->total_domain, child_column->current_domain,
-			                            child_column->name, child_column->current_domain_evidence);
+			                            child_column->name, child_column->semi_anti_join_domain_evidence);
 		} else if (binding.table_index == window.window_index) {
 			result.columns.emplace_back(binding, DistinctCount(result.cardinality, DistinctCountSource::CARDINALITY),
 			                            Identifier("window"));
@@ -472,13 +466,13 @@ optional<RelationStats> RelationStatisticsHelper::ExtractDistinctStats(LogicalDi
 	result->cardinality = EstimateDistinctCardinality(distinct_counts, child_stats.cardinality);
 	result->CapCurrentDomainsToCardinality();
 	if (result->columns.size() == 1 && distinct.distinct_targets.empty()) {
-		result->columns[0].current_domain_evidence.is_unique = true;
+		result->columns[0].semi_anti_join_domain_evidence.MarkUnique();
 	} else if (distinct.distinct_targets.size() == 1) {
 		auto target_binding = GetDistinctTargetBinding(*distinct.distinct_targets[0], child_stats);
 		if (target_binding) {
 			for (auto &column : result->columns) {
 				if (column.binding == *target_binding) {
-					column.current_domain_evidence.is_unique = true;
+					column.semi_anti_join_domain_evidence.MarkUnique();
 					break;
 				}
 			}
@@ -508,7 +502,7 @@ optional<RelationStats> RelationStatisticsHelper::ExtractFilterStats(LogicalFilt
 			column.current_domain =
 			    DistinctCount(MinValue(column.current_domain.distinct_count, direct_bound.GetIndex()),
 			                  DistinctCountSource::CARDINALITY);
-			column.current_domain_evidence.TightenFilterDomainBound(direct_bound.GetIndex());
+			column.semi_anti_join_domain_evidence.TightenFilterDomainBound(direct_bound.GetIndex());
 		}
 	}
 	return result;
@@ -565,7 +559,7 @@ optional<RelationStats> RelationStatisticsHelper::ProjectOutputStats(const Relat
 	}
 	RelationStats result;
 	result.cardinality = stats.cardinality;
-	result.filter_strength = stats.filter_strength;
+	result.row_retention = stats.row_retention;
 	result.stats_initialized = true;
 	result.table_name = stats.table_name;
 	for (auto &binding : op.GetColumnBindings()) {

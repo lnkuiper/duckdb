@@ -2,16 +2,9 @@
 
 #include "duckdb/common/operator/add.hpp"
 #include "duckdb/common/operator/multiply.hpp"
-#include "duckdb/common/unordered_set.hpp"
 #include "duckdb/planner/operator/list.hpp"
 
 namespace duckdb {
-
-static void InvalidateCurrentDomainEvidence(RelationStats &stats) {
-	for (auto &column : stats.columns) {
-		column.current_domain_evidence.Invalidate();
-	}
-}
 
 static optional<RelationStats>
 ProjectChildStats(LogicalOperator &op, const vector<reference<const RelationStats>> &children, idx_t cardinality) {
@@ -30,8 +23,7 @@ ProjectChildStats(LogicalOperator &op, const vector<reference<const RelationStat
 		if (!source) {
 			return {};
 		}
-		result.columns.emplace_back(binding, source->total_domain, source->current_domain, source->name,
-		                            source->current_domain_evidence);
+		result.columns.emplace_back(binding, source->total_domain, source->current_domain, source->name);
 	}
 	result.CapCurrentDomainsToCardinality();
 	result.Verify(op.GetColumnBindings());
@@ -67,7 +59,6 @@ SemiAntiJoinCardinalityEstimate RelationStatisticsHelper::EstimateSemiAntiJoinCa
 	auto &preserved = preserve_right ? right : left;
 	auto &rhs = preserve_right ? left : right;
 	vector<SemiAntiJoinDomain> domains;
-	unordered_set<string> seen_domains;
 	bool has_residual = false;
 	for (auto &condition : join.conditions) {
 		if (!condition.IsComparison() || (condition.GetComparisonType() != ExpressionType::COMPARE_EQUAL &&
@@ -85,14 +76,17 @@ SemiAntiJoinCardinalityEstimate RelationStatisticsHelper::EstimateSemiAntiJoinCa
 			has_residual = true;
 			continue;
 		}
-		auto evidence_key = to_string(lhs_preserved->binding.table_index.index) + ":" +
-		                    to_string(lhs_preserved->binding.column_index.GetIndex()) + "=" +
-		                    to_string(rhs_column->binding.table_index.index) + ":" +
-		                    to_string(rhs_column->binding.column_index.GetIndex());
-		if (!seen_domains.insert(evidence_key).second) {
+		bool seen_domain = false;
+		for (auto &domain : domains) {
+			if (domain.preserved_binding == lhs_preserved->binding && domain.rhs_binding == rhs_column->binding) {
+				seen_domain = true;
+				break;
+			}
+		}
+		if (seen_domain) {
 			continue;
 		}
-		auto rhs_current_domain = rhs_column->GetSemiAntiJoinDomainSize();
+		auto rhs_current_domain = rhs_column->GetSupportedSemiAntiDomainSize();
 		if (!rhs_current_domain.IsValid()) {
 			has_residual = true;
 			continue;
@@ -106,7 +100,7 @@ SemiAntiJoinCardinalityEstimate RelationStatisticsHelper::EstimateSemiAntiJoinCa
 		    {total_domain->distinct_count, rhs_current_domain.GetIndex(), lhs_preserved->binding, rhs_column->binding});
 	}
 	return EstimateSemiAntiJoinCardinality(static_cast<double>(preserved.cardinality), rhs.cardinality,
-	                                       rhs.filter_strength, join.join_type, domains, has_residual);
+	                                       rhs.row_retention, join.join_type, domains, has_residual);
 }
 
 static optional<RelationStats> ExtractGetWithChildStats(LogicalGet &get, ClientContext &context,
@@ -122,7 +116,7 @@ static optional<RelationStats> ExtractGetWithChildStats(LogicalGet &get, ClientC
 			return {};
 		}
 		result.columns.emplace_back(binding, child_column->total_domain, child_column->current_domain,
-		                            child_column->name, child_column->current_domain_evidence);
+		                            child_column->name, child_column->semi_anti_join_domain_evidence);
 	}
 	result.CapCurrentDomainsToCardinality();
 	result.Verify(get.GetColumnBindings());
@@ -139,7 +133,7 @@ static optional<RelationStats> ExtractUnnestStats(LogicalOperator &op, const Rel
 		auto child_column = child_stats.GetColumnStats(binding);
 		if (child_column) {
 			result.columns.emplace_back(binding, child_column->total_domain, child_column->current_domain,
-			                            child_column->name, child_column->current_domain_evidence);
+			                            child_column->name);
 		} else if (binding.table_index == unnest.unnest_index) {
 			result.columns.emplace_back(binding, DistinctCount(result.cardinality, DistinctCountSource::CARDINALITY),
 			                            Identifier("unnest"));
@@ -148,7 +142,6 @@ static optional<RelationStats> ExtractUnnestStats(LogicalOperator &op, const Rel
 		}
 	}
 	result.Verify(op.GetColumnBindings());
-	InvalidateCurrentDomainEvidence(result);
 	return result;
 }
 
@@ -165,19 +158,15 @@ static optional<RelationStats> ExtractComparisonJoinStats(LogicalComparisonJoin 
 		if (!result) {
 			return {};
 		}
-		result->filter_strength = preserved.filter_strength;
+		result->row_retention = preserved.row_retention;
 		auto estimate = RelationStatisticsHelper::EstimateSemiAntiJoinCardinality(join, child_stats[0], child_stats[1]);
 		auto cardinality = LossyNumericCast<idx_t>(estimate.cardinality);
 		RelationStatisticsHelper::ApplyCardinality(*result, cardinality);
-		InvalidateCurrentDomainEvidence(*result);
 		result->Verify(join.GetColumnBindings());
 		return result;
 	}
 	auto cardinality = JoinCardinality(join, child_stats[0], child_stats[1]);
 	auto result = ProjectChildStats(join, child_stats, cardinality);
-	if (result) {
-		InvalidateCurrentDomainEvidence(*result);
-	}
 	if (result || join.join_type != JoinType::MARK) {
 		return result;
 	}
@@ -189,8 +178,7 @@ static optional<RelationStats> ExtractComparisonJoinStats(LogicalComparisonJoin 
 	for (auto &binding : join.GetColumnBindings()) {
 		auto column = child_stats[0].get().GetColumnStats(binding);
 		if (column) {
-			mark_result.columns.emplace_back(binding, column->total_domain, column->current_domain, column->name,
-			                                 column->current_domain_evidence);
+			mark_result.columns.emplace_back(binding, column->total_domain, column->current_domain, column->name);
 		} else if (binding.table_index == join.mark_index) {
 			mark_result.columns.emplace_back(
 			    binding, DistinctCount(MinValue<idx_t>(cardinality, 3), DistinctCountSource::CARDINALITY),
@@ -199,7 +187,6 @@ static optional<RelationStats> ExtractComparisonJoinStats(LogicalComparisonJoin 
 			return {};
 		}
 	}
-	InvalidateCurrentDomainEvidence(mark_result);
 	mark_result.Verify(join.GetColumnBindings());
 	return mark_result;
 }
@@ -214,11 +201,7 @@ static optional<RelationStats> ExtractCrossProductStats(LogicalOperator &op,
 	                                    cardinality)) {
 		cardinality = NumericLimits<idx_t>::Maximum();
 	}
-	auto result = ProjectChildStats(op, child_stats, cardinality);
-	if (result) {
-		InvalidateCurrentDomainEvidence(*result);
-	}
-	return result;
+	return ProjectChildStats(op, child_stats, cardinality);
 }
 
 static idx_t AddDistinctCounts(idx_t left, idx_t right) {

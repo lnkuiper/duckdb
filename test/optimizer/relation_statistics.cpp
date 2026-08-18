@@ -81,7 +81,7 @@ TEST_CASE("Composite SEMI domains retain their correlation constraints", "[optim
 	REQUIRE(RelationStatisticsHelper::EstimateSemiAntiJoinCardinality(1000, 1000, 0.5, JoinType::SEMI,
 	                                                                  shared_endpoint_domains, false)
 	            .cardinality == 10);
-	vector<SemiAntiJoinDomain> full_coverage {{1000, 1000}};
+	vector<SemiAntiJoinDomain> full_coverage {{1000, 1000, left_binding, right_binding}};
 	REQUIRE(
 	    RelationStatisticsHelper::EstimateSemiAntiJoinCardinality(1000, 1000, 1, JoinType::ANTI, full_coverage, false)
 	        .cardinality == 1);
@@ -202,8 +202,8 @@ TEST_CASE("Delim SEMI and ANTI joins use domain coverage", "[optimizer][relation
 	auto left_stats = CreateStats({left_binding}, {1000}, 1000);
 	auto right_stats = CreateStats({right_binding}, {100}, 100);
 	right_stats.columns[0].total_domain = DistinctCount(1000, DistinctCountSource::EXACT);
-	right_stats.filter_strength = 0.1;
-	right_stats.columns[0].current_domain_evidence.TightenFilterDomainBound(100);
+	right_stats.row_retention = 0.1;
+	right_stats.columns[0].semi_anti_join_domain_evidence.TightenFilterDomainBound(100);
 	LogicalComparisonJoin delim_join(JoinType::SEMI, LogicalOperatorType::LOGICAL_DELIM_JOIN);
 	delim_join.conditions.emplace_back(make_uniq<BoundColumnRefExpression>(LogicalType::INTEGER, left_binding),
 	                                   make_uniq<BoundColumnRefExpression>(LogicalType::INTEGER, right_binding),

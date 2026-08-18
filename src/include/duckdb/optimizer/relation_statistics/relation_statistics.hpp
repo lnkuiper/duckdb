@@ -26,12 +26,14 @@ public:
 	DistinctCountSource source;
 };
 
-struct CurrentDomainEvidence {
+struct SemiAntiJoinDomainEvidence {
 public:
 	void TightenFilterDomainBound(idx_t bound);
+	void MarkUnique();
 	void Invalidate();
+	optional_idx GetSupportedDomainSize(idx_t current_domain) const;
 
-public:
+private:
 	optional_idx filter_domain_bound;
 	bool is_unique = false;
 };
@@ -40,8 +42,9 @@ struct RelationColumnStats {
 public:
 	RelationColumnStats(ColumnBinding binding, DistinctCount domain, Identifier name);
 	RelationColumnStats(ColumnBinding binding, DistinctCount total_domain, DistinctCount current_domain,
-	                    Identifier name, CurrentDomainEvidence current_domain_evidence = CurrentDomainEvidence());
-	optional_idx GetSemiAntiJoinDomainSize() const;
+	                    Identifier name,
+	                    SemiAntiJoinDomainEvidence semi_anti_join_domain_evidence = SemiAntiJoinDomainEvidence());
+	optional_idx GetSupportedSemiAntiDomainSize() const;
 
 public:
 	ColumnBinding binding;
@@ -50,7 +53,7 @@ public:
 	//! The estimated number of values from the total domain that are currently present.
 	DistinctCount current_domain;
 	//! Structural evidence that permits using current_domain for SEMI/ANTI joins.
-	CurrentDomainEvidence current_domain_evidence;
+	SemiAntiJoinDomainEvidence semi_anti_join_domain_evidence;
 	Identifier name;
 };
 
@@ -68,7 +71,8 @@ public:
 public:
 	vector<RelationColumnStats> columns;
 	idx_t cardinality;
-	double filter_strength = 1;
+	//! Cumulative estimated fraction of rows retained from the statistics source.
+	double row_retention = 1;
 	bool stats_initialized = false;
 	Identifier table_name;
 };

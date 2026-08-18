@@ -78,8 +78,12 @@ static optional<RelationStats> CombineReorderableStats(const vector<ColumnBindin
 		if (!source) {
 			return {};
 		}
+		SemiAntiJoinDomainEvidence semi_anti_evidence;
+		if (relation_stats.size() == 1) {
+			semi_anti_evidence = source->semi_anti_join_domain_evidence;
+		}
 		result.columns.emplace_back(binding, source->total_domain, source->current_domain, source->name,
-		                            source->current_domain_evidence);
+		                            semi_anti_evidence);
 		auto &column = result.columns.back();
 		auto equality_entry = equality_bounds.find(normalized);
 		if (equality_entry != equality_bounds.end()) {
@@ -89,9 +93,6 @@ static optional<RelationStats> CombineReorderableStats(const vector<ColumnBindin
 		}
 		column.current_domain.distinct_count =
 		    MinValue(column.current_domain.distinct_count, column.total_domain.distinct_count);
-		if (relation_stats.size() > 1) {
-			column.current_domain_evidence.Invalidate();
-		}
 	}
 	result.CapCurrentDomainsToCardinality();
 	result.Verify(bindings);
