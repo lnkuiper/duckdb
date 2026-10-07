@@ -528,11 +528,11 @@ bool BlockAllocator::TryScheduleFlush(TaskScheduler &scheduler) const {
 	}
 }
 
-void BlockAllocator::ThreadIdle(optional_ptr<TaskScheduler> scheduler) const {
+void BlockAllocator::ThreadIdle(optional_ptr<TaskScheduler> scheduler, const bool shutdown) const {
 	try {
 		if (IsActive() && IsEnabled()) {
 			GetBlockAllocatorThreadLocalState(*this).Clear();
-			if (!scheduler || !TryScheduleFlush(*scheduler)) {
+			if (!shutdown && (!scheduler || !TryScheduleFlush(*scheduler))) {
 				FlushPool(optional_idx(), optional_idx(), scheduler ? ReclaimMode::DECAY : ReclaimMode::FORCE);
 			}
 		}
@@ -564,8 +564,10 @@ idx_t BlockAllocator::FlushPool(const optional_idx block_limit, const optional_i
 	}
 }
 
-void BlockAllocator::FlushAll(const optional_idx extra_memory) const noexcept {
-	FlushPool(extra_memory.IsValid() ? optional_idx(DivBlockSize(extra_memory.GetIndex())) : optional_idx());
+void BlockAllocator::FlushAll(const optional_idx extra_memory, const bool shutdown) const noexcept {
+	if (!shutdown) {
+		FlushPool(extra_memory.IsValid() ? optional_idx(DivBlockSize(extra_memory.GetIndex())) : optional_idx());
+	}
 	try {
 		if (Allocator::SupportsFlush()) {
 			Allocator::FlushAll();
