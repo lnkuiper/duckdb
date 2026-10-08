@@ -350,7 +350,8 @@ BufferPool::EvictionResult BufferPool::EvictObjectCacheEntries(MemoryTag tag, id
 
 	if (memory_usage.GetUsedMemory(MemoryUsageCaches::NO_FLUSH) <= memory_limit) {
 		if (extra_memory > allocator_bulk_deallocation_flush_threshold) {
-			block_allocator.FlushAll(extra_memory);
+			block_allocator.FlushForAllocation(extra_memory,
+			                                   memory_limit - MinValue(memory_limit, GetUsedMemory(false)));
 		}
 		return {true, std::move(r)};
 	}
@@ -371,7 +372,7 @@ BufferPool::EvictionResult BufferPool::EvictObjectCacheEntries(MemoryTag tag, id
 	if (!success) {
 		r.Resize(0);
 	} else if (extra_memory > allocator_bulk_deallocation_flush_threshold) {
-		block_allocator.FlushAll(extra_memory);
+		block_allocator.FlushForAllocation(extra_memory, memory_limit - MinValue(memory_limit, GetUsedMemory(false)));
 	}
 
 	return {success, std::move(r)};
@@ -399,7 +400,8 @@ BufferPool::EvictionResult BufferPool::EvictBlocksInternal(QueryContext context,
 
 	if (memory_usage.GetUsedMemory(MemoryUsageCaches::NO_FLUSH) <= memory_limit) {
 		if (extra_memory > allocator_bulk_deallocation_flush_threshold) {
-			block_allocator.FlushAll(extra_memory);
+			block_allocator.FlushForAllocation(extra_memory,
+			                                   memory_limit - MinValue(memory_limit, GetUsedMemory(false)));
 		}
 		return {true, std::move(r)};
 	}
@@ -428,7 +430,7 @@ BufferPool::EvictionResult BufferPool::EvictBlocksInternal(QueryContext context,
 	if (!found) {
 		r.Resize(0);
 	} else if (extra_memory > allocator_bulk_deallocation_flush_threshold) {
-		block_allocator.FlushAll(extra_memory);
+		block_allocator.FlushForAllocation(extra_memory, memory_limit - MinValue(memory_limit, GetUsedMemory(false)));
 	}
 
 	return {found, std::move(r)};

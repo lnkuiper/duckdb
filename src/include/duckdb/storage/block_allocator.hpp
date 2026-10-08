@@ -60,10 +60,12 @@ public:
 	//! Best-effort flushing; shutdown leaves pool blocks for unmapping and flushes fallback allocations.
 	void FlushAll(optional_idx extra_memory = optional_idx(), bool shutdown = false) const noexcept
 	    DUCKDB_EXCLUDES(flush_lock);
+	//! Retain free pool blocks that fit alongside the buffer manager's outstanding reservations.
+	void FlushForAllocation(idx_t extra_memory, idx_t memory_headroom) const noexcept DUCKDB_EXCLUDES(flush_lock);
 
 private:
 	enum class FlushState : uint8_t { IDLE, SCHEDULED, RESCHEDULE_REQUESTED };
-	enum class ReclaimMode : uint8_t { FORCE, DECAY };
+	enum class ReclaimMode : uint8_t { FORCE, DECAY, OPPORTUNISTIC };
 
 	bool IsActive() const;
 	bool IsEnabled() const;
