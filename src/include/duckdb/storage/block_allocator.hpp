@@ -67,6 +67,8 @@ public:
 	void FlushOnShutdown() const noexcept;
 	//! Retain cached backing that fits alongside the buffer manager's live reservations.
 	void FlushForAllocation(idx_t extra_memory, idx_t memory_headroom) const noexcept DUCKDB_EXCLUDES(flush_lock);
+	//! Purge accumulated fallback frees when they no longer fit alongside cached pool backing.
+	bool TryFlushDeallocated(idx_t threshold, idx_t memory_headroom) const noexcept;
 
 private:
 	enum class FlushState : uint8_t { IDLE, SCHEDULED, RESCHEDULE_REQUESTED };
@@ -90,6 +92,7 @@ private:
 	idx_t RetentionTarget(idx_t now_ms) const;
 	void UpdateCachedBlocks(int64_t count, idx_t slot) const;
 	void ReturnThreadLocalBlocks() const;
+	void FlushFallbackAllocator(idx_t deallocated) const noexcept;
 
 	void SetScheduler(TaskScheduler &scheduler);
 	void ClearScheduler();
@@ -154,6 +157,9 @@ private:
 	mutable FlushState flush_state DUCKDB_GUARDED_BY(flush_lock) = FlushState::IDLE;
 	//! Bound before workers start and cleared after they join; never owns the scheduler.
 	optional_ptr<TaskScheduler> scheduler;
+
+	//! Keep fallback free traffic separate from fields used by pooled allocations.
+	alignas(64) mutable atomic<idx_t> deallocated_since_flush {0};
 };
 
 } // namespace duckdb

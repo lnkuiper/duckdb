@@ -376,9 +376,13 @@ BufferPool::EvictionResult BufferPool::EvictObjectCacheEntries(MemoryTag tag, id
 }
 
 void BufferPool::FlushForAllocation(const idx_t extra_memory, const idx_t memory_limit) {
+	static constexpr idx_t BULK_DEALLOCATION_FLUSH_DIVISOR = 16;
+	const auto used_memory = GetUsedMemory(false);
+	const auto memory_headroom = memory_limit - MinValue(memory_limit, used_memory);
 	if (extra_memory > allocator_bulk_deallocation_flush_threshold) {
-		const auto used_memory = GetUsedMemory(false);
-		block_allocator.FlushForAllocation(extra_memory, memory_limit - MinValue(memory_limit, used_memory));
+		block_allocator.FlushForAllocation(extra_memory, memory_headroom);
+	} else {
+		block_allocator.TryFlushDeallocated(memory_limit / BULK_DEALLOCATION_FLUSH_DIVISOR, memory_headroom);
 	}
 }
 

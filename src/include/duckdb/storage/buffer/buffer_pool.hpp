@@ -97,7 +97,7 @@ protected:
 
 	//! Evict object cache entries if needed.
 	EvictionResult EvictObjectCacheEntries(MemoryTag tag, idx_t extra_memory, idx_t memory_limit);
-	//! Flush bulk allocations using the headroom left by their live reservations.
+	//! Flush bulk allocations and accumulated fallback frees using the remaining headroom.
 	void FlushForAllocation(idx_t extra_memory, idx_t memory_limit);
 
 	//! Purge all blocks that haven't been pinned within the last N seconds
