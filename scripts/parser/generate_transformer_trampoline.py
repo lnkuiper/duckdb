@@ -254,11 +254,9 @@ def load_matcher_overrides(grammar_types_file):
     return result
 
 
-def typed_result_expr(cpp_type, expr, by_value):
-    move_expr = expr if by_value else expr
-    if by_value:
-        move_expr = f"std::move({expr})"
-    return f"transformer.MakeResult<{cpp_type}>({move_expr})"
+def typed_result_expr(cpp_type, expr):
+    # Finalizers transfer an owned local; by_value only controls transform arguments.
+    return f"transformer.MakeResult<{cpp_type}>(std::move({expr}))"
 
 
 class RuleCapabilityStatus(Enum):
@@ -666,7 +664,7 @@ class UseGramPreviewEmitter:
             lines.append("\t\tresult->named_param_map = transformer.named_parameter_map;")
             lines.append("\t}")
             lines.append("\tresult->has_anonymous_parameters = transformer.has_anonymous_parameters;")
-            lines.append(f"\treturn {typed_result_expr(cpp_type, 'result', True)};")
+            lines.append(f"\treturn {typed_result_expr(cpp_type, 'result')};")
             lines.append("}")
             lines.append("")
         lines.append(
@@ -681,7 +679,7 @@ class UseGramPreviewEmitter:
             "PEGTransformer &transformer, GeneratedTransformProcess &process) {"
         )
         lines.append("\tauto result = TransformIdentifierOrKeyword(transformer, process.parse_result);")
-        lines.append(f"\treturn {typed_result_expr('string', 'result', False)};")
+        lines.append(f"\treturn {typed_result_expr('string', 'result')};")
         lines.append("}")
         lines.append("")
         return lines
@@ -730,7 +728,7 @@ class UseGramPreviewEmitter:
             f"GeneratedTransformProcess &process) {{"
         )
         lines.append(f"\tauto result = {result_expr};")
-        lines.append(f"\treturn {typed_result_expr(self.cpp_type(rule_name), 'result', self.by_value(rule_name))};")
+        lines.append(f"\treturn {typed_result_expr(self.cpp_type(rule_name), 'result')};")
         lines.append("}")
         return lines
 
@@ -896,11 +894,10 @@ class UseGramPreviewEmitter:
 
     def emit_sequence_forward_finalize_body(self, rule_name, plan, child_arg):
         cpp_type = self.cpp_type(rule_name)
-        by_value = self.by_value(rule_name)
         slot_expr = self.adjusted_slot_expr(plan, child_arg.slot_idx)
         return [
             f"\tauto result = process.TakeResult<{cpp_type}>({slot_expr});",
-            f"\treturn {typed_result_expr(cpp_type, 'result', by_value)};",
+            f"\treturn {typed_result_expr(cpp_type, 'result')};",
             "}",
         ]
 
@@ -931,7 +928,6 @@ class UseGramPreviewEmitter:
         if self.is_manual_finalize_rule(rule_name):
             return lines
         cpp_type = self.cpp_type(rule_name)
-        by_value = self.by_value(rule_name)
         literal_values = literal_string_values(ast)
         lines.append("")
         lines.append(
@@ -954,7 +950,7 @@ class UseGramPreviewEmitter:
                 lines.append("\tauto result = choice_pr.GetResult().Cast<KeywordParseResult>().keyword;")
         else:
             lines.append(f"\tauto result = Transform{rule_name}(transformer);")
-        lines.append(f"\treturn {typed_result_expr(cpp_type, 'result', by_value)};")
+        lines.append(f"\treturn {typed_result_expr(cpp_type, 'result')};")
         lines.append("}")
         return lines
 
@@ -973,7 +969,6 @@ class UseGramPreviewEmitter:
         if self.is_manual_finalize_rule(rule_name):
             return lines
         cpp_type = self.cpp_type(rule_name)
-        by_value = self.by_value(rule_name)
         syntax_only_alternatives = self.choice_syntax_only_alternative_names(ast)
         child_cpp_types = set()
         for alternative in ast.alternatives:
@@ -1069,7 +1064,7 @@ class UseGramPreviewEmitter:
             lines.append("\t}")
         else:
             lines.append(f"\tauto result = process.TakeResult<{cpp_type}>(0);")
-        lines.append(f"\treturn {typed_result_expr(cpp_type, 'result', by_value)};")
+        lines.append(f"\treturn {typed_result_expr(cpp_type, 'result')};")
         lines.append("}")
         return lines
 
@@ -1177,7 +1172,6 @@ class UseGramPreviewEmitter:
             allow_top_level_repeat=True,
         )
         cpp_type = self.cpp_type(rule_name)
-        by_value = self.by_value(rule_name)
 
         lines.append("")
         lines.append(
@@ -1377,7 +1371,7 @@ class UseGramPreviewEmitter:
         if self.rule_types[rule_name].pass_location:
             transform_args.append("process.parse_result.offset")
         lines.append(f"\tauto result = Transform{rule_name}({', '.join(transform_args)});")
-        lines.append(f"\treturn {typed_result_expr(cpp_type, 'result', by_value)};")
+        lines.append(f"\treturn {typed_result_expr(cpp_type, 'result')};")
         lines.append("}")
         return lines
 
