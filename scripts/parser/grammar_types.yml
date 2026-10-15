@@ -1931,6 +1931,7 @@ collapsible_rules:
   - OtherOperatorExpression
   - InfixOtherOperatorExpression
   - BitwiseExpression
+  - TildeExpression
   - AdditiveExpression
   - MultiplicativeExpression
   - ExponentiationExpression
