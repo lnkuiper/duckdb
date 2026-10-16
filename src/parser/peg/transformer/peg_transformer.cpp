@@ -37,6 +37,11 @@ GeneratedTransformProcess::GeneratedTransformProcess(PEGTransformer &transformer
 	info.initialize(transformer, *this);
 }
 
+arena_ptr<TransformProcess> GeneratedTransformFactory::operator()(PEGTransformer &transformer,
+                                                                  ParseResult &parse_result) const {
+	return transformer.MakeProcess<GeneratedTransformProcess>(transformer, TransformInput {parse_result}, info);
+}
+
 void GeneratedTransformProcess::ReserveChildSlots(idx_t count) {
 	child_results.resize(count);
 	// a rule pushes at most one child per slot, so the pending list never has to grow either
@@ -160,15 +165,20 @@ void TransformStack::InitializeFrame(TransformStackFrame &frame) {
 	if (!frame.rule) {
 		throw InternalException("No registered data exists for rule '%s'", frame.parse_result.Name());
 	}
-	frame.process = frame.rule->StartTransform(transformer, frame.parse_result);
+	auto factory = frame.rule->transform_process.target<GeneratedTransformFactory>();
+	if (factory && factory->info.single_child) {
+		frame.single_child = factory->info.single_child;
+	} else {
+		frame.process = frame.rule->StartTransform(transformer, frame.parse_result);
+	}
 }
 
 arena_ptr<TransformResultValue> TransformStack::ExecuteFrame(TransformStackFrame &frame) {
-	if (!frame.process) {
+	if (!frame.process && !frame.single_child) {
 		InitializeFrame(frame);
 	}
-	D_ASSERT(frame.process);
-	auto step = frame.process->Resume(std::move(frame.child_result));
+	auto step = frame.single_child ? frame.single_child(transformer, frame.parse_result, std::move(frame.child_result))
+	                               : frame.process->Resume(std::move(frame.child_result));
 	auto child = step.GetChild();
 	if (!child) {
 		return step.TakeResult();

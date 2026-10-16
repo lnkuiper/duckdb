@@ -264,19 +264,50 @@ class PEGTransformer;
 class TransformStack;
 class TransformProcess;
 class GeneratedTransformProcess;
+class TransformStep;
 
 using transform_process_initialize_t = void (*)(PEGTransformer &transformer, GeneratedTransformProcess &process);
 using transform_process_finalize_t = arena_ptr<TransformResultValue> (*)(PEGTransformer &transformer,
                                                                          GeneratedTransformProcess &process);
 
+using transform_single_child_t = TransformStep (*)(PEGTransformer &, ParseResult &, arena_ptr<TransformResultValue>);
+
 struct TransformFrameOps {
 	const char *name;
 	transform_process_initialize_t initialize;
 	transform_process_finalize_t finalize;
+	//! Generated plans that retain no mutable state while waiting for their single child.
+	transform_single_child_t single_child = nullptr;
+};
+
+struct GeneratedTransformFactory {
+	const TransformFrameOps &info;
+	arena_ptr<TransformProcess> operator()(PEGTransformer &transformer, ParseResult &parse_result) const;
 };
 
 template <typename T>
 unique_ptr<TypedTransformResult<T>> TryBridgeTransformResultValue(TransformResultValue &base_result);
+
+template <class T>
+T TakeTransformChildResult(unsafe_array_ptr<arena_ptr<TransformResultValue>> child_results,
+                           const TransformFrameOps &info, idx_t slot) {
+	if (slot >= child_results.size() || !child_results[slot]) {
+		throw InternalException("Missing transformer result for slot %llu in rule '%s'", slot, info.name);
+	}
+	auto *result_value = TryGetTransformResult<T>(*child_results[slot]);
+	if (!result_value) {
+		auto bridged = TryBridgeTransformResultValue<T>(*child_results[slot]);
+		if (bridged) {
+			auto bridged_result = std::move(bridged->value);
+			child_results[slot].reset();
+			return bridged_result;
+		}
+		throw InternalException("Unexpected transformer result type for slot %llu in rule '%s'", slot, info.name);
+	}
+	auto result = std::move(*result_value);
+	child_results[slot].reset();
+	return result;
+}
 
 //! Input to start a transformer execution. The rule can be supplied explicitly for transparent parse nodes.
 struct TransformInput {
@@ -338,22 +369,7 @@ public:
 
 	template <class T>
 	T TakeResult(idx_t slot) {
-		if (slot >= child_results.size() || !child_results[slot]) {
-			throw InternalException("Missing transformer result for slot %llu in rule '%s'", slot, info.name);
-		}
-		auto *result_value = TryGetTransformResult<T>(*child_results[slot]);
-		if (!result_value) {
-			auto bridged = TryBridgeTransformResultValue<T>(*child_results[slot]);
-			if (bridged) {
-				auto bridged_result = std::move(bridged->value);
-				child_results[slot].reset();
-				return bridged_result;
-			}
-			throw InternalException("Unexpected transformer result type for slot %llu in rule '%s'", slot, info.name);
-		}
-		auto result = std::move(*result_value);
-		child_results[slot].reset();
-		return result;
+		return TakeTransformChildResult<T>({child_results.data(), child_results.size()}, info, slot);
 	}
 
 	template <class T>
@@ -410,6 +426,7 @@ struct TransformStackFrame {
 	optional_ptr<const CompiledGrammarRule> rule;
 	ParseResult &parse_result;
 	arena_ptr<TransformProcess> process;
+	transform_single_child_t single_child = nullptr;
 	arena_ptr<TransformResultValue> child_result;
 	//! How much this frame adds to the expression depth while it is on the stack
 	idx_t expression_depth_weight = 0;

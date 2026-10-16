@@ -151,13 +151,8 @@ PEGTransformerFactory::PEGTransformerFactory(ParsedGrammar &grammar_p) : grammar
 
 	for (auto &entry : GeneratedTransformFrameOps()) {
 		auto process_info = entry.second;
-		grammar.SetTransformProcess(
-		    entry.first,
-		    [process_info](PEGTransformer &transformer, ParseResult &parse_result) -> arena_ptr<TransformProcess> {
-			    return transformer.MakeProcess<GeneratedTransformProcess>(transformer, TransformInput {parse_result},
-			                                                              *process_info);
-		    },
-		    collapsible_rules.count(entry.first) > 0);
+		grammar.SetTransformProcess(entry.first, GeneratedTransformFactory {*process_info},
+		                            collapsible_rules.count(entry.first) > 0);
 	}
 	//===--------------------------------------------------------------------===//
 	// START GENERATED EXPRESSION DEPTH RULES
