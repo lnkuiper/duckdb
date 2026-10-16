@@ -262,8 +262,7 @@ def load_matcher_overrides(grammar_types_file):
 
 
 def typed_result_expr(cpp_type, expr):
-    # Finalizers transfer an owned local; by_value only controls transform arguments.
-    return f"transformer.MakeResult<{cpp_type}>(std::move({expr}))"
+    return f"transformer.MakeResult<{cpp_type}>({expr})"
 
 
 class RuleCapabilityStatus(Enum):
@@ -680,7 +679,7 @@ class UseGramPreviewEmitter:
             lines.append("\t\tresult->named_param_map = transformer.named_parameter_map;")
             lines.append("\t}")
             lines.append("\tresult->has_anonymous_parameters = transformer.has_anonymous_parameters;")
-            lines.append(f"\treturn {typed_result_expr(cpp_type, 'result')};")
+            lines.append(f"\treturn {typed_result_expr(cpp_type, 'std::move(result)')};")
             lines.append("}")
             lines.append(f"")
         rule_name = IDENTIFIER_OR_KEYWORD_RULES[0]
@@ -689,10 +688,10 @@ class UseGramPreviewEmitter:
         lines.append("}")
         lines.append(f"")
         lines.append(self.process_function_signature(rule_name, True))
-        lines.append(
-            f"\tauto result = PEGTransformerFactory::TransformIdentifierOrKeyword(transformer, {self.process_parse_result(rule_name)});"
+        result_expr = (
+            f"PEGTransformerFactory::TransformIdentifierOrKeyword(transformer, {self.process_parse_result(rule_name)})"
         )
-        lines.append(f"\treturn {typed_result_expr('string', 'result')};")
+        lines.append(f"\treturn {typed_result_expr('string', result_expr)};")
         lines.append("}")
         lines.append(f"")
         return lines
@@ -734,8 +733,7 @@ class UseGramPreviewEmitter:
         lines.append("}")
         lines.append(f"")
         lines.append(self.process_function_signature(rule_name, True))
-        lines.append(f"\tauto result = {result_expr};")
-        lines.append(f"\treturn {typed_result_expr(self.cpp_type(rule_name), 'result')};")
+        lines.append(f"\treturn {typed_result_expr(self.cpp_type(rule_name), result_expr)};")
         lines.append("}")
         return lines
 
@@ -900,9 +898,9 @@ class UseGramPreviewEmitter:
     def emit_sequence_forward_finalize_body(self, rule_name, plan, child_arg):
         cpp_type = self.cpp_type(rule_name)
         slot_expr = self.adjusted_slot_expr(plan, child_arg.slot_idx)
+        result_expr = f"{self.process_take_result(rule_name)}<{cpp_type}>({slot_expr})"
         return [
-            f"\tauto result = {self.process_take_result(rule_name)}<{cpp_type}>({slot_expr});",
-            f"\treturn {typed_result_expr(cpp_type, 'result')};",
+            f"\treturn {typed_result_expr(cpp_type, result_expr)};",
             "}",
         ]
 
@@ -937,23 +935,21 @@ class UseGramPreviewEmitter:
             if isinstance(ast, ChoiceNode):
                 lines.append(f"\tauto &list_pr = {self.process_parse_result(rule_name)}.Cast<ListParseResult>();")
                 lines.append("\tauto &choice_pr = list_pr.Child<ChoiceParseResult>(0);")
-                lines.append(
-                    f"\tauto result = PEGTransformerFactory::Transform{rule_name}(transformer, choice_pr.GetResult());"
-                )
+                result_expr = f"PEGTransformerFactory::Transform{rule_name}(transformer, choice_pr.GetResult())"
             else:
-                lines.append(
-                    f"\tauto result = PEGTransformerFactory::Transform{rule_name}(transformer, {self.process_parse_result(rule_name)});"
+                result_expr = (
+                    f"PEGTransformerFactory::Transform{rule_name}(transformer, {self.process_parse_result(rule_name)})"
                 )
         elif cpp_type == "string" and literal_values is not None and not manual_body_exists(rule_name):
             if len(literal_values) == 1:
-                lines.append(f'\tstring result = "{literal_values[0]}";')
+                result_expr = f'"{literal_values[0]}"'
             else:
                 lines.append(f"\tauto &list_pr = {self.process_parse_result(rule_name)}.Cast<ListParseResult>();")
                 lines.append("\tauto &choice_pr = list_pr.Child<ChoiceParseResult>(0);")
-                lines.append("\tauto result = choice_pr.GetResult().Cast<KeywordParseResult>().keyword;")
+                result_expr = "choice_pr.GetResult().Cast<KeywordParseResult>().keyword"
         else:
-            lines.append(f"\tauto result = PEGTransformerFactory::Transform{rule_name}(transformer);")
-        lines.append(f"\treturn {typed_result_expr(cpp_type, 'result')};")
+            result_expr = f"PEGTransformerFactory::Transform{rule_name}(transformer)"
+        lines.append(f"\treturn {typed_result_expr(cpp_type, result_expr)};")
         lines.append("}")
         return lines
 
@@ -982,15 +978,14 @@ class UseGramPreviewEmitter:
         )
         lines.append(f"")
         lines.append(self.process_function_signature(rule_name, True))
+        result_expr = "std::move(result)"
         if self.is_parse_result_manual_choice_rule(rule_name, ast):
             lines.append(f"\tauto &list_pr = {self.process_parse_result(rule_name)}.Cast<ListParseResult>();")
             lines.append("\tauto &choice_result = list_pr.Child<ChoiceParseResult>(0).GetResult();")
-            lines.append(f"\t{cpp_type} result {{}};")
-            lines.append("\tif (process.child_results[0]) {")
-            lines.append(f"\t\tresult = {self.process_take_result(rule_name)}<{cpp_type}>(0);")
-            lines.append("\t} else {")
-            lines.append(f"\t\tresult = PEGTransformerFactory::Transform{rule_name}(transformer, choice_result);")
-            lines.append("\t}")
+            result_expr = (
+                f"process.child_results[0] ? {self.process_take_result(rule_name)}<{cpp_type}>(0)"
+                f" : PEGTransformerFactory::Transform{rule_name}(transformer, choice_result)"
+            )
         elif len(child_cpp_types) == 1 and cpp_type not in child_cpp_types and manual_body_exists(rule_name):
             child_cpp_type = next(iter(child_cpp_types))
             if child_cpp_type == "string":
@@ -1019,7 +1014,7 @@ class UseGramPreviewEmitter:
             else:
                 lines.append(f"\tauto child = {self.process_take_result(rule_name)}<{child_cpp_type}>(0);")
             child_arg = "std::move(child)" if child_cpp_type.startswith("unique_ptr<") else "child"
-            lines.append(f"\tauto result = PEGTransformerFactory::Transform{rule_name}(transformer, {child_arg});")
+            result_expr = f"PEGTransformerFactory::Transform{rule_name}(transformer, {child_arg})"
         elif cpp_type == "string":
             lines.append("\tstring result;")
             lines.append("\tif (process.child_results[0]) {")
@@ -1059,13 +1054,12 @@ class UseGramPreviewEmitter:
             lines.append("\t\t}")
             lines.append("\t}")
         elif syntax_only_alternatives:
-            lines.append(f"\t{cpp_type} result {{}};")
-            lines.append("\tif (process.child_results[0]) {")
-            lines.append(f"\t\tresult = {self.process_take_result(rule_name)}<{cpp_type}>(0);")
-            lines.append("\t}")
+            result_expr = (
+                f"process.child_results[0] ? {self.process_take_result(rule_name)}<{cpp_type}>(0) : {cpp_type} {{}}"
+            )
         else:
-            lines.append(f"\tauto result = {self.process_take_result(rule_name)}<{cpp_type}>(0);")
-        lines.append(f"\treturn {typed_result_expr(cpp_type, 'result')};")
+            result_expr = f"{self.process_take_result(rule_name)}<{cpp_type}>(0)"
+        lines.append(f"\treturn {typed_result_expr(cpp_type, result_expr)};")
         lines.append("}")
         return lines
 
@@ -1382,8 +1376,8 @@ class UseGramPreviewEmitter:
         transform_args = ["transformer"] + arg_names
         if self.rule_types[rule_name].pass_location:
             transform_args.append(f"{self.process_parse_result(rule_name)}.GetOffset()")
-        lines.append(f"\tauto result = PEGTransformerFactory::Transform{rule_name}({', '.join(transform_args)});")
-        lines.append(f"\treturn {typed_result_expr(cpp_type, 'result')};")
+        result_expr = f"PEGTransformerFactory::Transform{rule_name}({', '.join(transform_args)})"
+        lines.append(f"\treturn {typed_result_expr(cpp_type, result_expr)};")
         lines.append("}")
         return lines
 
