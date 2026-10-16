@@ -54,27 +54,55 @@ public:
 			start_offset = optional_idx(current->offset);
 		}
 		if (state.BuildParseResult() && (!current || current->type != TokenType::END_OF_INPUT_AUTOCOMPLETE)) {
-			while (auto child = matcher.get().GetChainChild()) {
-				if (!child->first_set.MightMatch(list_state)) {
+			while (true) {
+				auto chain = matcher.get().GetPreparedChain();
+				if (chain && matcher.get().GetPreparedChainIndex() + 1 < chain->lists.size()) {
+					auto &last = chain->lists.back().get();
+					if (!last.first_set.MightMatch(list_state)) {
+						break;
+					}
+					pending = state.context.process_allocator.Make<PendingList>(matcher.get(), pending);
+					matcher = last;
+					continue;
+				}
+				auto child = matcher.get().GetChainChild();
+				if (!child || !child->first_set.MightMatch(list_state)) {
 					break;
 				}
 				pending = state.context.process_allocator.Make<PendingList>(matcher.get(), pending);
 				matcher = *child;
 			}
 		}
-		ReserveResults();
 	}
 
 public:
-	bool CanCollapseEmptyTail() {
-		if (!state.BuildParseResult() || !FindCollapsibleResult()) {
+	static bool IsEmptyOptional(ParseResult &result) {
+		return result.type == ParseResultType::OPTIONAL && !result.Cast<OptionalParseResult>().HasResult();
+	}
+
+	//! Return the first child directly when either a whole prepared group or this list has no remaining value.
+	bool TryCollapseEmptyTail(ParseResult &first_result) {
+		if (!matcher.get().IsCollapsible() || !state.BuildParseResult() || !first_result.GetRule() ||
+		    IsEmptyOptional(first_result)) {
 			return false;
 		}
 		auto current = list_state.token_iterator.Current();
 		if (current && current->type == TokenType::END_OF_INPUT_AUTOCOMPLETE) {
 			return false;
 		}
-		for (idx_t i = child_index; i < matcher.get().matchers.size(); i++) {
+		auto chain = matcher.get().GetPreparedChain();
+		if (chain && pending && pending->matcher.GetPreparedChain() == chain &&
+		    (chain->tail_first_set.literals.empty() || !chain->tail_first_set.MightMatch(list_state))) {
+			D_ASSERT(matcher.get().GetPreparedChainIndex() > pending->matcher.GetPreparedChainIndex());
+			matcher = pending->matcher;
+			pending = pending->parent;
+			list_state.added_suggestions.reset();
+			return true;
+		}
+		if (matcher.get().matchers.size() <= 1) {
+			return false;
+		}
+		for (idx_t i = 1; i < matcher.get().matchers.size(); i++) {
 			auto &child = matcher.get().matchers[i].get();
 			if (child.Type() != MatcherType::OPTIONAL || !child.IsStructural() ||
 			    child.Cast<OptionalMatcher>().GetChildMatcher().first_set.MightMatch(list_state)) {
@@ -115,8 +143,7 @@ public:
 		for (auto &child : results) {
 			auto &child_result = child.get();
 			// an optional that matched nothing carries no value, so it does not stop the rule from collapsing
-			if (child_result.type == ParseResultType::OPTIONAL &&
-			    !child_result.Cast<OptionalParseResult>().HasResult()) {
+			if (IsEmptyOptional(child_result)) {
 				continue;
 			}
 
@@ -351,6 +378,20 @@ MatchStep MatchStack::ExecuteInternal(optional_ptr<MatchStack> stack, MatchStack
 
 			D_ASSERT(f.awaiting_child == child_result.has_value());
 			while (true) {
+				auto collapsed_tail = child_result && child_result->IsSuccess() && child_result->HasParseResult() &&
+				                      f.child_index == 0 && f.TryCollapseEmptyTail(*child_result->GetParseResult());
+				auto &current_matcher = f.matcher.get();
+				if (collapsed_tail) {
+					D_ASSERT(f.results.empty());
+					f.awaiting_child = false;
+					if (!f.pending) {
+						f.state.token_iterator.SetPosition(f.list_state.token_iterator);
+					}
+					f.DiscardSuggestions();
+					child_result->GetParseResult()->collapsed = true;
+					completed = *child_result;
+					goto finish_list;
+				}
 				if (child_result) {
 					f.awaiting_child = false;
 					if (!child_result->IsSuccess()) {
@@ -359,14 +400,12 @@ MatchStep MatchStack::ExecuteInternal(optional_ptr<MatchStack> stack, MatchStack
 						goto complete_frame;
 					}
 					if (child_result->HasParseResult()) {
+						if (f.results.empty()) {
+							f.ReserveResults();
+						}
 						f.results.emplace_back(*child_result->GetParseResult());
 					}
 					f.child_index++;
-				}
-				auto &current_matcher = f.matcher.get();
-				if (f.child_index == 1 && f.child_index < current_matcher.matchers.size() &&
-				    current_matcher.IsCollapsible() && f.CanCollapseEmptyTail()) {
-					f.child_index = current_matcher.matchers.size();
 				}
 				while (f.child_index < current_matcher.matchers.size()) {
 					auto &child_matcher = current_matcher.matchers[f.child_index].get();
@@ -395,19 +434,26 @@ MatchStep MatchStack::ExecuteInternal(optional_ptr<MatchStack> stack, MatchStack
 				if (!f.pending) {
 					f.state.token_iterator.SetPosition(f.list_state.token_iterator);
 				}
-				auto result = f.CompleteList();
+				completed = f.CompleteList();
+			finish_list:
 				if (!f.pending) {
-					completed = result;
 					goto complete_frame;
 				}
 				f.list_state.rule = current_matcher.GetRule();
 				f.list_state.added_suggestions.reset();
-				f.matcher = f.pending->matcher;
-				f.pending = f.pending->parent;
+				auto chain = current_matcher.GetPreparedChain();
+				if (chain && f.pending->matcher.GetPreparedChain() == chain) {
+					D_ASSERT(current_matcher.GetPreparedChainIndex() > f.pending->matcher.GetPreparedChainIndex());
+					f.matcher = chain->lists[current_matcher.GetPreparedChainIndex() - 1];
+				} else {
+					f.matcher = f.pending->matcher;
+				}
+				if (&f.matcher.get() == &f.pending->matcher) {
+					f.pending = f.pending->parent;
+				}
 				f.results.clear();
-				f.ReserveResults();
 				f.child_index = 0;
-				child_result = result;
+				child_result = completed;
 			}
 		}
 		case MatcherType::CHOICE: {
