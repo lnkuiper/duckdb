@@ -33,6 +33,27 @@ struct MatchStackFrame : public MatchProcess {
 };
 namespace {
 
+static idx_t FindChoiceChild(const ChoiceMatcher &matcher, MatchState &state, idx_t index, bool single_child) {
+	if (!single_child && state.BuildParseResult()) {
+		while (index < matcher.matchers.size()) {
+			auto &child = matcher.matchers[index].get();
+			if (!child.IsStructural() || child.first_set.MightMatch(state)) {
+				break;
+			}
+			index++;
+		}
+	}
+	return index;
+}
+
+static MatcherResult MakeChoiceResult(MatchState &state, const MatcherResult &child, idx_t index,
+                                      optional_idx start_offset) {
+	if (!child.HasParseResult()) {
+		return MatcherResult::Success();
+	}
+	return state.AllocateParseResult<ChoiceParseResult>(*child.GetParseResult(), index, start_offset);
+}
+
 class ListMatchFrame final : public MatchStackFrame {
 public:
 	struct PendingList {
@@ -76,6 +97,21 @@ public:
 	}
 
 public:
+	void InitializeFirstChoice() {
+		auto choice = matcher.get().GetFirstChoice();
+		auto current = list_state.token_iterator.Current();
+		if (!choice || !state.BuildParseResult() ||
+		    (current && current->type == TokenType::END_OF_INPUT_AUTOCOMPLETE) ||
+		    !choice->first_set.MightMatch(list_state)) {
+			return;
+		}
+		first_choice = choice;
+		list_state.rule = choice->GetRule();
+		auto selected = choice->SelectChild(list_state);
+		single_choice = selected.IsValid();
+		choice_index = single_choice ? selected.GetIndex() : 0;
+	}
+
 	static bool IsEmptyOptional(ParseResult &result) {
 		return result.type == ParseResultType::OPTIONAL && !result.Cast<OptionalParseResult>().HasResult();
 	}
@@ -190,6 +226,10 @@ public:
 	optional_ptr<PendingList> pending;
 	idx_t child_index = 0;
 	idx_t saved_suggestion_size = 0;
+	//! Before the first child commits, a prepared choice uses this list's speculative cursor.
+	optional_ptr<const ChoiceMatcher> first_choice;
+	idx_t choice_index = 0;
+	bool single_choice = false;
 	optional_idx start_offset;
 	bool awaiting_child = false;
 };
@@ -334,6 +374,7 @@ optional<MatcherResult> MatchStack::PushFrame(MatchInput input) {
 		case MatcherType::LIST:
 			owned = arena_ptr<MatchStackFrame>(
 			    arena.Make<ListMatchFrame>(input.matcher.Cast<ListMatcher>(), input.state, mark, packrat));
+			static_cast<ListMatchFrame &>(*owned).InitializeFirstChoice();
 			break;
 
 		case MatcherType::CHOICE:
@@ -385,6 +426,36 @@ MatchStep MatchStack::ExecuteInternal(optional_ptr<MatchStack> stack, MatchStack
 			auto &f = static_cast<ListMatchFrame &>(frame);
 
 			D_ASSERT(f.awaiting_child == child_result.has_value());
+			if (f.first_choice) {
+				if (child_result) {
+					f.awaiting_child = false;
+					// Restore the choice's entry state after destroying the alternative's private state.
+					f.list_state.added_suggestions.reset();
+					f.list_state.rule = f.first_choice->GetRule();
+					if (child_result->IsSuccess()) {
+						child_result = MakeChoiceResult(f.list_state, *child_result, f.choice_index, f.start_offset);
+						f.first_choice = nullptr;
+					} else {
+						if (f.single_choice) {
+							f.DiscardSuggestions();
+							goto complete_frame;
+						}
+						f.choice_index++;
+						f.list_state.token_iterator.SetPosition(f.state.token_iterator);
+						child_result.reset();
+					}
+				}
+				if (f.first_choice) {
+					f.choice_index = FindChoiceChild(*f.first_choice, f.list_state, f.choice_index, f.single_choice);
+					if (f.choice_index >= f.first_choice->matchers.size()) {
+						f.DiscardSuggestions();
+						goto complete_frame;
+					}
+					f.awaiting_child = true;
+					next.emplace(MatchInput {f.first_choice->matchers[f.choice_index].get(), f.list_state});
+					goto dispatch_child;
+				}
+			}
 			while (true) {
 				auto collapsed_tail = child_result && child_result->IsSuccess() && child_result->HasParseResult() &&
 				                      f.child_index == 0 && f.TryCollapseEmptyTail(*child_result->GetParseResult());
@@ -474,12 +545,8 @@ MatchStep MatchStack::ExecuteInternal(optional_ptr<MatchStack> stack, MatchStack
 				}
 				if (child_result->IsSuccess()) {
 					f.state.token_iterator.SetPosition(f.child_state->token_iterator);
-					if (!child_result->HasParseResult()) {
-						completed = MatcherResult::Success();
-						goto complete_frame;
-					}
-					completed = f.state.AllocateParseResult<ChoiceParseResult>(*child_result->GetParseResult(),
-					                                                           f.child_index, f.start_offset);
+
+					completed = MakeChoiceResult(f.state, *child_result, f.child_index, f.start_offset);
 					goto complete_frame;
 				}
 				if (f.single_child) {
@@ -489,15 +556,8 @@ MatchStep MatchStack::ExecuteInternal(optional_ptr<MatchStack> stack, MatchStack
 				f.child_index++;
 				f.child_state.reset();
 			}
-			if (!f.single_child && f.state.BuildParseResult()) {
-				while (f.child_index < f.matcher.matchers.size()) {
-					auto &child = f.matcher.matchers[f.child_index].get();
-					if (!child.IsStructural() || child.first_set.MightMatch(f.state)) {
-						break;
-					}
-					f.child_index++;
-				}
-			}
+
+			f.child_index = FindChoiceChild(f.matcher, f.state, f.child_index, f.single_child);
 			if (f.child_index >= f.matcher.matchers.size()) {
 				completed = MatcherResult::Failure();
 				goto complete_frame;
