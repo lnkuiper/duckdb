@@ -1069,8 +1069,11 @@ TEST_CASE("Small grammars resolve missing generated references only when used", 
 	TokenIterator iterator(tokens);
 	ArenaAllocator arena(Allocator::DefaultAllocator());
 	PEGTransformer transformer(arena, iterator, options, grammar);
+#ifndef DUCKDB_CRASH_ON_ASSERT
+	// InternalException aborts instead of throwing in crash-on-assert builds.
 	REQUIRE_THROWS_AS(transformer.GetRule(id), InternalException);
 	REQUIRE_THROWS_AS(transformer.GetRule("AdditiveExpression"), InternalException);
+#endif
 }
 
 TEST_CASE("Overriding a transform opts its rule out of collapsing", "[api][grammar_extension]") {
@@ -3068,7 +3071,13 @@ TEST_CASE("Generated list finalization validates its tree before consuming child
 	TokenIterator iterator(tokens);
 	ArenaAllocator transform_results(Allocator::DefaultAllocator());
 	PEGTransformer transformer(transform_results, iterator, options, *grammar);
-	for (idx_t shape = 0; shape < 6; shape++) {
+#ifdef DUCKDB_CRASH_ON_ASSERT
+	// Malformed trees intentionally raise InternalException, which aborts in this mode.
+	constexpr idx_t shape_count = 2;
+#else
+	constexpr idx_t shape_count = 6;
+#endif
+	for (idx_t shape = 0; shape < shape_count; shape++) {
 		INFO("List shape: " << shape);
 		ParseResultAllocator results;
 		ArenaAllocator temporary(Allocator::DefaultAllocator());
