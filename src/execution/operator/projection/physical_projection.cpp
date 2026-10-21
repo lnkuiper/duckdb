@@ -4,13 +4,25 @@
 #include "duckdb/planner/expression/bound_function_expression.hpp"
 #include "duckdb/planner/expression_iterator.hpp"
 #include "duckdb/planner/expression/bound_reference_expression.hpp"
+#include "duckdb/execution/operator/scan/physical_table_scan.hpp"
+#include "duckdb/parallel/pipeline.hpp"
 
 namespace duckdb {
 
+class ProjectionGlobalState : public GlobalOperatorState {
+public:
+	unique_ptr<ExpressionExecutorGlobalState> expressions;
+};
+
 class ProjectionState : public OperatorState {
 public:
-	explicit ProjectionState(ExecutionContext &context, const vector<unique_ptr<Expression>> &expressions)
-	    : executor(context.client, expressions) {
+	ProjectionState(ExecutionContext &context, const vector<unique_ptr<Expression>> &expressions,
+	                optional_ptr<ExpressionExecutorGlobalState> global)
+	    : executor(context.client) {
+		executor.global_state = global;
+		for (auto &expression : expressions) {
+			executor.AddExpression(*expression);
+		}
 	}
 
 	ExpressionExecutor executor;
@@ -21,7 +33,7 @@ public:
 	}
 
 	bool SupportsReuse() const override {
-		return true;
+		return !executor.global_state;
 	}
 };
 
@@ -50,12 +62,59 @@ void PhysicalProjection::InitializeOutputChunk(Allocator &allocator, DataChunk &
 OperatorResultType PhysicalProjection::Execute(ExecutionContext &context, DataChunk &input, DataChunk &chunk,
                                                GlobalOperatorState &gstate, OperatorState &state_p) const {
 	auto &state = state_p.Cast<ProjectionState>();
+	state.executor.row_offset = context.source_row_offset;
 	state.executor.Execute(input, chunk);
 	return OperatorResultType::NEED_MORE_INPUT;
 }
 
 unique_ptr<OperatorState> PhysicalProjection::GetOperatorState(ExecutionContext &context) const {
-	return make_uniq<ProjectionState>(context, select_list);
+	optional_ptr<ExpressionExecutorGlobalState> shared = op_state->Cast<ProjectionGlobalState>().expressions.get();
+	if (shared && (!context.pipeline || context.pipeline->IsExternalInput() ||
+	               context.pipeline->GetSource().get() != &children[0].get())) {
+		shared = nullptr;
+	}
+	return make_uniq<ProjectionState>(context, select_list, shared);
+}
+
+//! Prototype: a source ordinal is an RNG draw ordinal only for unconditional scalar projections.
+static bool SupportsDensePositions(const Expression &expr) {
+	if (!expr.IsVolatile()) {
+		return true;
+	}
+	if (expr.GetExpressionClass() != ExpressionClass::BOUND_FUNCTION) {
+		return false;
+	}
+	auto &function = expr.Cast<BoundFunctionExpression>().Function();
+	if (function.HasBindLambdaCallback() ||
+	    (function.GetStability() == FunctionStability::VOLATILE && !function.HasInitGlobalStateCallback())) {
+		return false;
+	}
+	for (auto &child : expr.Cast<BoundFunctionExpression>().GetChildren()) {
+		if (!SupportsDensePositions(*child)) {
+			return false;
+		}
+	}
+	return true;
+}
+
+unique_ptr<GlobalOperatorState> PhysicalProjection::GetGlobalOperatorState(ClientContext &) const {
+	auto result = make_uniq<ProjectionGlobalState>();
+	// Keep the prototype's row-position contract local: no intervening filter, join, or expansion.
+	if (children.size() != 1 || children[0].get().type != PhysicalOperatorType::TABLE_SCAN ||
+	    !children[0].get().Cast<PhysicalTableScan>().function.provides_row_offsets) {
+		return std::move(result);
+	}
+	bool has_volatile = false;
+	for (auto &expression : select_list) {
+		if (!SupportsDensePositions(*expression)) {
+			return std::move(result);
+		}
+		has_volatile = has_volatile || expression->IsVolatile();
+	}
+	if (has_volatile) {
+		result->expressions = make_uniq<ExpressionExecutorGlobalState>();
+	}
+	return std::move(result);
 }
 
 bool PhysicalProjection::ParallelOperator() const {

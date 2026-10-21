@@ -201,6 +201,8 @@ public:
 	AsyncResultsExecutionMode results_execution_mode {AsyncResultsExecutionMode::SYNCHRONOUS};
 	//! Interrupt state of the calling task, so the function might park and wake-up by returning a taskless Blocked res
 	optional_ptr<const InterruptState> interrupt_state;
+	//! First logical row in the output, for sources declaring provides_row_offsets.
+	optional_idx row_offset;
 };
 
 struct TableFunctionPartitionInput {
@@ -516,6 +518,8 @@ public:
 	table_function_progress_t table_scan_progress;
 	//! (Optional) returns the partition info of the current scan operator
 	table_function_get_partition_data_t get_partition_data;
+	//! Whether each output chunk consists of consecutive logical rows, starting at row_offset.
+	bool provides_row_offsets = false;
 	//! (Optional) returns extra bind info
 	table_function_get_bind_info_t get_bind_info;
 	//! (Optional) the table a bound call scans, e.g. for a scan of a catalog table

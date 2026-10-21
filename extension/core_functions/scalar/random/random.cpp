@@ -56,17 +56,34 @@ void ExtractTimestampFunction(DataChunk &args, ExpressionState &state, Vector &r
 	UnaryExecutor::Execute<INPUT, timestamp_t, OP>(input, result);
 }
 
+struct RandomGlobalState : public FunctionGlobalState {
+	explicit RandomGlobalState(uint64_t seed_p) : seed(seed_p) {
+	}
+	const uint64_t seed;
+};
+
 struct RandomLocalState : public FunctionLocalState {
 	explicit RandomLocalState(uint64_t seed) : random_engine(0) {
 		random_engine.SetSeed(seed);
 	}
 
 	RandomEngine random_engine;
+	uint64_t position = 0;
 };
 
 void RandomFunction(DataChunk &args, ExpressionState &state, Vector &result) {
 	D_ASSERT(args.ColumnCount() == 0);
 	auto &lstate = ExecuteFunctionState::GetFunctionState(state)->Cast<RandomLocalState>();
+	if (state.Cast<ExecuteFunctionState>().global_state) {
+		auto &executor = *state.root.executor;
+		D_ASSERT(executor.row_offset.IsValid());
+		D_ASSERT(executor.chunk && executor.chunk->size() == args.size());
+		auto position = executor.row_offset.GetIndex();
+		// Both the PCG period and this unsigned subtraction wrap modulo 2^64.
+		// Each double consumes two 32-bit outputs.
+		lstate.random_engine.Advance((position - lstate.position) * uint64_t(2));
+		lstate.position = position + args.size();
+	}
 
 	result.SetVectorType(VectorType::FLAT_VECTOR);
 	auto result_data = FlatVector::Writer<double>(result, args.size());
@@ -77,9 +94,19 @@ void RandomFunction(DataChunk &args, ExpressionState &state, Vector &result) {
 
 unique_ptr<FunctionLocalState> RandomInitLocalState(ExpressionState &state, const BoundFunctionExpression &expr,
                                                     FunctionData *bind_data) {
+	auto shared = state.Cast<ExecuteFunctionState>().global_state;
+	if (shared) {
+		return make_uniq<RandomLocalState>(shared->Cast<RandomGlobalState>().seed);
+	}
 	auto &random_engine = RandomEngine::Get(state.GetContext());
 	lock_guard<mutex> guard(random_engine.lock);
 	return make_uniq<RandomLocalState>(random_engine.NextRandomInteger64());
+}
+
+unique_ptr<FunctionGlobalState> RandomInitGlobalState(ClientContext &context, const BoundFunctionExpression &) {
+	auto &random_engine = RandomEngine::Get(context);
+	lock_guard<mutex> guard(random_engine.lock);
+	return make_uniq<RandomGlobalState>(random_engine.NextRandomInteger64());
 }
 
 void GenerateUUIDv4Function(DataChunk &args, ExpressionState &state, Vector &result) {
@@ -109,6 +136,7 @@ void GenerateUUIDv7Function(DataChunk &args, ExpressionState &state, Vector &res
 ScalarFunction RandomFun::GetFunction() {
 	ScalarFunction random("random", {}, LogicalType::DOUBLE, RandomFunction, nullptr, nullptr, RandomInitLocalState);
 	random.SetStability(FunctionStability::VOLATILE);
+	random.SetInitGlobalStateCallback(RandomInitGlobalState);
 	return random;
 }
 

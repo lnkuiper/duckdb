@@ -149,6 +149,9 @@ typedef void (*resolve_scalar_types_t)(ResolveScalarFunctionTypesInput &input);
 typedef unique_ptr<FunctionLocalState> (*init_local_state_t)(ExpressionState &state,
                                                              const BoundFunctionExpression &expr,
                                                              FunctionData *bind_data);
+//! Shared initialization for execution with dense logical row positions.
+typedef unique_ptr<FunctionGlobalState> (*init_global_state_t)(ClientContext &context,
+                                                               const BoundFunctionExpression &expr);
 //! The type to directly access the selection vector of a scalar function
 typedef idx_t (*scalar_function_select_t)(DataChunk &args, ExpressionState &state,
                                           optional_ptr<const SelectionVector> sel,
@@ -198,6 +201,7 @@ public:
 	bind_scalar_function_t bind = nullptr;
 	//! Init thread local state for the function (if any)
 	init_local_state_t init_local_state = nullptr;
+	init_global_state_t init_global_state = nullptr;
 	//! The statistics propagation function (if any)
 	function_statistics_t statistics = nullptr;
 	//! The lambda bind function (if any)
@@ -299,6 +303,10 @@ public: // Callbacks
 	auto HasInitStateCallback() const -> bool { return callbacks.init_local_state != nullptr; }
 	auto GetInitStateCallback() const -> init_local_state_t { return callbacks.init_local_state; }
 	auto SetInitStateCallback(init_local_state_t callback) -> void { callbacks.init_local_state = callback; }
+
+	auto HasInitGlobalStateCallback() const -> bool { return callbacks.init_global_state != nullptr; }
+	auto GetInitGlobalStateCallback() const -> init_global_state_t { return callbacks.init_global_state; }
+	auto SetInitGlobalStateCallback(init_global_state_t callback) -> void { callbacks.init_global_state = callback; }
 
 	auto HasStatisticsCallback() const -> bool { return callbacks.statistics != nullptr; }
 	auto GetStatisticsCallback() const -> function_statistics_t { return callbacks.statistics; }

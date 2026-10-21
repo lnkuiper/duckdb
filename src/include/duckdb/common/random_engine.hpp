@@ -37,6 +37,8 @@ public:
 	uint64_t NextRandomInteger64();
 
 	void SetSeed(uint64_t seed);
+	//! Advance by a number of 32-bit PCG outputs in logarithmic time.
+	void Advance(uint64_t count);
 
 	void RandomData(duckdb::data_ptr_t data, duckdb::idx_t len);
 

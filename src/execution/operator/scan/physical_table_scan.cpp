@@ -180,6 +180,7 @@ SourceResultType PhysicalTableScan::GetDataInternal(ExecutionContext &context, D
 
 		// Actually call the function
 		function.function(context.client, data, chunk);
+		context.source_row_offset = data.row_offset;
 
 		const auto output_async_result = data.async_result.GetResultType();
 

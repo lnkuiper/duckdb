@@ -82,6 +82,10 @@ void RandomEngine::SetSeed(uint64_t seed) {
 	random_state->pcg.seed(seed);
 }
 
+void RandomEngine::Advance(uint64_t count) {
+	random_state->pcg.advance(count);
+}
+
 void RandomEngine::RandomData(duckdb::data_ptr_t data, duckdb::idx_t len) {
 	while (len) {
 		const auto random_integer = NextRandomInteger();

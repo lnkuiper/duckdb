@@ -13,11 +13,19 @@
 #include "duckdb/planner/bound_tokens.hpp"
 #include "duckdb/planner/expression.hpp"
 #include "duckdb/common/enums/debug_vector_verification.hpp"
+#include "duckdb/common/mutex.hpp"
 
 namespace duckdb {
 class Allocator;
 class ClientContext;
 class ExecutionContext;
+
+//! Shared by executors evaluating the same expressions at dense logical row positions.
+//! Initialization follows the ordinary local expression initialization order.
+struct ExpressionExecutorGlobalState {
+	mutex lock;
+	unordered_map<const BoundFunctionExpression *, unique_ptr<FunctionGlobalState>> functions;
+};
 
 //! ExpressionExecutor is responsible for executing a set of expressions and storing the result in a data chunk
 class ExpressionExecutor {
@@ -35,6 +43,8 @@ public:
 	//! The data chunk of the current physical operator, used to resolve
 	//! column references and determines the output cardinality
 	DataChunk *chunk = nullptr;
+	optional_ptr<ExpressionExecutorGlobalState> global_state;
+	optional_idx row_offset;
 
 public:
 	bool HasContext();

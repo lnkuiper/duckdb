@@ -1,0 +1,46 @@
+# name: test/sql/table_function/parallel_generated_random.test
+# description: Dense generated projections preserve the serial seeded random streams
+# group: [table_function]
+
+require skip_reload
+
+statement ok
+PRAGMA verify_parallelism
+
+statement ok
+CREATE TABLE generated(i BIGINT, a DOUBLE, b DOUBLE)
+
+statement ok
+PREPARE populate AS INSERT INTO generated SELECT i, random(), random() FROM range(4097) t(i)
+
+# These exact hashes come from the serial range implementation. The prepared
+# statement must obtain fresh expression seeds at execution, independent of workers.
+foreach threads 1 4
+
+statement ok
+SET threads={threads}
+
+statement ok
+DELETE FROM generated
+
+statement ok
+SELECT setseed(0.42)
+
+statement ok
+EXECUTE populate
+
+query III
+SELECT count(*), sum(hash(i,a,b)), bit_xor(hash(i,a,b)) FROM generated
+----
+4097	37989142403565071396247	14541957503140485245
+
+# Local worker initialization must not consume additional client RNG seeds.
+query II
+SELECT hash(random()), hash(random())
+----
+9403958340877646113	303265579669909776
+
+endloop
+
+statement ok
+PRAGMA disable_verify_parallelism

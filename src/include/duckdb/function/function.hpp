@@ -102,6 +102,17 @@ struct TableFunctionData : public FunctionData {
 	DUCKDB_API bool Equals(const FunctionData &other) const override;
 };
 
+//! Shared execution state of a scalar function, owned by the executing physical operator.
+struct FunctionGlobalState {
+	virtual ~FunctionGlobalState() = default;
+
+	template <class TARGET>
+	const TARGET &Cast() const {
+		DynamicCastCheck<TARGET>(this);
+		return reinterpret_cast<const TARGET &>(*this);
+	}
+};
+
 struct FunctionLocalState {
 	DUCKDB_API virtual ~FunctionLocalState();
 
