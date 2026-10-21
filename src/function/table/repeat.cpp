@@ -1,6 +1,5 @@
 #include "duckdb/function/table/range.hpp"
-#include "duckdb/common/algorithm.hpp"
-#include "duckdb/common/atomic.hpp"
+#include "duckdb/function/table/generated_rows.hpp"
 
 namespace duckdb {
 
@@ -10,12 +9,6 @@ struct RepeatFunctionData : public TableFunctionData {
 
 	Value value;
 	idx_t target_count;
-};
-
-struct RepeatOperatorData : public GlobalTableFunctionState {
-	RepeatOperatorData() : current_count(0) {
-	}
-	atomic<idx_t> current_count;
 };
 
 static unique_ptr<FunctionData> RepeatBind(ClientContext &context, TableFunctionBindInput &input,
@@ -35,28 +28,19 @@ static unique_ptr<FunctionData> RepeatBind(ClientContext &context, TableFunction
 }
 
 static unique_ptr<GlobalTableFunctionState> RepeatInit(ClientContext &context, TableFunctionInitInput &input) {
-	return make_uniq<RepeatOperatorData>();
+	auto &bind_data = input.bind_data->Cast<RepeatFunctionData>();
+	return make_uniq<GeneratedRowsGlobalState>(context, Hugeint::Convert(bind_data.target_count));
 }
 
 static void RepeatFunction(ClientContext &context, TableFunctionInput &data_p, DataChunk &output) {
 	auto &bind_data = data_p.bind_data->Cast<RepeatFunctionData>();
-	auto &state = data_p.global_state->Cast<RepeatOperatorData>();
-
-	idx_t remaining = MinValue<idx_t>(bind_data.target_count - state.current_count, STANDARD_VECTOR_SIZE);
-	output.data[0].Reference(bind_data.value, count_t(remaining));
-	output.SetChildCardinality(remaining);
-	state.current_count += remaining;
-}
-
-static double RepeatProgress(ClientContext &, const FunctionData *bind_data_p,
-                             const GlobalTableFunctionState *state_p) {
-	if (!state_p) {
-		return -1;
+	auto &global_state = data_p.global_state->Cast<GeneratedRowsGlobalState>();
+	auto &local_state = data_p.local_state->Cast<GeneratedRowsLocalState>();
+	if (!local_state.Next(global_state)) {
+		return;
 	}
-	auto &bind_data = bind_data_p->Cast<RepeatFunctionData>();
-	auto &state = state_p->Cast<RepeatOperatorData>();
-	return bind_data.target_count == 0 ? 100
-	                                   : 100.0 * double(state.current_count.load()) / double(bind_data.target_count);
+	output.data[0].Reference(bind_data.value, count_t(local_state.count));
+	output.SetChildCardinality(local_state.count);
 }
 
 static unique_ptr<NodeStatistics> RepeatCardinality(ClientContext &context, const FunctionData *bind_data_p) {
@@ -69,9 +53,10 @@ void RepeatTableFunction::RegisterFunction(BuiltinFunctions &set) {
 	                     FunctionSignature()
 	                         .AddPositionalOnly("value", LogicalType::ANY)
 	                         .AddPositionalOnly("count", LogicalType::BIGINT),
-	                     RepeatFunction, RepeatBind, RepeatInit);
+	                     RepeatFunction, RepeatBind, RepeatInit, GeneratedRowsLocalState::Init);
 	repeat.cardinality = RepeatCardinality;
-	repeat.table_scan_progress = RepeatProgress;
+	repeat.table_scan_progress = GeneratedRowsGlobalState::Progress;
+	repeat.get_partition_data = GeneratedRowsLocalState::GetPartitionData;
 	set.AddFunction(repeat);
 }
 

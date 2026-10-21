@@ -5,6 +5,7 @@
 #include "duckdb/common/operator/add.hpp"
 #include "duckdb/common/operator/subtract.hpp"
 #include "duckdb/common/atomic.hpp"
+#include "duckdb/function/table/generated_rows.hpp"
 
 namespace duckdb {
 
@@ -29,7 +30,8 @@ static void GetParameters(int64_t values[], idx_t value_count, hugeint_t &start,
 }
 
 struct RangeFunctionBindData : public TableFunctionData {
-	explicit RangeFunctionBindData(const vector<Value> &inputs, bool generate_series) : cardinality(0) {
+	explicit RangeFunctionBindData(const vector<Value> &inputs, bool generate_series)
+	    : start(0), increment(1), row_count(0) {
 		int64_t values[3];
 		for (idx_t i = 0; i < inputs.size(); i++) {
 			if (inputs[i].IsNull()) {
@@ -37,22 +39,28 @@ struct RangeFunctionBindData : public TableFunctionData {
 			}
 			values[i] = inputs[i].GetValue<int64_t>();
 		}
-		hugeint_t start;
 		hugeint_t end;
-		hugeint_t increment;
 		GetParameters(values, inputs.size(), start, end, increment);
+		if (increment == 0) {
+			throw BinderException("interval cannot be 0!");
+		}
+		if ((start > end && increment > 0) || (start < end && increment < 0)) {
+			return;
+		}
 		if (generate_series) {
 			// generate_series has inclusive bounds on the RHS
 			end += increment < 0 ? -1 : 1;
 		}
 
-		cardinality = Hugeint::Cast<idx_t>((end - start) / increment);
+		row_count = (end - start) / increment;
 		if ((end - start) % increment != 0) {
-			cardinality += 1;
+			row_count += 1;
 		}
 	}
 
-	idx_t cardinality;
+	hugeint_t start;
+	hugeint_t increment;
+	hugeint_t row_count;
 };
 
 template <bool GENERATE_SERIES>
@@ -70,36 +78,28 @@ static unique_ptr<FunctionData> RangeFunctionBind(ClientContext &context, TableF
 	return make_uniq<RangeFunctionBindData>(input.inputs, GENERATE_SERIES);
 }
 
-//! Progress of a range used as a source (i.e. with a single input row)
-struct RangeFunctionGlobalState : public GlobalTableFunctionState {
-	//! The number of values of the input rows, and the number of values that were generated
-	atomic<idx_t> total_values {0};
-	atomic<idx_t> generated_values {0};
-};
-
 static unique_ptr<GlobalTableFunctionState> RangeFunctionGlobalInit(ClientContext &context,
                                                                     TableFunctionInitInput &input) {
-	return make_uniq<RangeFunctionGlobalState>();
+	if (!input.bind_data) {
+		return nullptr;
+	}
+	auto &bind_data = input.bind_data->Cast<RangeFunctionBindData>();
+	return make_uniq<GeneratedRowsGlobalState>(context, bind_data.row_count);
 }
 
-static double RangeFunctionProgress(ClientContext &context, const FunctionData *bind_data,
-                                    const GlobalTableFunctionState *global_state) {
-	auto &state = global_state->Cast<RangeFunctionGlobalState>();
-	auto total = state.total_values.load(std::memory_order_relaxed);
-	if (total == 0) {
-		return 0;
+static void RangeSourceFunction(ClientContext &, TableFunctionInput &input, DataChunk &output) {
+	auto &bind_data = input.bind_data->Cast<RangeFunctionBindData>();
+	auto &global_state = input.global_state->Cast<GeneratedRowsGlobalState>();
+	auto &local_state = input.local_state->Cast<GeneratedRowsLocalState>();
+	if (!local_state.Next(global_state)) {
+		return;
 	}
-	auto generated = MinValue<idx_t>(state.generated_values.load(std::memory_order_relaxed), total);
-	return 100.0 * static_cast<double>(generated) / static_cast<double>(total);
+	auto start = bind_data.start + bind_data.increment * local_state.offset;
+	output.data[0].Sequence(Hugeint::Cast<int64_t>(start), Hugeint::Cast<int64_t>(bind_data.increment),
+	                        local_state.count);
 }
 
 struct RangeFunctionLocalState : public LocalTableFunctionState {
-	explicit RangeFunctionLocalState(optional_ptr<GlobalTableFunctionState> global_state)
-	    : global_state(global_state ? &global_state->Cast<RangeFunctionGlobalState>() : nullptr) {
-	}
-
-	optional_ptr<RangeFunctionGlobalState> global_state;
-
 	bool initialized_row = false;
 	idx_t current_input_row = 0;
 	idx_t current_idx = 0;
@@ -107,16 +107,16 @@ struct RangeFunctionLocalState : public LocalTableFunctionState {
 	hugeint_t start;
 	hugeint_t end;
 	hugeint_t increment;
-	//! The number of values generated for the current input row
-	idx_t row_count = 0;
-
 	bool empty_range = false;
 };
 
 static unique_ptr<LocalTableFunctionState> RangeFunctionLocalInit(ExecutionContext &context,
                                                                   TableFunctionInitInput &input,
                                                                   GlobalTableFunctionState *global_state) {
-	return make_uniq<RangeFunctionLocalState>(global_state);
+	if (global_state) {
+		return GeneratedRowsLocalState::Init(context, input, global_state);
+	}
+	return make_uniq<RangeFunctionLocalState>();
 }
 
 template <bool GENERATE_SERIES>
@@ -127,7 +127,6 @@ static void GenerateRangeParameters(DataChunk &input, idx_t row_id, RangeFunctio
 			result.start = GENERATE_SERIES ? 1 : 0;
 			result.end = 0;
 			result.increment = 1;
-			result.row_count = 0;
 			return;
 		}
 	}
@@ -157,18 +156,6 @@ static void GenerateRangeParameters(DataChunk &input, idx_t row_id, RangeFunctio
 			result.end = result.end + 1;
 		}
 	}
-	if (result.empty_range) {
-		result.row_count = 0;
-	} else {
-		auto difference = result.end - result.start;
-		auto row_count = difference / result.increment;
-		if (difference % result.increment != 0) {
-			row_count += 1;
-		}
-		if (!Hugeint::TryCast<idx_t>(row_count, result.row_count)) {
-			result.row_count = NumericLimits<idx_t>::Maximum();
-		}
-	}
 }
 
 template <bool GENERATE_SERIES>
@@ -187,9 +174,6 @@ static OperatorResultType RangeFunction(ExecutionContext &context, TableFunction
 			GenerateRangeParameters<GENERATE_SERIES>(input, state.current_input_row, state);
 			state.initialized_row = true;
 			state.current_idx = 0;
-			if (state.global_state) {
-				state.global_state->total_values.fetch_add(state.row_count, std::memory_order_relaxed);
-			}
 		}
 		if (state.empty_range) {
 			// empty range
@@ -220,9 +204,6 @@ static OperatorResultType RangeFunction(ExecutionContext &context, TableFunction
 			state.initialized_row = false;
 			continue;
 		}
-		if (state.global_state) {
-			state.global_state->generated_values.fetch_add(remaining, std::memory_order_relaxed);
-		}
 		return OperatorResultType::HAVE_MORE_OUTPUT;
 	}
 }
@@ -232,7 +213,11 @@ unique_ptr<NodeStatistics> RangeCardinality(ClientContext &context, const Functi
 		return nullptr;
 	}
 	auto &bind_data = bind_data_p->Cast<RangeFunctionBindData>();
-	return make_uniq<NodeStatistics>(bind_data.cardinality, bind_data.cardinality);
+	idx_t cardinality;
+	if (!Hugeint::TryCast<idx_t>(bind_data.row_count, cardinality)) {
+		return make_uniq<NodeStatistics>(NumericLimits<idx_t>::Maximum());
+	}
+	return make_uniq<NodeStatistics>(cardinality, cardinality);
 }
 
 //===--------------------------------------------------------------------===//
@@ -493,13 +478,13 @@ void RangeTableFunction::RegisterFunction(BuiltinFunctions &set) {
 	                            .AddPositionalOnly("stop", LogicalType::TIMESTAMP)
 	                            .AddPositionalOnly("step", LogicalType::INTERVAL);
 
-	TableFunction range_function(stop_only, nullptr, RangeFunctionBind<false>, RangeFunctionGlobalInit,
+	TableFunction range_function(stop_only, RangeSourceFunction, RangeFunctionBind<false>, RangeFunctionGlobalInit,
 	                             RangeFunctionLocalInit);
-	range_function.table_scan_progress = RangeFunctionProgress;
+	range_function.table_scan_progress = GeneratedRowsGlobalState::Progress;
+	range_function.get_partition_data = GeneratedRowsLocalState::GetPartitionData;
 	range_function.in_out_function = RangeFunction<false>;
 	range_function.cardinality = RangeCardinality;
 	range_function.is_repeatable = RangeIsRepeatable;
-	range_function.parallelism = TableFunctionParallelism::FORCE_SINGLE_THREADED;
 	range_function.return_type = TableFunctionReturnType::SET_RETURNING_FUNCTION;
 
 	// single argument range: (end) - implicit start = 0 and increment = 1

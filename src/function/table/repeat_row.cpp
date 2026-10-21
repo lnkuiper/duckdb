@@ -1,6 +1,5 @@
 #include "duckdb/function/table/range.hpp"
-#include "duckdb/common/algorithm.hpp"
-#include "duckdb/common/atomic.hpp"
+#include "duckdb/function/table/generated_rows.hpp"
 
 namespace duckdb {
 
@@ -11,12 +10,6 @@ struct RepeatRowFunctionData : public TableFunctionData {
 
 	const vector<Value> values;
 	idx_t target_count;
-};
-
-struct RepeatRowOperatorData : public GlobalTableFunctionState {
-	RepeatRowOperatorData() : current_count(0) {
-	}
-	atomic<idx_t> current_count;
 };
 
 static unique_ptr<FunctionData> RepeatRowBind(ClientContext &context, TableFunctionBindInput &input,
@@ -41,30 +34,21 @@ static unique_ptr<FunctionData> RepeatRowBind(ClientContext &context, TableFunct
 }
 
 static unique_ptr<GlobalTableFunctionState> RepeatRowInit(ClientContext &context, TableFunctionInitInput &input) {
-	return make_uniq<RepeatRowOperatorData>();
+	auto &bind_data = input.bind_data->Cast<RepeatRowFunctionData>();
+	return make_uniq<GeneratedRowsGlobalState>(context, Hugeint::Convert(bind_data.target_count));
 }
 
 static void RepeatRowFunction(ClientContext &context, TableFunctionInput &data_p, DataChunk &output) {
 	auto &bind_data = data_p.bind_data->Cast<RepeatRowFunctionData>();
-	auto &state = data_p.global_state->Cast<RepeatRowOperatorData>();
-
-	idx_t remaining = MinValue<idx_t>(bind_data.target_count - state.current_count, STANDARD_VECTOR_SIZE);
+	auto &global_state = data_p.global_state->Cast<GeneratedRowsGlobalState>();
+	auto &local_state = data_p.local_state->Cast<GeneratedRowsLocalState>();
+	if (!local_state.Next(global_state)) {
+		return;
+	}
 	for (idx_t val_idx = 0; val_idx < bind_data.values.size(); val_idx++) {
-		output.data[val_idx].Reference(bind_data.values[val_idx], count_t(remaining));
+		output.data[val_idx].Reference(bind_data.values[val_idx], count_t(local_state.count));
 	}
-	output.SetChildCardinality(remaining);
-	state.current_count += remaining;
-}
-
-static double RepeatRowProgress(ClientContext &, const FunctionData *bind_data_p,
-                                const GlobalTableFunctionState *state_p) {
-	if (!state_p) {
-		return -1;
-	}
-	auto &bind_data = bind_data_p->Cast<RepeatRowFunctionData>();
-	auto &state = state_p->Cast<RepeatRowOperatorData>();
-	return bind_data.target_count == 0 ? 100
-	                                   : 100.0 * double(state.current_count.load()) / double(bind_data.target_count);
+	output.SetChildCardinality(local_state.count);
 }
 
 static unique_ptr<NodeStatistics> RepeatRowCardinality(ClientContext &context, const FunctionData *bind_data_p) {
@@ -73,12 +57,14 @@ static unique_ptr<NodeStatistics> RepeatRowCardinality(ClientContext &context, c
 }
 
 void RepeatRowTableFunction::RegisterFunction(BuiltinFunctions &set) {
-	TableFunction repeat_row("repeat_row", {}, RepeatRowFunction, RepeatRowBind, RepeatRowInit);
+	TableFunction repeat_row("repeat_row", {}, RepeatRowFunction, RepeatRowBind, RepeatRowInit,
+	                         GeneratedRowsLocalState::Init);
 	// a positional list, so it declares "*args" and no "**kwargs" - an argument named after no parameter is an error
 	repeat_row.GetSignature().AddArgs("args", LogicalType::ANY);
 	repeat_row.GetSignature().AddKeywordOnly("num_rows", LogicalType::BIGINT);
 	repeat_row.cardinality = RepeatRowCardinality;
-	repeat_row.table_scan_progress = RepeatRowProgress;
+	repeat_row.table_scan_progress = GeneratedRowsGlobalState::Progress;
+	repeat_row.get_partition_data = GeneratedRowsLocalState::GetPartitionData;
 	set.AddFunction(repeat_row);
 }
 

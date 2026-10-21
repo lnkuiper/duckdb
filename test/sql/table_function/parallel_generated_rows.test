@@ -1,0 +1,63 @@
+# name: test/sql/table_function/parallel_generated_rows.test
+# description: Parallel generated rows preserve batch boundaries and source order
+# group: [table_function]
+
+statement ok
+SET threads=4
+
+statement ok
+SET preserve_insertion_order=true
+
+statement ok
+PRAGMA verify_parallelism
+
+# An exact batch and a partial final vector must both terminate correctly.
+foreach n 2048 4096 4097
+
+query II
+SELECT count(*) = {n}, sum(i) = {n}::HUGEINT * ({n} - 1) // 2 FROM range({n}) t(i)
+----
+1	1
+
+endloop
+
+# Ordered result collection across several batches, with a partial final batch.
+query I
+SELECT i FROM range(10003) t(i)
+----
+10003 values hashing to 38ad2f5f8f04f4152fe3457e10a031d4
+
+# Batch insertion preserves descending, non-unit steps and the inclusive endpoint.
+statement ok
+CREATE TABLE generated AS SELECT i FROM generate_series(30002, -7, -3) t(i)
+
+query II
+SELECT count(*), count(*) FILTER (WHERE i <> 30002 - 3 * rowid) FROM generated
+----
+10004	0
+
+# A filtered LIMIT spanning a batch boundary must return the first matching rows.
+query I
+SELECT i FROM range(10003) t(i) WHERE i >= 4095 LIMIT 3
+----
+4095
+4096
+4097
+
+query II
+SELECT count(*), count(v) FROM repeat(NULL, 10003) t(v)
+----
+10003	0
+
+query II
+SELECT count(*), count(*) FILTER (WHERE column0 <> 42 OR column1 IS DISTINCT FROM [1, NULL, 3])
+FROM repeat_row(42, [1, NULL, 3], num_rows=10003)
+----
+10003	0
+
+# The inclusive BIGINT domain has 2^64 rows: the work count must not wrap to zero.
+query I
+SELECT * FROM generate_series(9223372036854775807, -9223372036854775808, -1) LIMIT 2
+----
+9223372036854775807
+9223372036854775806
