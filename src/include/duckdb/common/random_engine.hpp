@@ -12,8 +12,6 @@
 #include "duckdb/common/limits.hpp"
 #include "duckdb/common/mutex.hpp"
 
-#include <random>
-
 namespace duckdb {
 class ClientContext;
 struct RandomState;
@@ -35,6 +33,8 @@ public:
 	uint32_t NextRandomInteger();
 	uint32_t NextRandomInteger(uint32_t min, uint32_t max);
 	uint64_t NextRandomInteger64();
+	//! Uniform integer in [min, max); requires min < max.
+	uint64_t NextRandomInteger64(uint64_t min, uint64_t max);
 
 	void SetSeed(uint64_t seed);
 	//! Advance by a number of 32-bit PCG outputs in logarithmic time.

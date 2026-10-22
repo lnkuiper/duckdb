@@ -11,7 +11,6 @@
 
 #include <algorithm>
 #include <cstdint>
-#include <random>
 #include <stdlib.h>
 
 namespace duckdb {
@@ -149,8 +148,7 @@ struct ReservoirQuantileOperation {
 		auto source_remaining = source.r_samp->num_entries_seen_total;
 		idx_t source_count = 0;
 		for (idx_t i = 0; i < sample_count; i++) {
-			std::uniform_int_distribution<idx_t> select_population(0, total_seen - i - 1);
-			if (select_population(sampler.random) < source_remaining) {
+			if (sampler.random.NextRandomInteger64(0, total_seen - i) < source_remaining) {
 				source_count++;
 				source_remaining--;
 			}
@@ -161,16 +159,15 @@ struct ReservoirQuantileOperation {
 
 		// Keep a uniform subset of each local reservoir, leaving the source unchanged.
 		for (idx_t i = 0; i < target_count; i++) {
-			std::uniform_int_distribution<idx_t> select_index(i, target.pos - 1);
-			std::swap(target.v[i], target.v[select_index(sampler.random)]);
+			auto index = sampler.random.NextRandomInteger64(i, target.pos);
+			std::swap(target.v[i], target.v[index]);
 		}
 		vector<idx_t> source_indices(source.pos);
 		for (idx_t i = 0; i < source.pos; i++) {
 			source_indices[i] = i;
 		}
 		for (idx_t i = 0; i < source_count; i++) {
-			std::uniform_int_distribution<idx_t> select_index(i, source.pos - 1);
-			auto index = select_index(sampler.random);
+			auto index = sampler.random.NextRandomInteger64(i, source.pos);
 			std::swap(source_indices[i], source_indices[index]);
 			target.v[target_count + i] = source.v[source_indices[i]];
 		}

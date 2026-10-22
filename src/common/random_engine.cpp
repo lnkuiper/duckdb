@@ -2,6 +2,9 @@
 #include "duckdb/common/numeric_utils.hpp"
 #include "pcg_random.hpp"
 
+#include <chrono>
+#include <cmath>
+
 #ifdef __linux__
 #include <sys/syscall.h>
 #include <unistd.h>
@@ -68,6 +71,18 @@ uint32_t RandomEngine::NextRandomInteger() {
 
 uint64_t RandomEngine::NextRandomInteger64() {
 	return (static_cast<uint64_t>(NextRandomInteger()) << UINT64_C(32)) | static_cast<uint64_t>(NextRandomInteger());
+}
+
+uint64_t RandomEngine::NextRandomInteger64(uint64_t min, uint64_t max) {
+	D_ASSERT(min < max);
+	const auto range = max - min;
+	// Discard the incomplete residue cycle so each result has the same number of preimages.
+	const auto threshold = (uint64_t(0) - range) % range;
+	uint64_t value;
+	do {
+		value = NextRandomInteger64();
+	} while (value < threshold);
+	return min + value % range;
 }
 
 uint32_t RandomEngine::NextRandomInteger(uint32_t min, uint32_t max) {
