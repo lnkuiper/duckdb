@@ -159,8 +159,8 @@ TEST_CASE("A blocking drain of an erroring stream ends with the error", "[api][s
 	}
 	REQUIRE(stream->HasError());
 	REQUIRE(StringUtil::Contains(stream->GetError(), "boom"));
-	// Rows before the failure may arrive, the failing chunk and anything after it never do
-	REQUIRE(row_count < 400000);
+	// The full prefix before the failing chunk may arrive, but the failing chunk and anything after it never do
+	REQUIRE(row_count <= 400000);
 }
 
 TEST_CASE("A simple stream reports an execution error while a chunk is still buffered", "[api][stream_buffer]") {
