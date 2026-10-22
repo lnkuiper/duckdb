@@ -16,6 +16,128 @@
 
 namespace duckdb {
 
+TEST_CASE("Buffered completion waits for the batch minimum after a producer's empty marker",
+          "[streaming_batch_metadata]") {
+	DuckDB db;
+	Connection con(db);
+	vector<LogicalType> types {LogicalType::BIGINT};
+	PipelineBroadcastExchange exchange(*con.context, types, PipelineBroadcastExchangeCompletionMode::RUN_TO_COMPLETION,
+	                                   OrderPreservationType::INSERTION_ORDER, true,
+	                                   PipelineBroadcastExchangeBufferMode::BUFFER_ALL);
+	auto consumer = exchange.RegisterConsumer();
+	exchange.SelectBufferedConsumer(consumer, PipelineBroadcastExchangeScanMode::BATCH);
+	exchange.Reset();
+	auto local = exchange.GetLocalState(*con.context, 0, true);
+	auto properties = BatchMetadataInfo::RowPositions();
+	properties.Merge(BatchMetadataInfo::Completion());
+	auto reader = exchange.GetScanState(properties);
+	SourcePartitionInfo partition;
+	partition.batch_index = 1;
+	partition.min_batch_index = 1;
+	auto signal = make_shared_ptr<InterruptDoneSignalState>();
+	InterruptState interrupt {weak_ptr<InterruptDoneSignalState>(signal)};
+	ChunkMetadata metadata;
+	metadata.batch.batch_index = 1;
+	metadata.batch.stream_id = 91;
+	metadata.batch.first_row_index = 0;
+	metadata.batch.row_count = 2;
+	metadata.offset_in_batch = 0;
+	DataChunk input;
+	input.Initialize(*con.context, types);
+	input.SetChildCardinality(1);
+	input.data[0].SetValue(0, Value::BIGINT(0));
+	REQUIRE(exchange.Push(input, *local, partition, interrupt, metadata) == SinkResultType::NEED_MORE_INPUT);
+	DataChunk output;
+	output.Initialize(*con.context, types);
+	ChunkMetadata observed;
+	optional_idx batch;
+	SourceBatchIndexState batch_state;
+	bool complete = false;
+	auto scan = [&] {
+		output.Reset();
+		return exchange.Scan(consumer, output, *reader, batch, batch_state, interrupt, observed, complete);
+	};
+	REQUIRE(scan() == SourceResultType::HAVE_MORE_OUTPUT);
+	REQUIRE(output.size() == 1);
+	REQUIRE_FALSE(complete);
+	input.Reset();
+	metadata.offset_in_batch.SetInvalid();
+	REQUIRE(exchange.Push(input, *local, partition, interrupt, metadata) == SinkResultType::NEED_MORE_INPUT);
+	REQUIRE(scan() == SourceResultType::HAVE_MORE_OUTPUT);
+	REQUIRE(output.size() == 0);
+	REQUIRE_FALSE(complete);
+	REQUIRE(scan() == SourceResultType::BLOCKED);
+	REQUIRE_FALSE(complete);
+	// Another contribution can still arrive before the global minimum advances.
+	input.SetChildCardinality(1);
+	input.data[0].SetValue(0, Value::BIGINT(1));
+	metadata.offset_in_batch = 1;
+	REQUIRE(exchange.Push(input, *local, partition, interrupt, metadata) == SinkResultType::NEED_MORE_INPUT);
+	REQUIRE(scan() == SourceResultType::HAVE_MORE_OUTPUT);
+	REQUIRE(output.GetValue(0, 0) == Value::BIGINT(1));
+	REQUIRE_FALSE(complete);
+	partition.batch_index = 2;
+	partition.min_batch_index = 2;
+	REQUIRE(exchange.NextBatch(*local, partition, interrupt) == SinkNextBatchType::READY);
+	REQUIRE(scan() == SourceResultType::HAVE_MORE_OUTPUT);
+	REQUIRE(output.size() == 0);
+	REQUIRE(complete);
+	REQUIRE(observed.batch.batch_index.GetIndex() == 0);
+	REQUIRE(observed.batch.stream_id.GetIndex() == 91);
+	REQUIRE(observed.batch.row_count.GetIndex() == 2);
+	REQUIRE(scan() == SourceResultType::BLOCKED);
+	REQUIRE_FALSE(complete);
+	REQUIRE_FALSE(observed.batch.batch_index.IsValid());
+	exchange.Cancel();
+}
+
+TEST_CASE("Empty batch completion records survive the broadcast spool", "[streaming_batch_metadata]") {
+	DuckDB db;
+	Connection con(db);
+	vector<LogicalType> types {LogicalType::BIGINT};
+	PipelineBroadcastExchange exchange(*con.context, types, PipelineBroadcastExchangeCompletionMode::RUN_TO_COMPLETION,
+	                                   OrderPreservationType::INSERTION_ORDER, true,
+	                                   PipelineBroadcastExchangeBufferMode::BUFFER_ALL);
+	auto consumer = exchange.RegisterConsumer();
+	exchange.SelectBufferedConsumer(consumer, PipelineBroadcastExchangeScanMode::BATCH);
+	exchange.Reset();
+	auto local = exchange.GetLocalState(*con.context, 0, true);
+	SourcePartitionInfo partition;
+	InterruptState interrupt;
+	DataChunk empty;
+	empty.InitializeEmpty(types);
+	empty.SetChildCardinality(0);
+	for (idx_t i = 0; i < 40; i++) {
+		partition.batch_index = i + 1;
+		partition.min_batch_index = i + 1;
+		ChunkMetadata metadata;
+		metadata.batch.batch_index = i + 1;
+		metadata.batch.stream_id = 92;
+		metadata.batch.row_count = 0;
+		metadata.batch.first_row_index = 0;
+		REQUIRE(exchange.Push(empty, *local, partition, interrupt, metadata) == SinkResultType::NEED_MORE_INPUT);
+	}
+	exchange.Finish();
+	auto reader = exchange.GetScanState(BatchMetadataInfo::Completion());
+	DataChunk output;
+	output.Initialize(*con.context, types);
+	ChunkMetadata metadata;
+	optional_idx batch;
+	SourceBatchIndexState batch_state;
+	bool complete;
+	idx_t completed = 0;
+	while (exchange.Scan(consumer, output, *reader, batch, batch_state, interrupt, metadata, complete) !=
+	       SourceResultType::FINISHED) {
+		REQUIRE(output.size() == 0);
+		if (complete) {
+			REQUIRE(metadata.batch.batch_index.GetIndex() == completed++);
+			REQUIRE(metadata.batch.stream_id.GetIndex() == 92);
+			REQUIRE(metadata.batch.row_count.GetIndex() == 0);
+		}
+	}
+	REQUIRE(completed == 40);
+}
+
 TEST_CASE("Staged broadcast chunks retain metadata independently of scheduling tags", "[streaming_batch_metadata]") {
 	DuckDB db;
 	Connection con(db);

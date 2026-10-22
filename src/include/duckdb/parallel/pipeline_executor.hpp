@@ -70,8 +70,10 @@ public:
 	//! Advances an externally-fed pipeline to the producer's next batch
 	PipelineExecuteResult NextBatchExternal(const OperatorPartitionData &partition_data,
 	                                        optional_idx source_min_batch_index);
-	//! Completes the current batch of an externally-fed pipeline
-	PipelineExecuteResult FinishBatchExternal(optional_idx source_min_batch_index);
+	//! Drains and acknowledges the specified batch before its producer releases it.
+	PipelineExecuteResult CompleteBatchExternal(const BatchMetadata &batch, optional_idx source_min_batch_index);
+	//! Drain terminal output before the producer releases its minimum; Combine follows afterwards.
+	PipelineExecuteResult FlushExternal(optional_idx source_min_batch_index);
 	//! Propagates a minimum batch index change through an externally-fed pipeline
 	PipelineExecuteResult UpdateMinBatchIndexExternal(optional_idx source_min_batch_index);
 	//! Finalizes an externally-fed pipeline executor after the producer is exhausted
@@ -103,11 +105,12 @@ public:
 private:
 	enum class PipelineInputChunkMode : uint8_t { PUSH_INPUT, RESUME_INPUT };
 	enum class SourceFinishNotificationState : uint8_t { PENDING, SENT };
-	enum class SourceInputPhase : uint8_t { NONE, BATCH, MINIMUM_UPDATE, ADMIT };
+	enum class SourceInputPhase : uint8_t { NONE, BATCH, COMPLETE, MINIMUM_UPDATE, ADMIT };
 	enum class BatchTransitionPhase : uint8_t { NONE, FLUSH, COMPLETE, DRAINED, RELEASE };
 	struct SourceFetchResult {
 		SourceResultType result = SourceResultType::BLOCKED;
 		SourceBatchIndexState batch_index_state = SourceBatchIndexState::UNCHANGED;
+		bool batch_complete = false;
 	};
 	struct OperatorFlushState {
 		bool initialized = false;
@@ -155,6 +158,7 @@ private:
 	BatchMetadata active_batch;
 	BatchTransition batch_transition;
 	OperatorFlushState terminal_flush;
+	optional_idx external_final_min_batch_index;
 
 	//! The operators that are not yet finished executing and have data remaining
 	//! If the stack of in_process_operators is empty, we fetch from the source instead
@@ -216,6 +220,7 @@ private:
 	PipelineExecuteResult PushInputChunk(OperatorChunk &input, ExecutionBudget &chunk_budget,
 	                                     PipelineInputChunkMode mode);
 	PipelineExecuteResult FlushAndFinalize(ExecutionBudget &chunk_budget);
+	PipelineExecuteResult FlushInput(ExecutionBudget &chunk_budget);
 	//! Pushes a chunk through the pipeline and returns a single result chunk
 	//! Returns whether or not a new input chunk is needed, or whether or not we are finished
 	OperatorResultType Execute(OperatorChunk &input, OperatorChunk &result, idx_t initial_index = 0);

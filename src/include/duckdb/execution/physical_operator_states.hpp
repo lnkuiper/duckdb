@@ -212,6 +212,8 @@ struct OperatorSourceInput {
 	InterruptState &interrupt_state;
 	SourceBatchIndexState batch_index_state = SourceBatchIndexState::UNCHANGED;
 	ChunkMetadata metadata;
+	//! The descriptor completes a batch without supplying any rows.
+	bool batch_complete = false;
 };
 
 struct OperatorSinkCombineInput {

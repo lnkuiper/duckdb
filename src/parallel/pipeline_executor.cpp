@@ -97,6 +97,7 @@ void PipelineExecutor::Reset() {
 	active_batch = BatchMetadata();
 	batch_transition = BatchTransition();
 	terminal_flush = OperatorFlushState();
+	external_final_min_batch_index.SetInvalid();
 	external_batch_initialized = false;
 	finished_processing_idx = -1;
 	source_profiling_finalized = false;
@@ -278,6 +279,10 @@ PipelineExecuteResult PipelineExecutor::AdvanceBatch(OperatorPartitionData next_
                                                      const BatchMetadata &next_batch, ExecutionBudget &chunk_budget,
                                                      bool force, optional_idx external_min_batch_index) {
 	auto &transition = batch_transition;
+	if (transition.phase == BatchTransitionPhase::DRAINED && active_batch.batch_index.IsValid() &&
+	    active_batch.batch_index == next_batch.batch_index && active_batch.stream_id == next_batch.stream_id) {
+		throw InternalException("Input returned after its batch was completed");
+	}
 	if (transition.phase == BatchTransitionPhase::NONE || transition.phase == BatchTransitionPhase::DRAINED) {
 		transition.next_partition = std::move(next_partition);
 		transition.next_batch = next_batch;
@@ -314,13 +319,15 @@ OperatorPartitionData PipelineExecutor::GetNextPartition(OperatorChunk &source_c
 	// by default set it to the maximum valid batch index value for the current pipeline
 	auto &partition_info = local_sink_state->partition_info;
 	OperatorPartitionData next_data(max_batch_index);
-	if (source_chunk.chunk.size() > 0 || source_result.batch_index_state == SourceBatchIndexState::ADVANCED) {
+	if (source_chunk.chunk.size() > 0 || source_result.batch_complete ||
+	    source_result.batch_index_state == SourceBatchIndexState::ADVANCED) {
 		D_ASSERT(local_source_state);
 		D_ASSERT(global_source_state);
 		// Read the source batch for both data chunks and explicit empty batch advances.
-		if (required_partition_info.RequiresPartitioning()) {
+		auto &source_partition_info = pipeline.GetMetadataPlan().source_partition_info;
+		if (source_partition_info.RequiresPartitioning()) {
 			auto source_data = pipeline.source->GetPartitionData(context, source_chunk.chunk, *global_source_state,
-			                                                     *local_source_state, required_partition_info);
+			                                                     *local_source_state, source_partition_info);
 			next_data = ToPipelinePartitionData(source_data);
 			if (pipeline.GetMetadataPlan().edges[0].completion && source_chunk.metadata.batch.batch_index.IsValid() &&
 			    source_chunk.metadata.batch.batch_index.GetIndex() != next_data.batch_index) {
@@ -429,7 +436,8 @@ PipelineExecuteResult PipelineExecutor::Execute(idx_t max_chunks) {
 		if (source_input_phase != SourceInputPhase::NONE) {
 			if (source_input_phase == SourceInputPhase::BATCH) {
 				if (pipeline.GetMetadataPlan().TracksBatches() &&
-				    (pending_source_result.result != SourceResultType::FINISHED || incoming.chunk.size() > 0)) {
+				    (incoming.chunk.size() > 0 || pending_source_result.batch_complete ||
+				     pending_source_result.batch_index_state == SourceBatchIndexState::ADVANCED)) {
 					if (pending_input) {
 						auto next = GetNextPartition(incoming, pending_source_result);
 						auto advance =
@@ -447,9 +455,20 @@ PipelineExecuteResult PipelineExecutor::Execute(idx_t max_chunks) {
 					source_input_phase = SourceInputPhase::NONE;
 					continue;
 				}
-				source_input_phase = pending_source_result.batch_index_state == SourceBatchIndexState::ADVANCED
+				source_input_phase = pending_source_result.batch_complete ? SourceInputPhase::COMPLETE
+				                     : pending_source_result.batch_index_state == SourceBatchIndexState::ADVANCED
 				                         ? SourceInputPhase::MINIMUM_UPDATE
 				                         : SourceInputPhase::ADMIT;
+			}
+			if (source_input_phase == SourceInputPhase::COMPLETE) {
+				auto complete = FinishBatch(chunk_budget);
+				if (complete != PipelineExecuteResult::FINISHED) {
+					return complete;
+				}
+				if (IsFinished()) {
+					exhausted_pipeline = true;
+				}
+				source_input_phase = SourceInputPhase::ADMIT;
 			}
 			if (source_input_phase == SourceInputPhase::MINIMUM_UPDATE) {
 				if (UpdateMinBatchIndex() == SinkNextBatchType::BLOCKED) {
@@ -466,7 +485,8 @@ PipelineExecuteResult PipelineExecutor::Execute(idx_t max_chunks) {
 				continue;
 			}
 			result = ExecutePushInternal(source_chunk, chunk_budget);
-		} else if (batch_transition.phase != BatchTransitionPhase::NONE) {
+		} else if (batch_transition.phase != BatchTransitionPhase::NONE &&
+		           batch_transition.phase != BatchTransitionPhase::DRAINED) {
 			return FlushAndFinalize(chunk_budget);
 		} else if (remaining_sink_chunk) {
 			auto push_result = PushInputChunk(source_chunk, chunk_budget, PipelineInputChunkMode::RESUME_INPUT);
@@ -518,7 +538,30 @@ PipelineExecuteResult PipelineExecutor::PushExternal(OperatorChunk &input,
 	if (IsFinished()) {
 		return PipelineExecuteResult::FINISHED;
 	}
-	if (required_partition_info.RequiresPartitioning() && !remaining_sink_chunk) {
+	ExecutionBudget chunk_budget(NumericLimits<idx_t>::Maximum());
+	auto &properties = pipeline.GetMetadataPlan().edges[0];
+	auto metadata = input.metadata;
+	metadata.Restrict(properties);
+	if (metadata.batch.batch_index.IsValid()) {
+		metadata.batch.batch_index =
+		    ToPipelinePartitionData(OperatorPartitionData(metadata.batch.batch_index.GetIndex())).batch_index;
+	}
+	metadata.Verify(properties, input.chunk.size());
+	if (properties.completion && (batch_transition.phase != BatchTransitionPhase::NONE ||
+	                              (!remaining_sink_chunk && in_process_operators.empty()))) {
+		auto next = required_partition_info.RequiresPartitioning()
+		                ? ToPipelinePartitionData(source_partition_data)
+		                : OperatorPartitionData(metadata.batch.batch_index.GetIndex());
+		auto advance = AdvanceBatch(std::move(next), metadata.batch, chunk_budget, !external_batch_initialized,
+		                            source_min_batch_index);
+		if (advance != PipelineExecuteResult::FINISHED) {
+			return advance;
+		}
+		external_batch_initialized = true;
+		if (IsFinished()) {
+			return PipelineExecuteResult::FINISHED;
+		}
+	} else if (required_partition_info.RequiresPartitioning() && !remaining_sink_chunk) {
 		auto next_batch_result = NextBatchExternal(source_partition_data, source_min_batch_index);
 		if (next_batch_result != PipelineExecuteResult::NOT_FINISHED) {
 			return next_batch_result;
@@ -529,19 +572,11 @@ PipelineExecuteResult PipelineExecutor::PushExternal(OperatorChunk &input,
 		context.thread.profiler.EndOperator(&input.chunk);
 	}
 
-	ExecutionBudget chunk_budget(NumericLimits<idx_t>::Maximum());
 	auto &source_chunk = pipeline.operators.empty() ? final_chunk : *intermediate_chunks[0];
 	if (!remaining_sink_chunk && in_process_operators.empty()) {
 		source_chunk.Reset();
 		source_chunk.Reference(input);
-		auto &properties = pipeline.GetMetadataPlan().edges[0];
-		source_chunk.metadata.Restrict(properties);
-		if (source_chunk.metadata.batch.batch_index.IsValid()) {
-			source_chunk.metadata.batch.batch_index =
-			    ToPipelinePartitionData(OperatorPartitionData(source_chunk.metadata.batch.batch_index.GetIndex()))
-			        .batch_index;
-		}
-		source_chunk.metadata.Verify(properties, source_chunk.chunk.size());
+		source_chunk.metadata = metadata;
 	}
 	return PushInputChunk(source_chunk, chunk_budget, PipelineInputChunkMode::PUSH_INPUT);
 }
@@ -553,11 +588,22 @@ PipelineExecuteResult PipelineExecutor::NextBatchExternal(const OperatorPartitio
 	if (IsFinished()) {
 		return PipelineExecuteResult::FINISHED;
 	}
-	if (!required_partition_info.RequiresPartitioning()) {
+	if (!pipeline.GetMetadataPlan().TracksBatches()) {
 		return PipelineExecuteResult::NOT_FINISHED;
 	}
-	auto next_batch_result =
-	    NextBatch(ToPipelinePartitionData(source_partition_data), !external_batch_initialized, source_min_batch_index);
+	auto next = ToPipelinePartitionData(source_partition_data);
+	if (pending_input &&
+	    (next.batch_index != local_sink_state->partition_info.batch_index.GetIndex() || !external_batch_initialized)) {
+		ExecutionBudget budget(NumericLimits<idx_t>::Maximum());
+		auto advance =
+		    AdvanceBatch(std::move(next), BatchMetadata(), budget, !external_batch_initialized, source_min_batch_index);
+		if (advance != PipelineExecuteResult::FINISHED) {
+			return advance;
+		}
+		external_batch_initialized = true;
+		return PipelineExecuteResult::NOT_FINISHED;
+	}
+	auto next_batch_result = NextBatch(std::move(next), !external_batch_initialized, source_min_batch_index);
 	next_batch_blocked = next_batch_result == SinkNextBatchType::BLOCKED;
 	if (next_batch_blocked) {
 		return PipelineExecuteResult::INTERRUPTED;
@@ -567,46 +613,65 @@ PipelineExecuteResult PipelineExecutor::NextBatchExternal(const OperatorPartitio
 }
 
 PipelineExecuteResult PipelineExecutor::FinishExternal(optional_idx source_min_batch_index) {
+	if (finalized) {
+		return PipelineExecuteResult::FINISHED;
+	}
+	auto drain = FlushExternal(source_min_batch_index);
+	if (drain != PipelineExecuteResult::FINISHED) {
+		return drain;
+	}
+	if (UpdateMinBatchIndexExternal(source_min_batch_index) == PipelineExecuteResult::INTERRUPTED) {
+		return PipelineExecuteResult::INTERRUPTED;
+	}
+	return PushFinalize();
+}
+
+PipelineExecuteResult PipelineExecutor::FlushExternal(optional_idx source_min_batch_index) {
 	D_ASSERT(pipeline.sink);
 	D_ASSERT(pipeline.IsExternalInput());
 	if (finalized) {
 		return PipelineExecuteResult::FINISHED;
 	}
-	auto finish_batch_result = FinishBatchExternal(source_min_batch_index);
-	if (finish_batch_result == PipelineExecuteResult::INTERRUPTED) {
-		return finish_batch_result;
-	}
-
+	external_final_min_batch_index = source_min_batch_index;
 	ExecutionBudget chunk_budget(NumericLimits<idx_t>::Maximum());
 	exhausted_source = true;
 	exhausted_pipeline = true;
-	return FlushAndFinalize(chunk_budget);
+	return FlushInput(chunk_budget);
 }
 
-PipelineExecuteResult PipelineExecutor::FinishBatchExternal(optional_idx source_min_batch_index) {
+PipelineExecuteResult PipelineExecutor::CompleteBatchExternal(const BatchMetadata &batch,
+                                                              optional_idx source_min_batch_index) {
 	D_ASSERT(pipeline.sink);
 	D_ASSERT(pipeline.IsExternalInput());
-	if (finalized) {
+	if (finalized || IsFinished()) {
 		return PipelineExecuteResult::FINISHED;
 	}
-	if (required_partition_info.RequiresPartitioning()) {
-		auto max_batch_index = pipeline.base_batch_index + PipelineBuildState::BATCH_INCREMENT - 1;
-		auto next_batch_result =
-		    NextBatch(OperatorPartitionData(max_batch_index), !external_batch_initialized, source_min_batch_index);
-		next_batch_blocked = next_batch_result == SinkNextBatchType::BLOCKED;
-		if (next_batch_blocked) {
-			return PipelineExecuteResult::INTERRUPTED;
+	auto &properties = pipeline.GetMetadataPlan().edges[0];
+	if (!properties.completion) {
+		return PipelineExecuteResult::NOT_FINISHED;
+	}
+	batch.Verify(properties);
+	auto next = ToPipelinePartitionData(OperatorPartitionData(batch.batch_index.GetIndex()));
+	auto mapped_batch = batch;
+	mapped_batch.batch_index = next.batch_index;
+	ExecutionBudget budget(NumericLimits<idx_t>::Maximum());
+	if (active_batch.batch_index != mapped_batch.batch_index || active_batch.stream_id != mapped_batch.stream_id) {
+		auto advance =
+		    AdvanceBatch(std::move(next), mapped_batch, budget, !external_batch_initialized, source_min_batch_index);
+		if (advance != PipelineExecuteResult::FINISHED) {
+			return advance;
 		}
 		external_batch_initialized = true;
 	}
-	return PipelineExecuteResult::NOT_FINISHED;
+	auto complete = FinishBatch(budget);
+	return complete == PipelineExecuteResult::FINISHED ? PipelineExecuteResult::NOT_FINISHED : complete;
 }
 
 PipelineExecuteResult PipelineExecutor::UpdateMinBatchIndexExternal(optional_idx source_min_batch_index) {
 	D_ASSERT(pipeline.sink);
 	D_ASSERT(pipeline.IsExternalInput());
-	if (IsFinished() || !required_partition_info.RequiresBatchIndex()) {
-		return IsFinished() ? PipelineExecuteResult::FINISHED : PipelineExecuteResult::NOT_FINISHED;
+	if (finalized || !pipeline.GetMetadataPlan().TracksBatches()) {
+		return finalized ? PipelineExecuteResult::FINISHED : PipelineExecuteResult::NOT_FINISHED;
 	}
 	auto min_batch_index = MapExternalMinBatchIndex(source_min_batch_index);
 	auto &partition_info = local_sink_state->partition_info;
@@ -734,7 +799,12 @@ PipelineExecuteResult PipelineExecutor::PushInputChunk(OperatorChunk &input, Exe
 }
 
 PipelineExecuteResult PipelineExecutor::FlushAndFinalize(ExecutionBudget &chunk_budget) {
-	if (pending_input && !pipeline.IsExternalInput()) {
+	auto result = FlushInput(chunk_budget);
+	return result == PipelineExecuteResult::FINISHED ? PushFinalize() : result;
+}
+
+PipelineExecuteResult PipelineExecutor::FlushInput(ExecutionBudget &chunk_budget) {
+	if (pending_input) {
 		auto result = FinishBatch(chunk_budget);
 		if (result != PipelineExecuteResult::FINISHED) {
 			return result;
@@ -748,14 +818,17 @@ PipelineExecuteResult PipelineExecutor::FlushAndFinalize(ExecutionBudget &chunk_
 		}
 		done_flushing = true;
 	}
-	if (pipeline.GetMetadataPlan().TracksBatches() && !pipeline.IsExternalInput()) {
-		if (pending_input) {
+	if (pipeline.GetMetadataPlan().TracksBatches()) {
+		if (pending_input || pipeline.IsExternalInput()) {
 			auto terminal_index = pipeline.base_batch_index + PipelineBuildState::BATCH_INCREMENT - 1;
-			auto result = AdvanceBatch(OperatorPartitionData(terminal_index), BatchMetadata(), chunk_budget);
+			auto result =
+			    AdvanceBatch(OperatorPartitionData(terminal_index), BatchMetadata(), chunk_budget,
+			                 pipeline.IsExternalInput() && !external_batch_initialized, external_final_min_batch_index);
 			if (result != PipelineExecuteResult::FINISHED) {
 				return result;
 			}
-			return PushFinalize();
+			external_batch_initialized = pipeline.IsExternalInput();
+			return PipelineExecuteResult::FINISHED;
 		}
 		OperatorChunk empty_chunk;
 		SourceFetchResult source_result;
@@ -766,7 +839,7 @@ PipelineExecuteResult PipelineExecutor::FlushAndFinalize(ExecutionBudget &chunk_
 			return PipelineExecuteResult::INTERRUPTED;
 		}
 	}
-	return PushFinalize();
+	return PipelineExecuteResult::FINISHED;
 }
 
 PipelineExecuteResult PipelineExecutor::PushFinalize() {
@@ -956,6 +1029,7 @@ PipelineExecutor::SourceFetchResult PipelineExecutor::FetchFromSource(OperatorCh
 	fetch_result.result = GetData(result.chunk, source_input);
 	fetch_result.batch_index_state = source_input.batch_index_state;
 	auto &properties = pipeline.GetMetadataPlan().edges[0];
+	fetch_result.batch_complete = properties.completion && source_input.batch_complete;
 	result.metadata = source_input.metadata;
 	result.metadata.Restrict(properties);
 	if (properties.Any() && result.metadata.batch.batch_index.IsValid()) {
@@ -969,6 +1043,11 @@ PipelineExecutor::SourceFetchResult PipelineExecutor::FetchFromSource(OperatorCh
 		}
 	}
 	result.metadata.Verify(properties, result.chunk.size());
+	if (fetch_result.batch_complete) {
+		D_ASSERT(result.chunk.size() == 0);
+		D_ASSERT(fetch_result.result == SourceResultType::HAVE_MORE_OUTPUT);
+		result.metadata.batch.Verify(properties);
+	}
 
 	D_ASSERT(fetch_result.result != SourceResultType::BLOCKED || result.chunk.size() == 0);
 	D_ASSERT(fetch_result.batch_index_state != SourceBatchIndexState::ADVANCED ||

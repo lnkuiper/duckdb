@@ -681,6 +681,10 @@ void Pipeline::PrepareMetadata() {
 		requested.Merge(op.RequestedMetadata().Intersect(metadata_capabilities[i - 1]));
 		metadata_plan.edges[i - 1] = requested;
 	}
+	if (requested.completion && !metadata_plan.source_partition_info.RequiresPartitioning() &&
+	    source->SupportsPartitioning(OperatorPartitionInfo::BatchIndex())) {
+		metadata_plan.source_partition_info = OperatorPartitionInfo::BatchIndex();
+	}
 	metadata_plan.source_partition_info.metadata = requested;
 	preparing_metadata = false;
 	metadata_prepared = true;

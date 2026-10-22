@@ -3,10 +3,12 @@
 #include "duckdb/common/vector/vector_writer.hpp"
 #include "duckdb/execution/physical_plan_generator.hpp"
 #include "duckdb/execution/operator/filter/physical_filter.hpp"
+#include "duckdb/execution/operator/aggregate/physical_streaming_window.hpp"
 #include "duckdb/execution/operator/set/physical_cte.hpp"
 #include "duckdb/planner/expression/bound_comparison_expression.hpp"
 #include "duckdb/planner/expression/bound_constant_expression.hpp"
 #include "duckdb/planner/expression/bound_reference_expression.hpp"
+#include "duckdb/planner/operator/logical_window.hpp"
 #include "duckdb/parallel/pipeline_executor.hpp"
 #include "duckdb/parallel/pipeline_broadcast_exchange.hpp"
 
@@ -33,13 +35,14 @@ struct MetadataSourceLocal : LocalSourceState {
 
 class MetadataSource : public PhysicalOperator {
 public:
-	MetadataSource(PhysicalPlan &plan, bool supported_p, bool completion_p = false)
+	MetadataSource(PhysicalPlan &plan, bool supported_p, bool completion_p = false, bool ordered_p = false)
 	    : PhysicalOperator(plan, PhysicalOperatorType::DUMMY_SCAN, {LogicalType::BIGINT}, 7), supported(supported_p),
-	      completion(completion_p), batch_limit(completion_p ? 3 : 2) {
+	      completion(completion_p), ordered(ordered_p), batch_limit(completion_p ? 3 : 2) {
 	}
 
 	bool supported;
 	bool completion;
+	bool ordered;
 	atomic<idx_t> batch_limit;
 
 	BatchMetadataInfo SourceMetadata() const override {
@@ -57,8 +60,15 @@ public:
 	}
 	duckdb::unique_ptr<GlobalSourceState> GetGlobalSourceState(ClientContext &,
 	                                                           const OperatorPartitionInfo &info) const override {
-		REQUIRE_FALSE(info.RequiresPartitioning());
+		REQUIRE(info.RequiresPartitioning() == ordered);
 		return make_uniq<MetadataSourceGlobal>(info.metadata);
+	}
+	bool SupportsPartitioning(const OperatorPartitionInfo &info) const override {
+		return ordered && info.RequiresBatchIndex() && !info.RequiresPartitionColumns();
+	}
+	OperatorPartitionData GetPartitionData(ExecutionContext &, DataChunk &, GlobalSourceState &,
+	                                       LocalSourceState &local, const OperatorPartitionInfo &) const override {
+		return OperatorPartitionData(local.Cast<MetadataSourceLocal>().batch);
 	}
 	duckdb::unique_ptr<LocalSourceState> GetLocalSourceState(ExecutionContext &, GlobalSourceState &) const override {
 		return make_uniq<MetadataSourceLocal>();
@@ -229,14 +239,19 @@ public:
 		return PipelineExternalInputSupport::SUPPORTED;
 	}
 
-	explicit MetadataObserver(PhysicalPlan &plan)
-	    : PhysicalOperator(plan, PhysicalOperatorType::INVALID, {LogicalType::BIGINT}, 7) {
+	explicit MetadataObserver(PhysicalPlan &plan, bool completion_p = false)
+	    : PhysicalOperator(plan, PhysicalOperatorType::INVALID, {LogicalType::BIGINT}, 7), completion(completion_p) {
 	}
+	bool completion;
 	bool ParallelOperator() const override {
 		return true;
 	}
 	BatchMetadataInfo RequestedMetadata() const override {
-		return BatchMetadataInfo::RowPositions();
+		auto result = BatchMetadataInfo::RowPositions();
+		if (completion) {
+			result.Merge(BatchMetadataInfo::Completion());
+		}
+		return result;
 	}
 	BatchMetadataInfo OutputMetadata(const BatchMetadataInfo &input) const override {
 		return input;
@@ -336,13 +351,18 @@ public:
 	BatchMetadataInfo RequestedMetadata() const override {
 		return exchange->RequestedMetadata();
 	}
+	OperatorPartitionInfo RequiredPartitionInfo() const override {
+		return exchange->SupportsBatchIndex() ? OperatorPartitionInfo::BatchIndex()
+		                                      : OperatorPartitionInfo::NoPartitionInfo();
+	}
 	duckdb::unique_ptr<GlobalSinkState> GetGlobalSinkState(ClientContext &) const override {
 		exchange->Reset();
 		return make_uniq<GlobalSinkState>();
 	}
 	duckdb::unique_ptr<LocalSinkState> GetLocalSinkState(ExecutionContext &context) const override {
 		return make_uniq<MetadataExchangeLocal>(
-		    exchange->GetLocalState(context.client, context.pipeline->GetBaseBatchIndex()));
+		    exchange->GetLocalState(context.client, context.pipeline->GetBaseBatchIndex(),
+		                            context.pipeline->GetMetadataPlan().edges.back().completion));
 	}
 	SinkResultType Sink(ExecutionContext &, DataChunk &chunk, OperatorSinkInput &input) const override {
 		auto &local = input.local_state.Cast<MetadataExchangeLocal>();
@@ -352,9 +372,107 @@ public:
 		auto &local = input.local_state.Cast<MetadataExchangeLocal>();
 		return exchange->FinishLocal(*local.state, local.partition_info, input.interrupt_state);
 	}
+	SinkNextBatchType NextBatch(ExecutionContext &, OperatorSinkNextBatchInput &input) const override {
+		auto &local = input.local_state.Cast<MetadataExchangeLocal>();
+		return exchange->NextBatch(*local.state, local.partition_info, input.interrupt_state);
+	}
+	SinkNextBatchType UpdateMinBatchIndex(ExecutionContext &, OperatorSinkNextBatchInput &input) const override {
+		auto &local = input.local_state.Cast<MetadataExchangeLocal>();
+		return exchange->UpdateMinBatchIndex(*local.state, local.partition_info, input.interrupt_state);
+	}
+	SinkNextBatchType CompleteBatch(ExecutionContext &, OperatorSinkBatchInput &input) const override {
+		auto &local = input.local_state.Cast<MetadataExchangeLocal>();
+		return exchange->CompleteBatch(*local.state, input.batch, local.partition_info, input.interrupt_state);
+	}
+};
+
+struct MetadataWindowResult : GlobalSinkState {
+	idx_t rows = 0;
+};
+
+class MetadataWindowSink : public PhysicalOperator {
+public:
+	explicit MetadataWindowSink(PhysicalPlan &plan)
+	    : PhysicalOperator(plan, PhysicalOperatorType::INVALID, {LogicalType::BIGINT, LogicalType::BIGINT}, 7) {
+	}
+	bool IsSink() const override {
+		return true;
+	}
+	duckdb::unique_ptr<GlobalSinkState> GetGlobalSinkState(ClientContext &) const override {
+		return make_uniq<MetadataWindowResult>();
+	}
+	duckdb::unique_ptr<LocalSinkState> GetLocalSinkState(ExecutionContext &) const override {
+		return make_uniq<MetadataSinkState>();
+	}
+	SinkResultType Sink(ExecutionContext &, DataChunk &chunk, OperatorSinkInput &input) const override {
+		REQUIRE_FALSE(input.metadata->batch.batch_index.IsValid());
+		auto &local = input.local_state.Cast<MetadataSinkState>();
+		local.block = !local.block;
+		if (!local.block) {
+			return SinkResultType::BLOCKED;
+		}
+		auto &result = input.global_state.Cast<MetadataWindowResult>();
+		for (idx_t row = 0; row < chunk.size(); row++) {
+			REQUIRE(chunk.GetValue(0, row) == Value::BIGINT(NumericCast<int64_t>(result.rows)));
+			if (result.rows == 6) {
+				REQUIRE(chunk.GetValue(1, row).IsNull());
+			} else {
+				REQUIRE(chunk.GetValue(1, row) == Value::BIGINT(NumericCast<int64_t>(result.rows + 1)));
+			}
+			result.rows++;
+		}
+		return SinkResultType::NEED_MORE_INPUT;
+	}
 };
 
 } // namespace
+
+TEST_CASE("Streaming LEAD retains future-dependent rows across negotiated batch completion",
+          "[streaming_batch_metadata]") {
+	DuckDB db;
+	Connection con(db);
+	auto logical = con.ExtractPlan("SELECT lead(i) OVER () FROM range(7) t(i)");
+	auto window = logical.get();
+	while (window->type != LogicalOperatorType::LOGICAL_WINDOW) {
+		REQUIRE(window->children.size() == 1);
+		window = window->children[0].get();
+	}
+	duckdb::vector<duckdb::unique_ptr<Expression>> expressions;
+	expressions.push_back(window->expressions[0]->Copy());
+	expressions[0]->Cast<BoundWindowExpression>().GetChildrenMutable()[0] =
+	    make_uniq<BoundReferenceExpression>(LogicalType::BIGINT, 0);
+	auto pending = con.Submit("SELECT 1");
+	REQUIRE_NO_FAIL(*pending);
+	auto &context = *con.context;
+	PhysicalPlan plan(Allocator::Get(context));
+	auto &sink = plan.Make<MetadataWindowSink>();
+	auto pipeline = make_shared_ptr<Pipeline>(context.GetExecutor());
+	PipelineBuildState state;
+	auto &source = plan.Make<MetadataSource>(true, true);
+	auto &cache = plan.Make<MetadataCache>();
+	auto &observer = plan.Make<MetadataObserver>(true);
+	auto &streaming_window = plan.Make<PhysicalStreamingWindow>(
+	    duckdb::vector<LogicalType> {LogicalType::BIGINT, LogicalType::BIGINT}, std::move(expressions), 7);
+	cache.children.push_back(source);
+	observer.children.push_back(cache);
+	streaming_window.children.push_back(observer);
+	state.SetPipelineSource(*pipeline, source);
+	state.SetPipelineSink(*pipeline, &sink, 0);
+	state.AddPipelineOperator(*pipeline, streaming_window);
+	state.AddPipelineOperator(*pipeline, observer);
+	state.AddPipelineOperator(*pipeline, cache);
+	pipeline->Ready();
+	pipeline->PrepareMetadata();
+	REQUIRE(pipeline->GetMetadataPlan().edges[0].completion);
+	REQUIRE_FALSE(pipeline->GetMetadataPlan().edges[2].completion);
+	pipeline->Reset();
+	PipelineExecutor executor(context, *pipeline);
+	idx_t calls = 0;
+	while (executor.Execute(1) != PipelineExecuteResult::FINISHED) {
+		REQUIRE(++calls < 100);
+	}
+	REQUIRE(sink.sink_state->Cast<MetadataWindowResult>().rows == 7);
+}
 
 TEST_CASE("Exchange negotiation carries producer positions through independent consumer wrappers",
           "[streaming_batch_metadata]") {
@@ -580,6 +698,9 @@ struct BatchCompletionState : LocalSinkState {
 
 class BatchCompletionSink : public PhysicalOperator {
 public:
+	PipelineExternalInputSupport GetExternalInputSupport() const override {
+		return PipelineExternalInputSupport::SUPPORTED;
+	}
 	explicit BatchCompletionSink(PhysicalPlan &plan)
 	    : PhysicalOperator(plan, PhysicalOperatorType::INVALID, {LogicalType::BIGINT}, 7) {
 	}
@@ -658,6 +779,98 @@ public:
 };
 
 } // namespace
+
+TEST_CASE("Exchange completion drains retained rows and preserves empty batches", "[streaming_batch_metadata]") {
+	const bool buffered = GENERATE(false, true);
+	const bool filter = GENERATE(false, true);
+	CAPTURE(buffered, filter);
+	DuckDB db;
+	Connection con(db);
+	auto pending = con.Submit("SELECT 1");
+	REQUIRE_NO_FAIL(*pending);
+	auto &context = *con.context;
+	PhysicalPlan plan(Allocator::Get(context));
+	duckdb::vector<LogicalType> types {LogicalType::BIGINT};
+	auto exchange = make_shared_ptr<PipelineBroadcastExchange>(
+	    context, types, PipelineBroadcastExchangeCompletionMode::RUN_TO_COMPLETION,
+	    buffered ? OrderPreservationType::INSERTION_ORDER : OrderPreservationType::NO_ORDER, buffered,
+	    PipelineBroadcastExchangeBufferMode::BUFFER_ALL);
+	auto producer = make_shared_ptr<Pipeline>(context.GetExecutor());
+	PipelineBuildState state;
+	state.SetPipelineSource(*producer, plan.Make<MetadataSource>(true, true, buffered));
+	state.SetPipelineSink(*producer, &plan.Make<MetadataExchangeSink>(exchange), 0);
+	if (filter) {
+		duckdb::vector<duckdb::unique_ptr<Expression>> predicates;
+		predicates.push_back(BoundComparisonExpression::Create(
+		    ExpressionType::COMPARE_GREATERTHANOREQUALTO, make_uniq<BoundReferenceExpression>(LogicalType::BIGINT, 0),
+		    make_uniq<BoundConstantExpression>(Value::BIGINT(5))));
+		state.AddPipelineOperator(*producer, plan.Make<PhysicalFilter>(types, std::move(predicates), 7));
+	}
+	state.AddPipelineOperator(*producer, plan.Make<MetadataCache>());
+	exchange->SetProducerPipelines({producer});
+	auto consumer_idx = exchange->RegisterConsumer();
+	auto consumer = make_shared_ptr<Pipeline>(context.GetExecutor());
+	auto &sink = plan.Make<BatchCompletionSink>();
+	state.SetPipelineSource(*consumer,
+	                        plan.Make<PhysicalCTEConsumerSource>(types, 7, TableIndex(0), exchange, consumer_idx));
+	state.SetPipelineSink(*consumer, &sink, 0);
+	state.AddPipelineOperator(*consumer, plan.Make<MetadataSplit>());
+	state.AddPipelineOperator(*consumer, plan.Make<MetadataCache>());
+	if (buffered) {
+		exchange->SelectBufferedConsumer(consumer_idx, PipelineBroadcastExchangeScanMode::BATCH, *consumer);
+	} else {
+		REQUIRE(exchange->TryRegisterDirectConsumer(*consumer, consumer_idx));
+	}
+	consumer->Ready();
+	producer->Ready();
+	producer->PrepareMetadata();
+	REQUIRE(producer->GetMetadataPlan().edges.back().completion);
+	REQUIRE(consumer->GetMetadataPlan().edges[0].completion);
+	for (idx_t epoch = 0; epoch < 2; epoch++) {
+		CAPTURE(epoch);
+		if (epoch == 0) {
+			producer->Reset();
+			if (buffered) {
+				consumer->Reset();
+			}
+		} else {
+			producer->ResetForReschedule(true);
+			consumer->ResetForReschedule(true);
+		}
+		{
+			PipelineExecutor executor(context, *producer);
+			idx_t calls = 0;
+			while (executor.Execute(1) != PipelineExecuteResult::FINISHED) {
+				REQUIRE(++calls < 300);
+			}
+		}
+		exchange->Finish();
+		if (buffered) {
+			PipelineExecutor executor(context, *consumer);
+			idx_t calls = 0;
+			while (executor.Execute(1) != PipelineExecuteResult::FINISHED) {
+				REQUIRE(++calls < 300);
+			}
+			consumer->FinishSource();
+		}
+		auto &result = sink.sink_state->Cast<BatchCompletionResult>();
+		auto expected = filter ? duckdb::vector<idx_t> {5, 6} : duckdb::vector<idx_t> {0, 1, 2, 3, 4, 5, 6};
+		REQUIRE(result.rows == expected);
+		REQUIRE(result.completed.size() == 3);
+		for (idx_t i = 0; i < 3; i++) {
+			auto &batch = result.completed[i];
+			REQUIRE(batch.batch_index.GetIndex() == i + 1);
+			REQUIRE(batch.stream_id.GetIndex() == producer->GetStreamId());
+			if (filter) {
+				REQUIRE_FALSE(batch.row_count.IsValid());
+				REQUIRE_FALSE(batch.first_row_index.IsValid());
+			} else {
+				REQUIRE(batch.row_count.GetIndex() == (i == 0 ? 5 : i == 1 ? 0 : 2));
+				REQUIRE(batch.first_row_index.GetIndex() == (i == 0 ? 0 : 5));
+			}
+		}
+	}
+}
 
 TEST_CASE("Batch completion drains caches before acknowledgement and minimum release", "[streaming_batch_metadata]") {
 	bool filter = false;
