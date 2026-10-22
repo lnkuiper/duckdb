@@ -34,7 +34,7 @@ public:
 	}
 
 protected:
-	OperatorResultType ExecuteInternal(ExecutionContext &context, DataChunk &input, DataChunk &chunk,
+	OperatorResultType ExecuteInternal(ExecutionContext &context, OperatorChunk &input, OperatorChunk &chunk,
 	                                   GlobalOperatorState &gstate, OperatorState &state) const override;
 
 public:

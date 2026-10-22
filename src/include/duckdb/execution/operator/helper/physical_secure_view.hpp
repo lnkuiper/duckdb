@@ -28,7 +28,7 @@ public:
 	vector<string> pushed_filters;
 
 public:
-	OperatorResultType Execute(ExecutionContext &context, DataChunk &input, DataChunk &chunk,
+	OperatorResultType Execute(ExecutionContext &context, OperatorChunk &input, OperatorChunk &chunk,
 	                           GlobalOperatorState &gstate, OperatorState &state) const override;
 
 	InsertionOrderPreservingMap<string> ParamsToString() const override;

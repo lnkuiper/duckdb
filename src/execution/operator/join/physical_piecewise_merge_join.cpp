@@ -748,9 +748,12 @@ OperatorResultType PhysicalPiecewiseMergeJoin::ResolveComplexJoin(ExecutionConte
 	return OperatorResultType::HAVE_MORE_OUTPUT;
 }
 
-OperatorResultType PhysicalPiecewiseMergeJoin::ExecuteInternal(ExecutionContext &context, DataChunk &input,
-                                                               DataChunk &chunk, GlobalOperatorState &gstate_p,
+OperatorResultType PhysicalPiecewiseMergeJoin::ExecuteInternal(ExecutionContext &context, OperatorChunk &operator_input,
+                                                               OperatorChunk &operator_output,
+                                                               GlobalOperatorState &gstate_p,
                                                                OperatorState &state) const {
+	auto &input = operator_input.chunk;
+	auto &chunk = operator_output.chunk;
 	auto &gstate = sink_state->Cast<MergeJoinGlobalState>();
 
 	if (gstate.Count() == 0) {

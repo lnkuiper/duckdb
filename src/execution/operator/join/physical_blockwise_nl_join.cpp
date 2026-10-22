@@ -123,9 +123,12 @@ unique_ptr<OperatorState> PhysicalBlockwiseNLJoin::GetOperatorState(ExecutionCon
 	return std::move(result);
 }
 
-OperatorResultType PhysicalBlockwiseNLJoin::ExecuteInternal(ExecutionContext &context, DataChunk &input,
-                                                            DataChunk &chunk, GlobalOperatorState &gstate_p,
+OperatorResultType PhysicalBlockwiseNLJoin::ExecuteInternal(ExecutionContext &context, OperatorChunk &operator_input,
+                                                            OperatorChunk &operator_output,
+                                                            GlobalOperatorState &gstate_p,
                                                             OperatorState &state_p) const {
+	auto &input = operator_input.chunk;
+	auto &chunk = operator_output.chunk;
 	D_ASSERT(input.size() > 0);
 	auto &state = state_p.Cast<BlockwiseNLJoinState>();
 	auto &gstate = sink_state->Cast<BlockwiseNLJoinGlobalState>();

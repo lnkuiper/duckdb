@@ -21,6 +21,7 @@
 #include "duckdb/execution/partition_info.hpp"
 #include "duckdb/execution/physical_operator_states.hpp"
 #include "duckdb/execution/progress_data.hpp"
+#include "duckdb/execution/operator_chunk.hpp"
 
 namespace duckdb {
 
@@ -104,12 +105,21 @@ public:
 
 public:
 	// Operator interface
+	virtual BatchMetadataInfo RequestedMetadata() const {
+		return BatchMetadataInfo();
+	}
+	virtual BatchMetadataInfo OutputMetadata(const BatchMetadataInfo &input) const {
+		return BatchMetadataInfo();
+	}
+	virtual BatchMetadataInfo RequiredInputMetadata(const BatchMetadataInfo &output) const {
+		return output;
+	}
 	virtual unique_ptr<OperatorState> GetOperatorState(ExecutionContext &context) const;
 	virtual unique_ptr<GlobalOperatorState> GetGlobalOperatorState(ClientContext &context) const;
 	virtual bool ResetGlobalOperatorState(ClientContext &context, GlobalOperatorState &state) const;
-	virtual OperatorResultType Execute(ExecutionContext &context, DataChunk &input, DataChunk &chunk,
+	virtual OperatorResultType Execute(ExecutionContext &context, OperatorChunk &input, OperatorChunk &chunk,
 	                                   GlobalOperatorState &gstate, OperatorState &state) const;
-	virtual OperatorFinalizeResultType FinalExecute(ExecutionContext &context, DataChunk &chunk,
+	virtual OperatorFinalizeResultType FinalExecute(ExecutionContext &context, OperatorChunk &chunk,
 	                                                GlobalOperatorState &gstate, OperatorState &state) const;
 	virtual OperatorFinalResultType OperatorFinalize(Pipeline &pipeline, Event &event, ClientContext &context,
 	                                                 OperatorFinalizeInput &input) const;
@@ -144,6 +154,9 @@ public:
 
 public:
 	// Source interface
+	virtual BatchMetadataInfo SourceMetadata() const {
+		return BatchMetadataInfo();
+	}
 	virtual unique_ptr<LocalSourceState> GetLocalSourceState(ExecutionContext &context,
 	                                                         GlobalSourceState &gstate) const;
 	virtual unique_ptr<GlobalSourceState> GetGlobalSourceState(ClientContext &context) const;
@@ -178,7 +191,7 @@ public:
 	virtual TableFunctionParallelism SourceParallelism() const;
 
 	virtual bool SupportsPartitioning(const OperatorPartitionInfo &partition_info) const {
-		if (partition_info.AnyRequired()) {
+		if (partition_info.RequiresPartitioning()) {
 			return false;
 		}
 		return true;
@@ -336,12 +349,12 @@ public:
 public:
 	//! This Execute will prevent small chunks from entering the pipeline, buffering them until a bigger chunk is
 	//! created.
-	OperatorResultType Execute(ExecutionContext &context, DataChunk &input, DataChunk &chunk,
+	OperatorResultType Execute(ExecutionContext &context, OperatorChunk &input, OperatorChunk &chunk,
 	                           GlobalOperatorState &gstate, OperatorState &state) const final;
 	//! FinalExecute is used here to send out the remainder of the chunk (< STANDARD_VECTOR_SIZE) that we still had
 	//! cached.
-	OperatorFinalizeResultType FinalExecute(ExecutionContext &context, DataChunk &chunk, GlobalOperatorState &gstate,
-	                                        OperatorState &state) const final;
+	OperatorFinalizeResultType FinalExecute(ExecutionContext &context, OperatorChunk &chunk,
+	                                        GlobalOperatorState &gstate, OperatorState &state) const final;
 
 	bool RequiresFinalExecute() const final {
 		return caching_supported;
@@ -349,7 +362,7 @@ public:
 
 protected:
 	//! Child classes need to implement the ExecuteInternal method instead of the Execute
-	virtual OperatorResultType ExecuteInternal(ExecutionContext &context, DataChunk &input, DataChunk &chunk,
+	virtual OperatorResultType ExecuteInternal(ExecutionContext &context, OperatorChunk &input, OperatorChunk &chunk,
 	                                           GlobalOperatorState &gstate, OperatorState &state) const = 0;
 
 private:

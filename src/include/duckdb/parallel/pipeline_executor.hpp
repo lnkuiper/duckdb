@@ -117,7 +117,7 @@ private:
 	ExecutionContext context;
 
 	//! Intermediate chunks for the operators
-	vector<unique_ptr<DataChunk>> intermediate_chunks;
+	vector<unique_ptr<OperatorChunk>> intermediate_chunks;
 	//! Intermediate states for the operators
 	vector<unique_ptr<OperatorState>> intermediate_states;
 
@@ -131,7 +131,7 @@ private:
 	InterruptState interrupt_state;
 
 	//! The final chunk used for moving data into the sink
-	DataChunk final_chunk;
+	OperatorChunk final_chunk;
 
 	//! The operators that are not yet finished executing and have data remaining
 	//! If the stack of in_process_operators is empty, we fetch from the source instead
@@ -182,7 +182,7 @@ private:
 
 	//! Reset the operator index to the first operator
 	void GoToSource(idx_t &current_idx, idx_t initial_idx);
-	SourceFetchResult FetchFromSource(DataChunk &result);
+	SourceFetchResult FetchFromSource(OperatorChunk &result);
 	//! Reports the last source chunk to the progress verifier (if any), once it has been fully processed
 	void SampleProgress();
 
@@ -195,15 +195,16 @@ private:
 	SinkResultType Sink(DataChunk &chunk, OperatorSinkInput &input);
 	SinkNextBatchType UpdateMinBatchIndex();
 
-	OperatorResultType ExecutePushInternal(DataChunk &input, ExecutionBudget &chunk_budget, idx_t initial_idx = 0);
-	PipelineExecuteResult PushInputChunk(DataChunk &input, ExecutionBudget &chunk_budget, PipelineInputChunkMode mode);
+	OperatorResultType ExecutePushInternal(OperatorChunk &input, ExecutionBudget &chunk_budget, idx_t initial_idx = 0);
+	PipelineExecuteResult PushInputChunk(OperatorChunk &input, ExecutionBudget &chunk_budget,
+	                                     PipelineInputChunkMode mode);
 	PipelineExecuteResult FlushAndFinalize(ExecutionBudget &chunk_budget);
 	//! Pushes a chunk through the pipeline and returns a single result chunk
 	//! Returns whether or not a new input chunk is needed, or whether or not we are finished
-	OperatorResultType Execute(DataChunk &input, DataChunk &result, idx_t initial_index = 0);
+	OperatorResultType Execute(OperatorChunk &input, OperatorChunk &result, idx_t initial_index = 0);
 
 	//! Notifies the sink that a new batch has started
-	SinkNextBatchType NextBatch(DataChunk &source_chunk, const SourceFetchResult &source_result);
+	SinkNextBatchType NextBatch(OperatorChunk &source_chunk, const SourceFetchResult &source_result);
 	SinkNextBatchType NextBatch(OperatorPartitionData next_data, bool force = false,
 	                            optional_idx external_min_batch_index = optional_idx());
 	OperatorPartitionData ToPipelinePartitionData(const OperatorPartitionData &source_data) const;

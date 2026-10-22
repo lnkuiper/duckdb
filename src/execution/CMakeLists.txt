@@ -12,6 +12,7 @@ add_library_unity(
   aggregate_hashtable.cpp
   aggregate_state_spilling.cpp
   base_aggregate_hashtable.cpp
+  batch_metadata.cpp
   column_binding_resolver.cpp
   expression_executor.cpp
   expression_executor_state.cpp

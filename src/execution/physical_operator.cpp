@@ -105,12 +105,13 @@ bool PhysicalOperator::ResetGlobalOperatorState(ClientContext &context, GlobalOp
 	return false;
 }
 
-OperatorResultType PhysicalOperator::Execute(ExecutionContext &context, DataChunk &input, DataChunk &chunk,
-                                             GlobalOperatorState &gstate, OperatorState &state) const {
+OperatorResultType PhysicalOperator::Execute(ExecutionContext &context, OperatorChunk &operator_input,
+                                             OperatorChunk &operator_output, GlobalOperatorState &gstate,
+                                             OperatorState &state) const {
 	throw InternalException("Calling Execute on a node that is not an operator!");
 }
 
-OperatorFinalizeResultType PhysicalOperator::FinalExecute(ExecutionContext &context, DataChunk &chunk,
+OperatorFinalizeResultType PhysicalOperator::FinalExecute(ExecutionContext &context, OperatorChunk &operator_output,
                                                           GlobalOperatorState &gstate, OperatorState &state) const {
 	throw InternalException("Calling FinalExecute on a node that is not an operator!");
 }
@@ -230,8 +231,8 @@ OperatorCachingMode PhysicalOperator::SelectOperatorCachingMode(ExecutionContext
 	} else if (!context.pipeline->GetSink()) {
 		return OperatorCachingMode::NONE;
 	} else {
-		auto partition_info = context.pipeline->GetSink()->RequiredPartitionInfo();
-		if (partition_info.AnyRequired()) {
+		auto partition_info = context.pipeline->GetMetadataPlan().sink_partition_info;
+		if (partition_info.RequiresPartitioning()) {
 			return OperatorCachingMode::PARTITIONED;
 		}
 	}
@@ -573,8 +574,10 @@ static void FlushCacheToChunk(CachingOperatorState &state, DataChunk &chunk, Cli
 	state.ResetDictCache();
 }
 
-OperatorResultType CachingPhysicalOperator::Execute(ExecutionContext &context, DataChunk &input, DataChunk &chunk,
-                                                    GlobalOperatorState &gstate, OperatorState &state_p) const {
+OperatorResultType CachingPhysicalOperator::Execute(ExecutionContext &context, OperatorChunk &operator_input,
+                                                    OperatorChunk &operator_output, GlobalOperatorState &gstate,
+                                                    OperatorState &state_p) const {
+	auto &chunk = operator_output.chunk;
 	auto &state = state_p.Cast<CachingOperatorState>();
 
 	if (state.initialized && state.must_return_continuation_chunk) {
@@ -591,7 +594,7 @@ OperatorResultType CachingPhysicalOperator::Execute(ExecutionContext &context, D
 	}
 
 	// Execute child operator
-	auto child_result = ExecuteInternal(context, input, chunk, gstate, state);
+	auto child_result = ExecuteInternal(context, operator_input, operator_output, gstate, state);
 
 	if (!state.initialized) {
 		state.initialized = true;
@@ -660,9 +663,11 @@ OperatorResultType CachingPhysicalOperator::Execute(ExecutionContext &context, D
 	return child_result;
 }
 
-OperatorFinalizeResultType CachingPhysicalOperator::FinalExecute(ExecutionContext &context, DataChunk &chunk,
+OperatorFinalizeResultType CachingPhysicalOperator::FinalExecute(ExecutionContext &context,
+                                                                 OperatorChunk &operator_output,
                                                                  GlobalOperatorState &gstate,
                                                                  OperatorState &state_p) const {
+	auto &chunk = operator_output.chunk;
 	auto &state = state_p.Cast<CachingOperatorState>();
 	if (state.cached_chunk) {
 		const idx_t count = state.cached_chunk->size();

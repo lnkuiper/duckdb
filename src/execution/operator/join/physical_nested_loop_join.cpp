@@ -422,9 +422,12 @@ unique_ptr<OperatorState> PhysicalNestedLoopJoin::GetOperatorState(ExecutionCont
 	return make_uniq<PhysicalNestedLoopJoinState>(context.client, *this, conditions);
 }
 
-OperatorResultType PhysicalNestedLoopJoin::ExecuteInternal(ExecutionContext &context, DataChunk &input,
-                                                           DataChunk &chunk, GlobalOperatorState &gstate_p,
+OperatorResultType PhysicalNestedLoopJoin::ExecuteInternal(ExecutionContext &context, OperatorChunk &operator_input,
+                                                           OperatorChunk &operator_output,
+                                                           GlobalOperatorState &gstate_p,
                                                            OperatorState &state_p) const {
+	auto &input = operator_input.chunk;
+	auto &chunk = operator_output.chunk;
 	auto &gstate = sink_state->Cast<NestedLoopJoinGlobalState>();
 	auto &state = state_p.Cast<PhysicalNestedLoopJoinState>();
 	if (join_type == JoinType::MARK) {

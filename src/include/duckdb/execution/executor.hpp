@@ -176,6 +176,8 @@ private:
 	unique_ptr<PhysicalOperator> owned_plan;
 
 	mutex executor_lock;
+	//! Allocated while building pipelines, before scheduling.
+	idx_t next_stream_id = 0;
 	//! All pipelines of the query plan
 	vector<shared_ptr<Pipeline>> pipelines;
 	//! The root pipelines of the query

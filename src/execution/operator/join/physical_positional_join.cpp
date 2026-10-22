@@ -142,8 +142,11 @@ void PositionalJoinGlobalState::Execute(DataChunk &input, DataChunk &output) {
 	rows_scanned.store(scanned + MinValue(count, rhs.Count() - scanned), std::memory_order_relaxed);
 }
 
-OperatorResultType PhysicalPositionalJoin::Execute(ExecutionContext &context, DataChunk &input, DataChunk &chunk,
-                                                   GlobalOperatorState &gstate, OperatorState &state_p) const {
+OperatorResultType PhysicalPositionalJoin::Execute(ExecutionContext &context, OperatorChunk &operator_input,
+                                                   OperatorChunk &operator_output, GlobalOperatorState &gstate,
+                                                   OperatorState &state_p) const {
+	auto &input = operator_input.chunk;
+	auto &chunk = operator_output.chunk;
 	auto &sink = sink_state->Cast<PositionalJoinGlobalState>();
 	sink.Execute(input, chunk);
 	return OperatorResultType::NEED_MORE_INPUT;

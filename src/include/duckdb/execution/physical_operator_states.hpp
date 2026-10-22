@@ -203,6 +203,7 @@ struct OperatorSinkInput {
 	GlobalSinkState &global_state;
 	LocalSinkState &local_state;
 	InterruptState &interrupt_state;
+	optional_ptr<const ChunkMetadata> metadata;
 };
 
 struct OperatorSourceInput {
@@ -210,6 +211,7 @@ struct OperatorSourceInput {
 	LocalSourceState &local_state;
 	InterruptState &interrupt_state;
 	SourceBatchIndexState batch_index_state = SourceBatchIndexState::UNCHANGED;
+	ChunkMetadata metadata;
 };
 
 struct OperatorSinkCombineInput {

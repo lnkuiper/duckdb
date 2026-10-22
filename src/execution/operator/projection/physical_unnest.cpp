@@ -262,8 +262,11 @@ OperatorResultType PhysicalUnnest::ExecuteInternal(ExecutionContext &context, Da
 	return OperatorResultType::HAVE_MORE_OUTPUT;
 }
 
-OperatorResultType PhysicalUnnest::Execute(ExecutionContext &context, DataChunk &input, DataChunk &chunk,
-                                           GlobalOperatorState &, OperatorState &state) const {
+OperatorResultType PhysicalUnnest::Execute(ExecutionContext &context, OperatorChunk &operator_input,
+                                           OperatorChunk &operator_output, GlobalOperatorState &,
+                                           OperatorState &state) const {
+	auto &input = operator_input.chunk;
+	auto &chunk = operator_output.chunk;
 	return ExecuteInternal(context, input, chunk, state, select_list);
 }
 

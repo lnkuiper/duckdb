@@ -31,7 +31,7 @@ static shared_ptr<GlobalSourceState> ToSharedSourceState(unique_ptr<GlobalSource
 PipelineTask::PipelineTask(Pipeline &pipeline_p, shared_ptr<Event> event_p)
     : ExecutorTask(pipeline_p.executor, std::move(event_p)), pipeline(pipeline_p) {
 	auto sink = pipeline.GetSink();
-	if (sink && sink->RequiredPartitionInfo().AnyRequired()) {
+	if (sink && pipeline.GetMetadataPlan().sink_partition_info.RequiresPartitioning()) {
 		// Account for every task before lazy executor construction can advance the batch minimum.
 		reserved_batch_index = pipeline.RegisterNewBatchIndex();
 	}
@@ -73,7 +73,8 @@ TaskExecutionResult PipelineTask::ExecuteTask(TaskExecutionMode mode) {
 }
 
 Pipeline::Pipeline(Executor &executor_p)
-    : executor(executor_p), ready(false), initialized(false), source(nullptr), sink(nullptr) {
+    : executor(executor_p), ready(false), stream_id(executor_p.next_stream_id++), initialized(false), source(nullptr),
+      sink(nullptr) {
 }
 
 ClientContext &Pipeline::GetClientContext() {
@@ -176,7 +177,7 @@ bool Pipeline::ScheduleParallel(shared_ptr<Event> &event) {
 	}
 
 	// Handle partition requirements specific to scheduling
-	auto partition_info = sink->RequiredPartitionInfo();
+	auto partition_info = metadata_plan.source_partition_info;
 	if (partition_info.batch_index) {
 		if (!source->SupportsPartitioning(partition_info)) {
 			throw InternalException(
@@ -431,13 +432,13 @@ void Pipeline::ResetSourceForReschedule() {
 	auto &client = GetClientContext();
 	auto allow_reuse = Settings::Get<EnableCachingOperatorsSetting>(client);
 	auto source_state = GetSourceState();
-	auto partition_info = sink ? sink->RequiredPartitionInfo() : OperatorPartitionInfo::NoPartitionInfo();
+	auto partition_info = metadata_plan.source_partition_info;
 	if (allow_reuse && source_state && source_state->SupportsReuse()) {
 		source_state->Reset(client);
 	} else {
 		SetSourceState(ToSharedSourceState(source->GetGlobalSourceState(client, partition_info)));
 	}
-	if (partition_info.AnyRequired()) {
+	if (partition_info.RequiresPartitioning()) {
 		ResetBatchIndexes();
 	}
 	initialized = true;
@@ -465,7 +466,7 @@ void Pipeline::ResetSource(bool force) {
 	auto source_state = GetSourceState();
 	if (force || !source_state) {
 		NotifyProgressReset();
-		auto partition_info = sink ? sink->RequiredPartitionInfo() : OperatorPartitionInfo::NoPartitionInfo();
+		auto partition_info = metadata_plan.source_partition_info;
 		SetSourceState(ToSharedSourceState(source->GetGlobalSourceState(GetClientContext(), partition_info)));
 	}
 }
@@ -633,6 +634,35 @@ void Pipeline::Ready() {
 	}
 	ready = true;
 	std::reverse(operators.begin(), operators.end());
+	PrepareMetadata();
+}
+
+void Pipeline::PrepareMetadata() {
+	metadata_plan.sink_partition_info = sink ? sink->RequiredPartitionInfo() : OperatorPartitionInfo::NoPartitionInfo();
+	metadata_plan.source_partition_info = metadata_plan.sink_partition_info;
+	// External metadata requires a transport contract with the producer.
+	auto available = IsExternalInput() ? BatchMetadataInfo() : source->SourceMetadata();
+	vector<BatchMetadataInfo> possible {available};
+	for (auto &op : operators) {
+		available = op.get().OutputMetadata(available);
+		possible.push_back(available);
+	}
+	auto requested = metadata_plan.sink_partition_info.metadata;
+	if (!available.Supports(requested)) {
+		throw InternalException("Pipeline cannot provide the sink's required batch metadata");
+	}
+	if (sink) {
+		requested.Merge(sink->RequestedMetadata().Intersect(available));
+	}
+	metadata_plan.edges.resize(operators.size() + 1);
+	metadata_plan.edges.back() = requested;
+	for (idx_t i = operators.size(); i > 0; i--) {
+		auto &op = operators[i - 1].get();
+		requested = op.RequiredInputMetadata(requested).Intersect(possible[i - 1]);
+		requested.Merge(op.RequestedMetadata().Intersect(possible[i - 1]));
+		metadata_plan.edges[i - 1] = requested;
+	}
+	metadata_plan.source_partition_info.metadata = requested;
 }
 
 void Pipeline::AddDependency(shared_ptr<Pipeline> &pipeline) {
@@ -1110,7 +1140,6 @@ void PipelineBuildState::ResolveExternalInputs(const vector<shared_ptr<MetaPipel
 		restore_materialized_candidate(*candidate);
 		RestoreOptionalDependencies(removed_dependencies);
 	}
-
 	for (auto &candidate : data->external_input_candidates) {
 		auto &pipeline = candidate.pipeline.get();
 		auto &cte = candidate.cte.get();

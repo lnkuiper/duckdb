@@ -24,7 +24,7 @@ public:
 
 public:
 	// Operator Interface
-	OperatorResultType Execute(ExecutionContext &context, DataChunk &input, DataChunk &chunk,
+	OperatorResultType Execute(ExecutionContext &context, OperatorChunk &input, OperatorChunk &chunk,
 	                           GlobalOperatorState &gstate, OperatorState &state) const override;
 
 public:

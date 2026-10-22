@@ -2269,8 +2269,11 @@ void PhysicalHashJoin::InitializeOutputChunk(Allocator &allocator, DataChunk &ch
 	chunk.Initialize(allocator, types, initialize);
 }
 
-OperatorResultType PhysicalHashJoin::ExecuteInternal(ExecutionContext &context, DataChunk &input, DataChunk &chunk,
-                                                     GlobalOperatorState &gstate, OperatorState &state_p) const {
+OperatorResultType PhysicalHashJoin::ExecuteInternal(ExecutionContext &context, OperatorChunk &operator_input,
+                                                     OperatorChunk &operator_output, GlobalOperatorState &gstate,
+                                                     OperatorState &state_p) const {
+	auto &input = operator_input.chunk;
+	auto &chunk = operator_output.chunk;
 	auto &state = state_p.Cast<HashJoinOperatorState>();
 	auto &sink = sink_state->Cast<HashJoinGlobalSinkState>();
 	D_ASSERT(sink.finalized);

@@ -129,8 +129,11 @@ unique_ptr<OperatorState> PhysicalStreamingSample::GetOperatorState(ExecutionCon
 	return make_uniq<StreamingSampleOperatorState>(static_cast<int64_t>(random.NextRandomInteger64()));
 }
 
-OperatorResultType PhysicalStreamingSample::Execute(ExecutionContext &context, DataChunk &input, DataChunk &chunk,
-                                                    GlobalOperatorState &gstate, OperatorState &state) const {
+OperatorResultType PhysicalStreamingSample::Execute(ExecutionContext &context, OperatorChunk &operator_input,
+                                                    OperatorChunk &operator_output, GlobalOperatorState &gstate,
+                                                    OperatorState &state) const {
+	auto &input = operator_input.chunk;
+	auto &chunk = operator_output.chunk;
 	switch (sample_options->method) {
 	case SampleMethod::BERNOULLI_SAMPLE:
 		BernoulliSample(input, chunk, state);

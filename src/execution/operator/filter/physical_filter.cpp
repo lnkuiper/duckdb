@@ -42,8 +42,11 @@ unique_ptr<OperatorState> PhysicalFilter::GetOperatorState(ExecutionContext &con
 	return make_uniq<FilterState>(context, *expression);
 }
 
-OperatorResultType PhysicalFilter::ExecuteInternal(ExecutionContext &context, DataChunk &input, DataChunk &chunk,
-                                                   GlobalOperatorState &gstate, OperatorState &state_p) const {
+OperatorResultType PhysicalFilter::ExecuteInternal(ExecutionContext &context, OperatorChunk &operator_input,
+                                                   OperatorChunk &operator_output, GlobalOperatorState &gstate,
+                                                   OperatorState &state_p) const {
+	auto &input = operator_input.chunk;
+	auto &chunk = operator_output.chunk;
 	auto &state = state_p.Cast<FilterState>();
 	idx_t result_count = state.executor.SelectExpression(input, state.sel);
 	if (result_count == input.size()) {

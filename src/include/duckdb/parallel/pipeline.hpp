@@ -107,6 +107,14 @@ struct PipelineProgress {
 	ProgressData pipeline;
 };
 
+//! Frozen after input-mode resolution and before state initialization.
+struct PipelineMetadataPlan {
+	OperatorPartitionInfo sink_partition_info;
+	OperatorPartitionInfo source_partition_info;
+	//! Source input, each operator's output, and finally the sink input.
+	vector<BatchMetadataInfo> edges;
+};
+
 //! The Pipeline class represents an execution pipeline starting at a
 class Pipeline : public enable_shared_from_this<Pipeline> {
 	friend class Executor;
@@ -142,6 +150,13 @@ public:
 	}
 
 	void Ready();
+	const PipelineMetadataPlan &GetMetadataPlan() const {
+		D_ASSERT(ready);
+		return metadata_plan;
+	}
+	idx_t GetStreamId() const {
+		return stream_id;
+	}
 	void Reset();
 	void ResetSink();
 	void ResetSinkForReschedule(idx_t scheduled_workers, bool single_producer);
@@ -218,6 +233,8 @@ private:
 private:
 	//! Whether or not the pipeline has been readied
 	bool ready;
+	const idx_t stream_id;
+	PipelineMetadataPlan metadata_plan;
 	//! Whether or not the pipeline has been initialized
 	atomic<bool> initialized;
 	//! The source of this pipeline
@@ -275,6 +292,7 @@ private:
 	void ScheduleSequentialTask(shared_ptr<Event> &event);
 	bool LaunchScanTasks(shared_ptr<Event> &event, idx_t max_threads);
 	void ResetSinkAndOperators();
+	void PrepareMetadata();
 	void ResetBatchIndexes();
 	shared_ptr<GlobalSourceState> GetSourceState();
 	void SetSourceState(shared_ptr<GlobalSourceState> state);

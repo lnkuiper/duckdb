@@ -226,8 +226,9 @@ SinkFinalizeType PhysicalIEJoin::Finalize(Pipeline &pipeline, Event &event, Clie
 //===--------------------------------------------------------------------===//
 // Operator
 //===--------------------------------------------------------------------===//
-OperatorResultType PhysicalIEJoin::ExecuteInternal(ExecutionContext &context, DataChunk &input, DataChunk &chunk,
-                                                   GlobalOperatorState &gstate, OperatorState &state) const {
+OperatorResultType PhysicalIEJoin::ExecuteInternal(ExecutionContext &context, OperatorChunk &operator_input,
+                                                   OperatorChunk &operator_output, GlobalOperatorState &gstate,
+                                                   OperatorState &state) const {
 	return OperatorResultType::FINISHED;
 }
 

@@ -24,10 +24,13 @@ public:
 	vector<unique_ptr<Expression>> select_list;
 
 public:
+	BatchMetadataInfo OutputMetadata(const BatchMetadataInfo &input) const override {
+		return input;
+	}
 	void InitializeOutputChunk(Allocator &allocator, DataChunk &chunk) const override;
 	unique_ptr<OperatorState> GetOperatorState(ExecutionContext &context) const override;
 	unique_ptr<GlobalOperatorState> GetGlobalOperatorState(ClientContext &context) const override;
-	OperatorResultType Execute(ExecutionContext &context, DataChunk &input, DataChunk &chunk,
+	OperatorResultType Execute(ExecutionContext &context, OperatorChunk &input, OperatorChunk &chunk,
 	                           GlobalOperatorState &gstate, OperatorState &state) const override;
 
 	bool ParallelOperator() const override;

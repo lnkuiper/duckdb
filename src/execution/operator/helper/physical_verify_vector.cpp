@@ -263,8 +263,11 @@ unique_ptr<OperatorState> PhysicalVerifyVector::GetOperatorState(ExecutionContex
 	return make_uniq<VerifyVectorState>();
 }
 
-OperatorResultType PhysicalVerifyVector::Execute(ExecutionContext &context, DataChunk &input, DataChunk &chunk,
-                                                 GlobalOperatorState &gstate, OperatorState &state) const {
+OperatorResultType PhysicalVerifyVector::Execute(ExecutionContext &context, OperatorChunk &operator_input,
+                                                 OperatorChunk &operator_output, GlobalOperatorState &gstate,
+                                                 OperatorState &state) const {
+	auto &input = operator_input.chunk;
+	auto &chunk = operator_output.chunk;
 	switch (verification) {
 	case DebugVectorVerification::DICTIONARY_OPERATOR:
 		return VerifyEmitDictionaryVectors(input, chunk, state);
