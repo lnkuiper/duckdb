@@ -59,6 +59,7 @@ public:
 	PrepareBatch(ClientContext &context, GlobalSinkState &gstate_p, FileStateHandle &file_state,
 	             const std::function<void(FileStateHandle &)> &create_file_state_fun,
 	             unique_ptr<ColumnDataCollection> batch) const;
+	using PhysicalOperator::FlushBatch;
 	void FlushBatch(ClientContext &context, GlobalSinkState &gstate_p, FileStateHandle &file_state,
 	                const std::function<void(FileStateHandle &)> &create_file_state_fun,
 	                const CopyFunctionBatchAnalyzer &batch_analyzer,
