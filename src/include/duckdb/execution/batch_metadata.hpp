@@ -60,6 +60,8 @@ struct BatchMetadata {
 	optional_idx stream_id;
 	optional_idx row_count;
 	optional_idx first_row_index;
+
+	void Verify(const BatchMetadataInfo &properties) const;
 };
 
 //! Positions, when present, describe a contiguous interval at this operator boundary.
@@ -79,6 +81,7 @@ struct ChunkMetadata {
 		}
 	}
 	void Verify(const BatchMetadataInfo &properties, idx_t count) const;
+	bool CanAppend(const ChunkMetadata &other, idx_t count) const;
 };
 
 } // namespace duckdb

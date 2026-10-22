@@ -28,6 +28,13 @@ public:
 	unique_ptr<Expression> expression;
 
 public:
+	BatchMetadataInfo OutputMetadata(const BatchMetadataInfo &input) const override {
+		auto result = input;
+		result.row_positions = false;
+		return result;
+	}
+	OperatorBatchResultType FlushBatch(ExecutionContext &context, OperatorChunk &output,
+	                                   OperatorBatchInput &input) const override;
 	void InitializeOutputChunk(Allocator &allocator, DataChunk &chunk) const override;
 	unique_ptr<OperatorState> GetOperatorState(ExecutionContext &context) const override;
 

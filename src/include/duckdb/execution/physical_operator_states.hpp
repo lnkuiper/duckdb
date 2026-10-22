@@ -230,6 +230,20 @@ struct OperatorFinalizeInput {
 	InterruptState &interrupt_state;
 };
 
+struct OperatorBatchInput {
+	GlobalOperatorState &global_state;
+	OperatorState &local_state;
+	InterruptState &interrupt_state;
+	const BatchMetadata &batch;
+};
+
+struct OperatorSinkBatchInput {
+	GlobalSinkState &global_state;
+	LocalSinkState &local_state;
+	InterruptState &interrupt_state;
+	const BatchMetadata &batch;
+};
+
 struct OperatorSinkNextBatchInput {
 	GlobalSinkState &global_state;
 	LocalSinkState &local_state;

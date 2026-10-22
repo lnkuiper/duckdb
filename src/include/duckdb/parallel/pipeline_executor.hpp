@@ -103,10 +103,26 @@ public:
 private:
 	enum class PipelineInputChunkMode : uint8_t { PUSH_INPUT, RESUME_INPUT };
 	enum class SourceFinishNotificationState : uint8_t { PENDING, SENT };
-	enum class PendingBatchAdvanceState : uint8_t { NONE, NEXT_BATCH, MINIMUM_UPDATE };
+	enum class SourceInputPhase : uint8_t { NONE, BATCH, MINIMUM_UPDATE, ADMIT };
+	enum class BatchTransitionPhase : uint8_t { NONE, FLUSH, COMPLETE, DRAINED, RELEASE };
 	struct SourceFetchResult {
 		SourceResultType result = SourceResultType::BLOCKED;
 		SourceBatchIndexState batch_index_state = SourceBatchIndexState::UNCHANGED;
+	};
+	struct OperatorFlushState {
+		bool initialized = false;
+		idx_t operator_idx = 0;
+		bool flush_operator = true;
+		BatchMetadata batch;
+		BatchMetadata output_batch;
+	};
+	struct BatchTransition {
+		BatchTransitionPhase phase = BatchTransitionPhase::NONE;
+		OperatorFlushState flush;
+		OperatorPartitionData next_partition {0};
+		BatchMetadata next_batch;
+		optional_idx external_min_batch_index;
+		bool force = false;
 	};
 
 	//! The pipeline to process
@@ -132,6 +148,13 @@ private:
 
 	//! The final chunk used for moving data into the sink
 	OperatorChunk final_chunk;
+	//! Incoming rows remain separate while the previous batch's buffers drain.
+	unique_ptr<OperatorChunk> pending_input;
+	SourceFetchResult pending_source_result;
+	SourceInputPhase source_input_phase = SourceInputPhase::NONE;
+	BatchMetadata active_batch;
+	BatchTransition batch_transition;
+	OperatorFlushState terminal_flush;
 
 	//! The operators that are not yet finished executing and have data remaining
 	//! If the stack of in_process_operators is empty, we fetch from the source instead
@@ -163,12 +186,6 @@ private:
 	//! This flag is set when the pipeline gets interrupted by NextBatch -> NextBatch should be called again and the
 	//! source_chunk should be sent through the pipeline
 	bool next_batch_blocked = false;
-	PendingBatchAdvanceState pending_batch_advance_state = PendingBatchAdvanceState::NONE;
-
-	//! Current operator being flushed
-	idx_t flushing_idx;
-	//! Whether the current flushing_idx should be flushed: this needs to be stored to make flushing code re-entrant
-	bool should_flush_current_idx = true;
 	//! Whether this executor has already run at least once
 	bool has_executed = false;
 	//! Whether an externally-fed sink has observed its initial batch
@@ -205,6 +222,7 @@ private:
 
 	//! Notifies the sink that a new batch has started
 	SinkNextBatchType NextBatch(OperatorChunk &source_chunk, const SourceFetchResult &source_result);
+	OperatorPartitionData GetNextPartition(OperatorChunk &source_chunk, const SourceFetchResult &source_result);
 	SinkNextBatchType NextBatch(OperatorPartitionData next_data, bool force = false,
 	                            optional_idx external_min_batch_index = optional_idx());
 	OperatorPartitionData ToPipelinePartitionData(const OperatorPartitionData &source_data) const;
@@ -212,7 +230,11 @@ private:
 
 	//! Tries to flush all state from intermediate operators. Will return true if all state is flushed, false in the
 	//! case of a blocked sink.
-	bool TryFlushCachingOperators(ExecutionBudget &chunk_budget);
+	PipelineExecuteResult FlushOperators(ExecutionBudget &chunk_budget, OperatorFlushState &state, bool batch);
+	PipelineExecuteResult FinishBatch(ExecutionBudget &chunk_budget);
+	PipelineExecuteResult AdvanceBatch(OperatorPartitionData next_partition, const BatchMetadata &next_batch,
+	                                   ExecutionBudget &chunk_budget, bool force = false,
+	                                   optional_idx external_min_batch_index = optional_idx());
 
 	static bool CanCacheType(const LogicalType &type);
 	void CacheChunk(DataChunk &input, idx_t operator_idx);

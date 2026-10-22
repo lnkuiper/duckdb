@@ -412,6 +412,8 @@ enum class OnCreateConflict : uint8_t;
 
 enum class OnEntryNotFound : uint8_t;
 
+enum class OperatorBatchResultType : uint8_t;
+
 enum class OperatorCachingMode : uint8_t;
 
 enum class OperatorFinalResultType : uint8_t;
@@ -1260,6 +1262,9 @@ const char* EnumUtil::ToChars<OnCreateConflict>(OnCreateConflict value);
 
 template<>
 const char* EnumUtil::ToChars<OnEntryNotFound>(OnEntryNotFound value);
+
+template<>
+const char* EnumUtil::ToChars<OperatorBatchResultType>(OperatorBatchResultType value);
 
 template<>
 const char* EnumUtil::ToChars<OperatorCachingMode>(OperatorCachingMode value);
@@ -2248,6 +2253,9 @@ OnCreateConflict EnumUtil::FromString<OnCreateConflict>(const char *value);
 
 template<>
 OnEntryNotFound EnumUtil::FromString<OnEntryNotFound>(const char *value);
+
+template<>
+OperatorBatchResultType EnumUtil::FromString<OperatorBatchResultType>(const char *value);
 
 template<>
 OperatorCachingMode EnumUtil::FromString<OperatorCachingMode>(const char *value);

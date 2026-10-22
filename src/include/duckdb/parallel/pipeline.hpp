@@ -113,6 +113,10 @@ struct PipelineMetadataPlan {
 	OperatorPartitionInfo source_partition_info;
 	//! Source input, each operator's output, and finally the sink input.
 	vector<BatchMetadataInfo> edges;
+
+	bool TracksBatches() const {
+		return sink_partition_info.RequiresPartitioning() || (!edges.empty() && edges[0].completion);
+	}
 };
 
 //! The Pipeline class represents an execution pipeline starting at a

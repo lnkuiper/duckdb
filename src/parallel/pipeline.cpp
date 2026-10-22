@@ -31,7 +31,7 @@ static shared_ptr<GlobalSourceState> ToSharedSourceState(unique_ptr<GlobalSource
 PipelineTask::PipelineTask(Pipeline &pipeline_p, shared_ptr<Event> event_p)
     : ExecutorTask(pipeline_p.executor, std::move(event_p)), pipeline(pipeline_p) {
 	auto sink = pipeline.GetSink();
-	if (sink && pipeline.GetMetadataPlan().sink_partition_info.RequiresPartitioning()) {
+	if (sink && pipeline.GetMetadataPlan().TracksBatches()) {
 		// Account for every task before lazy executor construction can advance the batch minimum.
 		reserved_batch_index = pipeline.RegisterNewBatchIndex();
 	}
@@ -438,7 +438,7 @@ void Pipeline::ResetSourceForReschedule() {
 	} else {
 		SetSourceState(ToSharedSourceState(source->GetGlobalSourceState(client, partition_info)));
 	}
-	if (partition_info.RequiresPartitioning()) {
+	if (metadata_plan.TracksBatches()) {
 		ResetBatchIndexes();
 	}
 	initialized = true;
