@@ -60,7 +60,6 @@ void RepeatTableFunction::RegisterFunction(BuiltinFunctions &set) {
 	repeat.get_partition_data = GeneratedRowsLocalState::GetPartitionData;
 	repeat.source_metadata = BatchMetadataInfo::RowPositions();
 	repeat.source_metadata.Merge(BatchMetadataInfo::Completion());
-	repeat.state_initialization = StateInitialization::INDEPENDENT;
 	set.AddFunction(repeat);
 }
 

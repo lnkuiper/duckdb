@@ -25,9 +25,6 @@ class ResultSinkLocalState;
 //! The root operator of every chunk-producing plan.
 class PhysicalResultSink : public PhysicalResultCollector {
 public:
-	OperatorInitializationInfo GetInitializationInfo() const override {
-		return OperatorInitializationInfo::Independent();
-	}
 	PhysicalResultSink(PhysicalPlan &physical_plan, PreparedStatementData &data, ResultOrdering ordering);
 
 	ResultOrdering ordering;

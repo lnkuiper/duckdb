@@ -522,7 +522,6 @@ public:
 	table_function_get_partition_data_t get_partition_data;
 	//! Guaranteed streaming properties of this source.
 	BatchMetadataInfo source_metadata;
-	StateInitialization state_initialization = StateInitialization::UNKNOWN;
 	//! (Optional) returns extra bind info
 	table_function_get_bind_info_t get_bind_info;
 	//! (Optional) the table a bound call scans, e.g. for a scan of a catalog table

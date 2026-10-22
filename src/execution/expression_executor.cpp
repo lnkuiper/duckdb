@@ -6,7 +6,6 @@
 #include "duckdb/storage/statistics/base_statistics.hpp"
 #include "duckdb/planner/expression/list.hpp"
 #include "duckdb/main/settings.hpp"
-#include "duckdb/function/cast/cast_function_set.hpp"
 #include "duckdb/common/type_visitor.hpp"
 #include "duckdb/storage/table/variant_column_data.hpp"
 #include "duckdb/planner/expression_iterator.hpp"
@@ -42,62 +41,7 @@ const FunctionGlobalState &ExpressionExecutorGlobalState::GetState(const BoundFu
 	return *entry->second;
 }
 
-static StateInitialization MergeInitialization(StateInitialization left, StateInitialization right) {
-	if (left == StateInitialization::UNKNOWN || right == StateInitialization::UNKNOWN) {
-		return StateInitialization::UNKNOWN;
-	}
-	return left == StateInitialization::SHARED || right == StateInitialization::SHARED
-	           ? StateInitialization::SHARED
-	           : StateInitialization::INDEPENDENT;
-}
-
-StateInitialization ExpressionExecutor::GetStateInitialization(const Expression &expr) {
-	auto result = StateInitialization::INDEPENDENT;
-	switch (expr.GetExpressionClass()) {
-	case ExpressionClass::BOUND_FUNCTION: {
-		auto &function = expr.Cast<BoundFunctionExpression>();
-		auto &fun = function.Function();
-		result = fun.GetStateInitialization(function);
-		if (fun.HasBindLambdaCallback() ||
-		    (fun.GetStability() == FunctionStability::VOLATILE && !fun.HasInitGlobalStateCallback())) {
-			result = StateInitialization::UNKNOWN;
-		}
-		break;
-	}
-	case ExpressionClass::BOUND_AGGREGATE: {
-		// Aggregate state callbacks may reach client state through bind data or extra function info.
-		auto &aggregate = expr.Cast<BoundAggregateExpression>();
-		if (aggregate.BindInfo() || aggregate.Function().HasExtraFunctionInfo() ||
-		    aggregate.Function().HasInitLocalStateFinalizeCallback()) {
-			result = StateInitialization::UNKNOWN;
-		}
-		break;
-	}
-	case ExpressionClass::BOUND_REF:
-	case ExpressionClass::BOUND_CONSTANT:
-	case ExpressionClass::BOUND_PARAMETER:
-	case ExpressionClass::BOUND_CASE:
-	case ExpressionClass::BOUND_CONJUNCTION:
-	case ExpressionClass::BOUND_OPERATOR:
-		break;
-	default:
-		result = StateInitialization::UNKNOWN;
-		break;
-	}
-	ExpressionIterator::EnumerateChildren(
-	    expr, [&](const Expression &child) { result = MergeInitialization(result, GetStateInitialization(child)); });
-	return result;
-}
-
-StateInitialization ExpressionExecutor::GetStateInitialization(const vector<unique_ptr<Expression>> &expressions) {
-	auto result = StateInitialization::INDEPENDENT;
-	for (auto &expr : expressions) {
-		result = MergeInitialization(result, GetStateInitialization(*expr));
-	}
-	return result;
-}
-
-static bool SupportsRowPositions(const Expression &expr) {
+static bool SupportsRowPositions(const Expression &expr, bool &has_global_state) {
 	switch (expr.GetExpressionClass()) {
 	case ExpressionClass::BOUND_REF:
 	case ExpressionClass::BOUND_CONSTANT:
@@ -106,24 +50,27 @@ static bool SupportsRowPositions(const Expression &expr) {
 	case ExpressionClass::BOUND_FUNCTION: {
 		auto &function = expr.Cast<BoundFunctionExpression>();
 		auto &fun = function.Function();
-		if (fun.HasBindLambdaCallback() || fun.GetStateInitialization(function) == StateInitialization::UNKNOWN ||
+		if (fun.HasBindLambdaCallback() ||
 		    (fun.HasInitGlobalStateCallback() && fun.GetStability() != FunctionStability::VOLATILE) ||
 		    (fun.GetStability() == FunctionStability::VOLATILE && !fun.HasInitGlobalStateCallback())) {
 			return false;
 		}
 		bool earlier_arguments_nonnull = true;
 		for (auto &child : function.GetChildren()) {
-			if (!SupportsRowPositions(*child)) {
+			bool child_has_global_state = false;
+			if (!SupportsRowPositions(*child, child_has_global_state)) {
 				return false;
 			}
 			// A constant NULL argument can skip all subsequent children.
 			if (fun.GetNullHandling() == FunctionNullHandling::DEFAULT_NULL_HANDLING && !earlier_arguments_nonnull &&
-			    ExpressionExecutor::GetStateInitialization(*child) == StateInitialization::SHARED) {
+			    child_has_global_state) {
 				return false;
 			}
+			has_global_state |= child_has_global_state;
 			earlier_arguments_nonnull &= child->GetExpressionClass() == ExpressionClass::BOUND_CONSTANT &&
 			                             !child->Cast<BoundConstantExpression>().GetValue().IsNull();
 		}
+		has_global_state |= fun.HasInitGlobalStateCallback();
 		return !fun.HasInitGlobalStateCallback() || function.GetChildren().empty() ||
 		       fun.GetNullHandling() == FunctionNullHandling::SPECIAL_HANDLING || earlier_arguments_nonnull;
 	}
@@ -132,13 +79,14 @@ static bool SupportsRowPositions(const Expression &expr) {
 	}
 }
 
-bool ExpressionExecutor::SupportsRowPositions(const vector<unique_ptr<Expression>> &expressions) {
+bool ExpressionExecutor::CanInitializeGlobalState(const vector<unique_ptr<Expression>> &expressions) {
+	bool has_global_state = false;
 	for (auto &expr : expressions) {
-		if (!duckdb::SupportsRowPositions(*expr)) {
+		if (!SupportsRowPositions(*expr, has_global_state)) {
 			return false;
 		}
 	}
-	return true;
+	return has_global_state;
 }
 
 ExpressionExecutor::ExpressionExecutor(ClientContext &context) : context(&context) {

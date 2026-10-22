@@ -18,14 +18,6 @@
 
 namespace duckdb {
 
-OperatorInitializationInfo PhysicalBatchInsert::GetInitializationInfo() const {
-	if (!bound_constraints.empty() || (info && !info->constraints.empty()) ||
-	    (insert_table && insert_table->GetStorage().HasIndexes())) {
-		return OperatorInitializationInfo();
-	}
-	return OperatorInitializationInfo::Independent();
-}
-
 PhysicalBatchInsert::PhysicalBatchInsert(PhysicalPlan &physical_plan, vector<LogicalType> types_p,
                                          DuckTableEntry &table, vector<unique_ptr<BoundConstraint>> bound_constraints_p,
                                          idx_t estimated_cardinality)

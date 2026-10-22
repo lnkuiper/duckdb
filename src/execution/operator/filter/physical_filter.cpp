@@ -4,12 +4,6 @@
 #include "duckdb/parallel/thread_context.hpp"
 namespace duckdb {
 
-OperatorInitializationInfo PhysicalFilter::GetInitializationInfo() const {
-	return ExpressionExecutor::GetStateInitialization(*expression) == StateInitialization::INDEPENDENT
-	           ? OperatorInitializationInfo::Independent()
-	           : OperatorInitializationInfo();
-}
-
 PhysicalFilter::PhysicalFilter(PhysicalPlan &physical_plan, vector<LogicalType> types,
                                vector<unique_ptr<Expression>> select_list, idx_t estimated_cardinality)
     : CachingPhysicalOperator(physical_plan, PhysicalOperatorType::FILTER, std::move(types), estimated_cardinality),

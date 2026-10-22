@@ -47,17 +47,28 @@ void PositionProbe(DataChunk &args, ExpressionState &state, Vector &result) {
 }
 
 void RegisterPositionProbes(Connection &con) {
-	for (auto name : {"position_probe_a", "position_probe_b", "position_probe_parent", "unknown_init_probe"}) {
+	for (auto name : {"position_probe_a", "position_probe_b", "position_probe_parent", "unknown_init_probe",
+	                  "local_state_parent", "nonvolatile_global_probe"}) {
 		duckdb::vector<LogicalType> arguments;
-		if (string(name) == "position_probe_parent") {
+		if (string(name) == "position_probe_parent" || string(name) == "local_state_parent" ||
+		    string(name) == "nonvolatile_global_probe") {
 			arguments.push_back(LogicalType::BIGINT);
 		}
-		ScalarFunction function(name, arguments, LogicalType::BIGINT, PositionProbe, nullptr, nullptr,
+		scalar_function_t callback = PositionProbe;
+		if (string(name) == "local_state_parent") {
+			callback = [](DataChunk &args, ExpressionState &, Vector &result) {
+				result.Reference(args.data[0]);
+			};
+		}
+		ScalarFunction function(name, arguments, LogicalType::BIGINT, callback, nullptr, nullptr,
 		                        InitializePositionProbe);
 		function.SetVolatile();
 		function.SetNullHandling(FunctionNullHandling::SPECIAL_HANDLING);
-		if (string(name) != "unknown_init_probe") {
+		if (string(name) != "unknown_init_probe" && string(name) != "local_state_parent") {
 			function.SetInitGlobalStateCallback(PreparePositionProbe);
+		}
+		if (string(name) == "local_state_parent" || string(name) == "nonvolatile_global_probe") {
+			function.SetStability(FunctionStability::CONSISTENT);
 		}
 		CreateScalarFunctionInfo info(function);
 		con.context->RunFunctionInTransaction(
@@ -65,38 +76,38 @@ void RegisterPositionProbes(Connection &con) {
 	}
 }
 
-void RegisterPositionSources(Connection &con) {
-	for (const bool independent : {false, true}) {
-		TableFunction function(
-		    independent ? "independent_position_source" : "unknown_position_source", {},
-		    [](ClientContext &, TableFunctionInput &input, DataChunk &output) {
-			    auto &global = input.global_state->Cast<GeneratedRowsGlobalState>();
-			    auto &local = input.local_state->Cast<GeneratedRowsLocalState>();
-			    if (!local.Next(global)) {
-				    return;
-			    }
-			    input.metadata = local.GetMetadata(global);
-			    output.data[0].Sequence(Hugeint::Cast<int64_t>(local.offset), 1, local.count);
-		    },
-		    [](ClientContext &, TableFunctionBindInput &, duckdb::vector<LogicalType> &types,
-		       duckdb::vector<Identifier> &names) -> duckdb::unique_ptr<FunctionData> {
-			    types.push_back(LogicalType::BIGINT);
-			    names.emplace_back("i");
-			    return nullptr;
-		    },
-		    [](ClientContext &context, TableFunctionInitInput &input) -> duckdb::unique_ptr<GlobalTableFunctionState> {
-			    return make_uniq<GeneratedRowsGlobalState>(context, Hugeint::Convert(4097), input.metadata);
-		    },
-		    GeneratedRowsLocalState::Init);
-		function.get_partition_data = GeneratedRowsLocalState::GetPartitionData;
-		function.source_metadata = BatchMetadataInfo::RowPositions();
-		if (independent) {
-			function.state_initialization = StateInitialization::INDEPENDENT;
-		}
-		CreateTableFunctionInfo info(function);
-		con.context->RunFunctionInTransaction(
-		    [&] { Catalog::GetSystemCatalog(*con.context).CreateTableFunction(*con.context, info); });
-	}
+void RegisterPositionSource(Connection &con) {
+	TableFunction function(
+	    "position_source", {},
+	    [](ClientContext &, TableFunctionInput &input, DataChunk &output) {
+		    auto &global = input.global_state->Cast<GeneratedRowsGlobalState>();
+		    auto &local = input.local_state->Cast<GeneratedRowsLocalState>();
+		    if (!local.Next(global)) {
+			    return;
+		    }
+		    input.metadata = local.GetMetadata(global);
+		    output.data[0].Sequence(Hugeint::Cast<int64_t>(local.offset), 1, local.count);
+	    },
+	    [](ClientContext &, TableFunctionBindInput &, duckdb::vector<LogicalType> &types,
+	       duckdb::vector<Identifier> &names) -> duckdb::unique_ptr<FunctionData> {
+		    types.push_back(LogicalType::BIGINT);
+		    names.emplace_back("i");
+		    return nullptr;
+	    },
+	    [](ClientContext &context, TableFunctionInitInput &input) -> duckdb::unique_ptr<GlobalTableFunctionState> {
+		    auto &engine = RandomEngine::Get(context);
+		    {
+			    duckdb::lock_guard<mutex> guard(engine.lock);
+			    engine.NextRandomInteger64();
+		    }
+		    return make_uniq<GeneratedRowsGlobalState>(context, Hugeint::Convert(4097), input.metadata);
+	    },
+	    GeneratedRowsLocalState::Init);
+	function.get_partition_data = GeneratedRowsLocalState::GetPartitionData;
+	function.source_metadata = BatchMetadataInfo::RowPositions();
+	CreateTableFunctionInfo info(function);
+	con.context->RunFunctionInTransaction(
+	    [&] { Catalog::GetSystemCatalog(*con.context).CreateTableFunction(*con.context, info); });
 }
 
 void ClearPositionProbes() {
@@ -185,6 +196,11 @@ TEST_CASE("Shared expression preparation follows projection order and query gene
 	REQUIRE(nested->Collection().GetValue(0, 0).GetValue<int64_t>() == 4097 * 2048);
 	const duckdb::vector<string> expected {"position_probe_a", "position_probe_parent"};
 	REQUIRE(prepared_expressions == expected);
+	ClearPositionProbes();
+	auto local_parent = con.Query("SELECT sum(local_state_parent(position_probe_a())) FROM range(4097)");
+	REQUIRE_NO_FAIL(*local_parent);
+	REQUIRE(local_parent->Collection().GetValue(0, 0).GetValue<int64_t>() == 4097 * 2048);
+	REQUIRE(prepared_expressions == duckdb::vector<string> {"position_probe_a"});
 }
 
 TEST_CASE("Unsupported expression and stream domains never partially prepare shared seeds",
@@ -202,8 +218,13 @@ TEST_CASE("Unsupported expression and stream domains never partially prepare sha
 	    "CASE WHEN i % 2 = 0 THEN position_probe_b() ELSE 0 END b FROM range(4097) t(i))",
 	    "SELECT sum(a), count(u) FROM (SELECT position_probe_a() a, uuid() u FROM range(4097))",
 	    "SELECT sum(a) + sum(b) FROM (SELECT position_probe_a() a, unknown_init_probe() b FROM range(4097))",
+	    "SELECT sum(nonvolatile_global_probe(position_probe_a())) FROM range(4097)",
 	    "SELECT sum(position_probe_a()) FROM (SELECT i FROM range(2048) t(i) UNION ALL SELECT i FROM range(2049) t(i))",
 	    "SELECT sum(position_probe_a()) FROM range(2048) UNION ALL SELECT sum(position_probe_b()) FROM range(2049)",
+	    "SELECT sum(position_probe_a()) FROM "
+	    "(SELECT i FROM range(2048) t(i) UNION ALL SELECT i FROM range(2049) t(i) WHERE i%2=0)",
+	    "SELECT sum(position_probe_a()) FROM "
+	    "(SELECT i FROM range(2049) t(i) WHERE i%2=0 UNION ALL SELECT i FROM range(2048) t(i))",
 	    "SELECT sum(position_probe_a()) FROM "
 	    "(SELECT i, unknown_init_probe() b FROM range(4097) t(i)) WHERE b < 0",
 	    "SELECT sum((CASE WHEN i < 2048 THEN NULL ELSE 1 END) + position_probe_a()) FROM range(4097) t(i)",
@@ -218,31 +239,29 @@ TEST_CASE("Unsupported expression and stream domains never partially prepare sha
 	}
 }
 
-TEST_CASE("Shared expressions require declared source and sink initialization effects", "[streaming_batch_metadata]") {
+TEST_CASE("Shared expressions do not require source or sink initialization-effect declarations",
+          "[streaming_batch_metadata]") {
 	DuckDB db;
 	Connection con(db);
 	RegisterPositionProbes(con);
-	RegisterPositionSources(con);
+	RegisterPositionSource(con);
 	REQUIRE_NO_FAIL(con.Query("PRAGMA verify_parallelism"));
-	for (const bool independent : {false, true}) {
-		ClearPositionProbes();
-		auto source = independent ? "independent_position_source" : "unknown_position_source";
-		auto result = con.Query("SELECT sum(position_probe_a()) FROM " + string(source) + "()");
-		REQUIRE_NO_FAIL(*result);
-		REQUIRE(result->Collection().GetValue(0, 0).GetValue<int64_t>() == (independent ? 4097 * 2048 : -4097));
-		REQUIRE(prepared_expressions.size() == idx_t(independent ? 1 : 0));
-	}
+	ClearPositionProbes();
+	auto result = con.Query("SELECT sum(position_probe_a()) FROM position_source()");
+	REQUIRE_NO_FAIL(*result);
+	REQUIRE(result->Collection().GetValue(0, 0).GetValue<int64_t>() == 4097 * 2048);
+	REQUIRE(prepared_expressions.size() == 1);
 	REQUIRE_NO_FAIL(con.Query("CREATE TABLE constrained(i BIGINT CHECK (unknown_init_probe() < 0))"));
 	ClearPositionProbes();
 	REQUIRE_NO_FAIL(con.Query("INSERT INTO constrained SELECT position_probe_a() FROM range(4097)"));
-	REQUIRE(prepared_expressions.empty());
+	REQUIRE(prepared_expressions.size() == 1);
 	REQUIRE_NO_FAIL(con.Query("CREATE TABLE indexed(i BIGINT); CREATE INDEX idx ON indexed(i)"));
 	ClearPositionProbes();
 	REQUIRE_NO_FAIL(con.Query("INSERT INTO indexed SELECT position_probe_a() FROM range(4097)"));
-	REQUIRE(prepared_expressions.empty());
+	REQUIRE(prepared_expressions.size() == 1);
 }
 
-TEST_CASE("Aggregate extra info retains client seed initialization order", "[streaming_batch_metadata]") {
+TEST_CASE("Shared expression preparation precedes aggregate seed consumption", "[streaming_batch_metadata]") {
 	DuckDB db;
 	Connection con(db);
 	RegisterPositionProbes(con);
@@ -255,9 +274,7 @@ TEST_CASE("Aggregate extra info retains client seed initialization order", "[str
 	                        "(SELECT random() a, position_probe_a() p FROM range(4097))");
 	REQUIRE_NO_FAIL(*result);
 	REQUIRE(result->Collection().GetValue(1, 0).GetValue<int64_t>() == 4097);
-	REQUIRE(result->Collection().GetValue(2, 0).GetValue<int64_t>() == -4097);
-	REQUIRE(prepared_expressions.empty());
+	REQUIRE(result->Collection().GetValue(2, 0).GetValue<int64_t>() == 4097 * 2048);
+	REQUIRE(prepared_expressions.size() == 1);
 	REQUIRE(!info->seeds.empty());
-	// The aggregate global state consumes the first client seed, before projection initialization.
-	REQUIRE(info->seeds[0] == UINT64_C(17148587759093342360));
 }

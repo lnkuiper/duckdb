@@ -164,11 +164,6 @@ ScalarFunction CastFun::GetFunction() {
 	cast_fun.SetSerializeCallback(CastFunctionSerialize);
 	cast_fun.SetDeserializeCallback(CastFunctionDeserialize);
 	cast_fun.SetInitStateCallback(CastInitLocalState);
-	cast_fun.SetStateInitializationCallback([](const BoundFunctionExpression &expr) {
-		return expr.BindInfo()->Cast<CastFunctionData>().bound_cast.HasInitLocalState()
-		           ? StateInitialization::UNKNOWN
-		           : StateInitialization::INDEPENDENT;
-	});
 	cast_fun.SetStatisticsCallback(CastPropagateStatistics);
 	return cast_fun;
 }

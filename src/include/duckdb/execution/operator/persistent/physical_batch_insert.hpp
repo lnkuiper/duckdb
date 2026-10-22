@@ -16,7 +16,6 @@ class DuckTableEntry;
 
 class PhysicalBatchInsert : public PhysicalOperator {
 public:
-	OperatorInitializationInfo GetInitializationInfo() const override;
 	static constexpr const PhysicalOperatorType TYPE = PhysicalOperatorType::BATCH_INSERT;
 
 public:

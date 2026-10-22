@@ -100,7 +100,6 @@ BoundTableFunction::BoundTableFunction(shared_ptr<const TableFunction> function_
 	table_scan_progress = function.table_scan_progress;
 	get_partition_data = function.get_partition_data;
 	source_metadata = function.source_metadata;
-	state_initialization = function.state_initialization;
 	get_bind_info = function.get_bind_info;
 	get_table_entry = function.get_table_entry;
 	projection_expression_pushdown = function.projection_expression_pushdown;
@@ -174,8 +173,8 @@ bool BaseTableFunction::operator==(const BaseTableFunction &rhs) const {
 	       pushdown_complex_filter == rhs.pushdown_complex_filter && pushdown_expression == rhs.pushdown_expression &&
 	       to_string == rhs.to_string && to_sql == rhs.to_sql && table_scan_progress == rhs.table_scan_progress &&
 	       get_partition_data == rhs.get_partition_data && source_metadata.Supports(rhs.source_metadata) &&
-	       rhs.source_metadata.Supports(source_metadata) && state_initialization == rhs.state_initialization &&
-	       get_bind_info == rhs.get_bind_info && get_table_entry == rhs.get_table_entry &&
+	       rhs.source_metadata.Supports(source_metadata) && get_bind_info == rhs.get_bind_info &&
+	       get_table_entry == rhs.get_table_entry &&
 	       projection_expression_pushdown == rhs.projection_expression_pushdown &&
 	       get_multi_file_reader == rhs.get_multi_file_reader && supports_pushdown_type == rhs.supports_pushdown_type &&
 	       is_repeatable == rhs.is_repeatable && get_partition_info == rhs.get_partition_info &&

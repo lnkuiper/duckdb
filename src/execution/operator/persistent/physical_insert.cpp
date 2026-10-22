@@ -29,14 +29,6 @@
 
 namespace duckdb {
 
-OperatorInitializationInfo PhysicalInsert::GetInitializationInfo() const {
-	if (action_type != OnConflictAction::THROW || !bound_constraints.empty() || (info && !info->constraints.empty()) ||
-	    (insert_table && insert_table->GetStorage().HasIndexes())) {
-		return OperatorInitializationInfo();
-	}
-	return OperatorInitializationInfo::Independent();
-}
-
 PhysicalInsert::PhysicalInsert(PhysicalPlan &physical_plan, vector<LogicalType> types_p, DuckTableEntry &table,
                                vector<unique_ptr<BoundConstraint>> bound_constraints_p,
                                vector<unique_ptr<Expression>> set_expressions, vector<PhysicalIndex> set_columns,

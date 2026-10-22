@@ -8,8 +8,6 @@
 
 #pragma once
 
-#include "duckdb/common/enums/state_initialization.hpp"
-
 #include "duckdb/common/identifier.hpp"
 #include "duckdb/common/named_parameter_map.hpp"
 #include "duckdb/common/types/data_chunk.hpp"
@@ -104,7 +102,7 @@ struct TableFunctionData : public FunctionData {
 	DUCKDB_API bool Equals(const FunctionData &other) const override;
 };
 
-//! Shared execution state of a scalar function, owned by the executing physical operator.
+//! Shared execution state of a scalar function, owned by the query execution.
 struct FunctionGlobalState {
 	virtual ~FunctionGlobalState() = default;
 

@@ -24,11 +24,6 @@ namespace duckdb {
 //! Represents a scan of a base table
 class PhysicalTableScan : public PhysicalOperator {
 public:
-	OperatorInitializationInfo GetInitializationInfo() const override {
-		return function.state_initialization == StateInitialization::INDEPENDENT
-		           ? OperatorInitializationInfo::Independent()
-		           : OperatorInitializationInfo();
-	}
 	BatchMetadataInfo SourceMetadata() const override {
 		return function.source_metadata;
 	}

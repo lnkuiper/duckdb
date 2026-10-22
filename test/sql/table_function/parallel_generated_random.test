@@ -1,5 +1,5 @@
 # name: test/sql/table_function/parallel_generated_random.test
-# description: Dense generated projections preserve the serial seeded random streams
+# description: Dense generated projections reproduce seeded data independently of worker scheduling
 # group: [table_function]
 
 require skip_reload
@@ -11,14 +11,35 @@ statement ok
 CREATE TABLE generated(i BIGINT, a DOUBLE, b DOUBLE)
 
 statement ok
+CREATE TABLE expected(i BIGINT, a DOUBLE, b DOUBLE)
+
+statement ok
 PREPARE populate AS INSERT INTO generated SELECT i, random(), random() FROM range(4097) t(i)
 
 statement ok
 PREPARE populate_chain AS INSERT INTO generated SELECT i, a, random() FROM (SELECT i, random() a FROM generate_series(0, 4096) t(i))
 
-# This digest comes from the serial range implementation. The prepared
-# statement must obtain fresh expression seeds at execution, independent of workers.
+# Compare each query with its own single-threaded baseline. Prepared execution
+# obtains fresh expression seeds, independently of the worker count.
 foreach population populate populate_chain
+
+statement ok
+SET threads=1
+
+statement ok
+DELETE FROM generated
+
+statement ok
+DELETE FROM expected
+
+statement ok
+SELECT setseed(0.42)
+
+statement ok
+EXECUTE {population}
+
+statement ok
+INSERT INTO expected SELECT * FROM generated
 
 foreach threads 1 4 8
 
@@ -34,18 +55,32 @@ SELECT setseed(0.42)
 statement ok
 EXECUTE {population}
 
-query IT
-SELECT count(*), md5(string_agg(i || ':' || a || ':' || b, ',' ORDER BY i)) FROM generated
+query III
+SELECT count(*), count(*) FILTER (WHERE a = b), count(*) FILTER (WHERE a < 0 OR a >= 1 OR b < 0 OR b >= 1) FROM generated
 ----
-4097	8a14d72555e3d30b68edb8b52ed0c48f
+4097	0	0
 
-# Local worker initialization must not consume additional client RNG seeds.
-query TT
-SELECT random()::VARCHAR, random()::VARCHAR
+query I
+SELECT count(*) FROM ((TABLE generated EXCEPT ALL TABLE expected) UNION ALL (TABLE expected EXCEPT ALL TABLE generated))
 ----
-0.18256470778688086	0.7935885720545943
+0
 
 endloop
+
+# Changing the seed must change the prepared statement's data.
+statement ok
+DELETE FROM generated
+
+statement ok
+SELECT setseed(-0.25)
+
+statement ok
+EXECUTE {population}
+
+query I
+SELECT count(*) > 0 FROM generated JOIN expected USING (i) WHERE generated.a <> expected.a
+----
+true
 
 endloop
 

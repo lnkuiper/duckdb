@@ -309,33 +309,28 @@ void Executor::PrepareExpressionStates(const vector<shared_ptr<Pipeline>> &all_p
 	vector<pair<const_reference<PhysicalOperator>, const_reference<vector<unique_ptr<Expression>>>>> groups;
 	reference_set_t<const PhysicalOperator> participating;
 	for (auto &pipeline : all_pipelines) {
-		// Source/sink initialization precedes streaming operators, including nested external executors.
-		for (auto boundary : {pipeline->GetSink(), pipeline->GetSource()}) {
-			if (boundary && boundary->GetInitializationInfo().effect != StateInitialization::INDEPENDENT) {
-				return;
-			}
-		}
 		auto &operators = pipeline->GetIntermediateOperators();
 		for (idx_t i = 0; i < operators.size(); i++) {
 			auto &op = operators[i].get();
-			auto info = op.GetInitializationInfo();
-			if (info.effect == StateInitialization::UNKNOWN) {
-				return;
-			}
-			if (info.effect == StateInitialization::INDEPENDENT) {
+			auto expressions = op.GetGlobalExpressions();
+			if (!expressions) {
 				continue;
 			}
-			if (!info.expressions || pipeline->IsExternalInput() ||
-			    !pipeline->GetMetadataPlan().edges[i].row_positions ||
-			    (expression_pipeline && expression_pipeline.get() != pipeline.get()) ||
-			    !participating.insert(op).second) {
+			// An operator shared by dense and non-dense inputs cannot share positional state.
+			if (!participating.insert(op).second) {
+				return;
+			}
+			if (!pipeline->GetMetadataPlan().edges[i].row_positions) {
+				continue;
+			}
+			if (pipeline->IsExternalInput() || (expression_pipeline && expression_pipeline.get() != pipeline.get())) {
 				return;
 			}
 			expression_pipeline = *pipeline;
-			groups.emplace_back(op, *info.expressions);
+			groups.emplace_back(op, *expressions);
 		}
 	}
-	// A single established stream gives source-to-sink initialization order without worker races.
+	// Assign shared states in a stable order before any worker-local initialization.
 	for (auto &group : groups) {
 		expression_states.emplace(group.first.get(),
 		                          make_uniq<ExpressionExecutorGlobalState>(context, group.second.get()));

@@ -400,8 +400,7 @@ void Pipeline::ResetSinkAndOperators() {
 		auto &op = op_ref.get();
 		lock_guard<mutex> guard(op.lock);
 		if (!op.op_state) {
-			OperatorStateInitInput input {executor.GetExpressionState(op)};
-			op.op_state = op.GetGlobalOperatorState(GetClientContext(), input);
+			op.op_state = op.GetGlobalOperatorState(GetClientContext());
 		}
 	}
 }
@@ -421,8 +420,7 @@ void Pipeline::ResetOperatorsForReschedule() {
 		if (allow_reuse && op.op_state && op.ResetGlobalOperatorState(client, *op.op_state)) {
 			continue;
 		}
-		OperatorStateInitInput input {executor.GetExpressionState(op)};
-		op.op_state = op.GetGlobalOperatorState(client, input);
+		op.op_state = op.GetGlobalOperatorState(client);
 	}
 }
 

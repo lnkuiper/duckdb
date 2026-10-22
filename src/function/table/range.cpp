@@ -485,7 +485,6 @@ void RangeTableFunction::RegisterFunction(BuiltinFunctions &set) {
 	range_function.get_partition_data = GeneratedRowsLocalState::GetPartitionData;
 	range_function.source_metadata = BatchMetadataInfo::RowPositions();
 	range_function.source_metadata.Merge(BatchMetadataInfo::Completion());
-	range_function.state_initialization = StateInitialization::INDEPENDENT;
 	range_function.in_out_function = RangeFunction<false>;
 	range_function.cardinality = RangeCardinality;
 	range_function.is_repeatable = RangeIsRepeatable;

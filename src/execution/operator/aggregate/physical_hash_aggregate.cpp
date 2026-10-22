@@ -19,15 +19,6 @@
 
 namespace duckdb {
 
-OperatorInitializationInfo PhysicalHashAggregate::GetInitializationInfo() const {
-	return ExpressionExecutor::GetStateInitialization(grouped_aggregate_data.aggregates) ==
-	                   StateInitialization::INDEPENDENT &&
-	               ExpressionExecutor::GetStateInitialization(grouped_aggregate_data.groups) ==
-	                   StateInitialization::INDEPENDENT
-	           ? OperatorInitializationInfo::Independent()
-	           : OperatorInitializationInfo();
-}
-
 HashAggregateGroupingData::HashAggregateGroupingData(GroupingSet &grouping_set_p,
                                                      const GroupedAggregateData &grouped_aggregate_data,
                                                      unique_ptr<DistinctAggregateCollectionInfo> &info,

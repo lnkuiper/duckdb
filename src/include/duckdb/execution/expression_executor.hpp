@@ -21,7 +21,7 @@ class ClientContext;
 class ExecutionContext;
 
 //! Shared by executors evaluating the same expressions at dense logical row positions.
-//! Initialization follows the ordinary local expression initialization order.
+//! Prepared once before workers start; each worker owns its local function states.
 struct ExpressionExecutorGlobalState {
 	explicit ExpressionExecutorGlobalState(ClientContext &context, const vector<unique_ptr<Expression>> &expressions);
 	const FunctionGlobalState &GetState(const BoundFunctionExpression &expr) const;
@@ -63,9 +63,7 @@ public:
 	DUCKDB_API void Execute(DataChunk *input, DataChunk &result);
 	void Execute(DataChunk &input, DataChunk &result, const ChunkMetadata &metadata);
 	const ChunkMetadata &GetInputMetadata() const;
-	static StateInitialization GetStateInitialization(const Expression &expr);
-	static StateInitialization GetStateInitialization(const vector<unique_ptr<Expression>> &expressions);
-	static bool SupportsRowPositions(const vector<unique_ptr<Expression>> &expressions);
+	static bool CanInitializeGlobalState(const vector<unique_ptr<Expression>> &expressions);
 	inline void Execute(DataChunk &input, DataChunk &result) {
 		Execute(&input, result);
 	}
