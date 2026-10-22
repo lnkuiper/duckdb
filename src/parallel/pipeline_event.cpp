@@ -24,6 +24,7 @@ bool PipelineEvent::AutoFinishWithoutTasks() const {
 }
 
 void PipelineEvent::FinishEvent() {
+	pipeline->FinishSource();
 }
 
 } // namespace duckdb

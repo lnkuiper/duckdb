@@ -115,6 +115,13 @@ ProgressData PhysicalCTEConsumerSource::GetProgress(ClientContext &context, Glob
 	return state.scan_progress.Update(state.exchange->ScanProgress(state.consumer_idx, estimated_cardinality));
 }
 
+void PhysicalCTEConsumerSource::LocalSourceFinished(ExecutionContext &, GlobalSourceState &gstate_p,
+                                                    LocalSourceState &lstate_p) const {
+	auto &gstate = gstate_p.Cast<CTEConsumerGlobalSourceState>();
+	auto &lstate = lstate_p.Cast<CTEConsumerLocalSourceState>();
+	gstate.exchange->FinishScan(gstate.consumer_idx, *lstate.scan_state);
+}
+
 void PhysicalCTEConsumerSource::SourceFinished(ClientContext &context, GlobalSourceState &gstate) const {
 	gstate.Cast<CTEConsumerGlobalSourceState>().Unregister();
 }

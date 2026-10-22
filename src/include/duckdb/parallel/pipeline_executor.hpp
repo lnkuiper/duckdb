@@ -154,7 +154,7 @@ private:
 
 	//! Whether FinishSource has already been called (so FinalizeSource is skipped in PushFinalize)
 	bool source_profiling_finalized = false;
-	//! Whether the source has been told this executor will not fetch more input
+	//! Whether this executor has notified the source of its local completion
 	SourceFinishNotificationState source_finish_notification_state = SourceFinishNotificationState::PENDING;
 
 	//! This flag is set when the pipeline gets interrupted by the Sink -> the final_chunk should be re-sink-ed.
@@ -187,7 +187,7 @@ private:
 	void SampleProgress();
 
 	void FinishProcessing(int32_t operator_idx = -1);
-	void NotifySourceFinished();
+	void NotifyLocalSourceFinished();
 	bool IsFinished() const;
 
 	//! Wrappers for sink/source calls to respective operators

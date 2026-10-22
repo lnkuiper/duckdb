@@ -544,13 +544,13 @@ void PipelineExecutor::FinishProcessing(int32_t operator_idx) {
 	pipeline.PreventBlocking();
 }
 
-void PipelineExecutor::NotifySourceFinished() {
+void PipelineExecutor::NotifyLocalSourceFinished() {
 	if (source_finish_notification_state == SourceFinishNotificationState::SENT || pipeline.IsExternalInput() ||
-	    !pipeline.GetSource() || !global_source_state) {
+	    !pipeline.GetSource() || !global_source_state || !local_source_state) {
 		return;
 	}
 	source_finish_notification_state = SourceFinishNotificationState::SENT;
-	pipeline.source->SourceFinished(context.client, *global_source_state);
+	pipeline.source->LocalSourceFinished(context, *global_source_state, *local_source_state);
 }
 
 bool PipelineExecutor::IsFinished() const {
@@ -706,7 +706,7 @@ PipelineExecuteResult PipelineExecutor::PushFinalize() {
 	}
 
 	finalized = true;
-	NotifySourceFinished();
+	NotifyLocalSourceFinished();
 
 	SampleProgress();
 	auto progress_verifier = pipeline.executor.GetProgressVerifier();
@@ -872,8 +872,7 @@ PipelineExecutor::SourceFetchResult PipelineExecutor::FetchFromSource(DataChunk 
 	D_ASSERT(fetch_result.batch_index_state != SourceBatchIndexState::ADVANCED ||
 	         fetch_result.result == SourceResultType::BLOCKED);
 	if (fetch_result.result == SourceResultType::FINISHED) {
-		// final call into the source - finish source execution
-		NotifySourceFinished();
+		NotifyLocalSourceFinished();
 		context.thread.profiler.FinishSource(*global_source_state, *local_source_state);
 		source_profiling_finalized = true;
 	}
