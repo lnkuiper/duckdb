@@ -1,0 +1,41 @@
+# name: test/sql/join/asof/test_asof_join_hive_metadata.test
+# description: ASOF input phases use their own Hive partition column positions
+# group: [asof]
+
+require parquet
+
+statement ok
+SET debug_asof_iejoin=false
+
+statement ok
+SET asof_loop_join_threshold=0
+
+statement ok
+COPY (SELECT i tid, (i%3)::VARCHAR sym, i ts, i price FROM range(32) t(i)) TO '{TEST_DIR}/trade' (FORMAT parquet, PARTITION_BY(sym))
+
+statement ok
+COPY (SELECT (i%3)::VARCHAR sym, i ts, 10*i bid FROM range(100) t(i)) TO '{TEST_DIR}/quote' (FORMAT parquet, PARTITION_BY(sym))
+
+# The pushed-down filter changes the left scan's column order. Its partition
+# column has a different position from the right scan's partition column.
+statement ok
+PREPARE q AS
+SELECT count(*), sum(price), sum(bid)
+FROM (SELECT * FROM '{TEST_DIR}/trade/*/*.parquet' WHERE ts BETWEEN 10 AND 20) t
+ASOF LEFT JOIN '{TEST_DIR}/quote/*/*.parquet' q USING (sym, ts)
+
+foreach threads 1 4
+
+statement ok
+SET threads={threads}
+
+loop iteration 0 2
+
+query III
+EXECUTE q
+----
+11	165	1650
+
+endloop
+
+endloop

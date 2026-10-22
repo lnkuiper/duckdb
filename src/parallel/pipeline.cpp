@@ -28,6 +28,24 @@ static shared_ptr<GlobalSourceState> ToSharedSourceState(unique_ptr<GlobalSource
 	return shared_ptr<GlobalSourceState>(std::move(state));
 }
 
+static void RefreshPartitionInfo(Pipeline &pipeline, PipelineMetadataPlan &metadata_plan) {
+	auto sink = pipeline.GetSink();
+	auto sink_info = sink ? sink->RequiredPartitionInfo() : OperatorPartitionInfo::NoPartitionInfo();
+	if (!metadata_plan.edges.back().Supports(sink_info.metadata)) {
+		throw InternalException("Sink partition requirements exceed negotiated batch metadata");
+	}
+	// A sink can change its legacy column requirements between input phases.
+	// Keep each pipeline's descriptor stable from initialization until its workers finish.
+	metadata_plan.sink_partition_info = std::move(sink_info);
+	metadata_plan.source_partition_info = metadata_plan.sink_partition_info;
+	auto &requested = metadata_plan.edges[0];
+	if (requested.completion && !metadata_plan.source_partition_info.RequiresPartitioning() &&
+	    pipeline.GetSource()->SupportsPartitioning(OperatorPartitionInfo::BatchIndex())) {
+		metadata_plan.source_partition_info = OperatorPartitionInfo::BatchIndex();
+	}
+	metadata_plan.source_partition_info.metadata = requested;
+}
+
 PipelineTask::PipelineTask(Pipeline &pipeline_p, shared_ptr<Event> event_p)
     : ExecutorTask(pipeline_p.executor, std::move(event_p)), pipeline(pipeline_p) {
 	auto sink = pipeline.GetSink();
@@ -429,6 +447,7 @@ void Pipeline::ResetSourceForReschedule() {
 	if (source && !source->IsSource()) {
 		throw InternalException("Source of pipeline does not have IsSource set");
 	}
+	RefreshPartitionInfo(*this, metadata_plan);
 	auto &client = GetClientContext();
 	auto allow_reuse = Settings::Get<EnableCachingOperatorsSetting>(client);
 	auto source_state = GetSourceState();
@@ -463,6 +482,7 @@ void Pipeline::ResetSource(bool force) {
 	if (source && !source->IsSource()) {
 		throw InternalException("Source of pipeline does not have IsSource set");
 	}
+	RefreshPartitionInfo(*this, metadata_plan);
 	auto source_state = GetSourceState();
 	if (force || !source_state) {
 		NotifyProgressReset();
@@ -483,6 +503,7 @@ void Pipeline::PrepareExternalInput() {
 		return;
 	}
 	ResetSinkAndOperators();
+	RefreshPartitionInfo(*this, metadata_plan);
 	initialized = true;
 }
 
@@ -665,7 +686,6 @@ void Pipeline::PrepareMetadata() {
 	preparing_metadata = true;
 	auto available = GetAvailableMetadata();
 	metadata_plan.sink_partition_info = sink ? sink->RequiredPartitionInfo() : OperatorPartitionInfo::NoPartitionInfo();
-	metadata_plan.source_partition_info = metadata_plan.sink_partition_info;
 	auto requested = metadata_plan.sink_partition_info.metadata;
 	if (!available.Supports(requested)) {
 		throw InternalException("Pipeline cannot provide the sink's required batch metadata");
@@ -681,11 +701,7 @@ void Pipeline::PrepareMetadata() {
 		requested.Merge(op.RequestedMetadata().Intersect(metadata_capabilities[i - 1]));
 		metadata_plan.edges[i - 1] = requested;
 	}
-	if (requested.completion && !metadata_plan.source_partition_info.RequiresPartitioning() &&
-	    source->SupportsPartitioning(OperatorPartitionInfo::BatchIndex())) {
-		metadata_plan.source_partition_info = OperatorPartitionInfo::BatchIndex();
-	}
-	metadata_plan.source_partition_info.metadata = requested;
+	RefreshPartitionInfo(*this, metadata_plan);
 	preparing_metadata = false;
 	metadata_prepared = true;
 }

@@ -107,8 +107,9 @@ struct PipelineProgress {
 	ProgressData pipeline;
 };
 
-//! Frozen after input-mode resolution and before state initialization.
+//! Streaming edges are frozen after input-mode resolution, before state initialization.
 struct PipelineMetadataPlan {
+	//! Legacy partition descriptors are refreshed before each pipeline execution.
 	OperatorPartitionInfo sink_partition_info;
 	OperatorPartitionInfo source_partition_info;
 	//! Source input, each operator's output, and finally the sink input.
