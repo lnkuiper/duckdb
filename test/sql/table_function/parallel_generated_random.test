@@ -13,7 +13,7 @@ CREATE TABLE generated(i BIGINT, a DOUBLE, b DOUBLE)
 statement ok
 PREPARE populate AS INSERT INTO generated SELECT i, random(), random() FROM range(4097) t(i)
 
-# These exact hashes come from the serial range implementation. The prepared
+# This digest comes from the serial range implementation. The prepared
 # statement must obtain fresh expression seeds at execution, independent of workers.
 foreach threads 1 4
 
@@ -29,16 +29,16 @@ SELECT setseed(0.42)
 statement ok
 EXECUTE populate
 
-query III
-SELECT count(*), sum(hash(i,a,b)), bit_xor(hash(i,a,b)) FROM generated
+query IT
+SELECT count(*), md5(string_agg(i || ':' || a || ':' || b, ',' ORDER BY i)) FROM generated
 ----
-4097	37989142403565071396247	14541957503140485245
+4097	8a14d72555e3d30b68edb8b52ed0c48f
 
 # Local worker initialization must not consume additional client RNG seeds.
-query II
-SELECT hash(random()), hash(random())
+query TT
+SELECT random()::VARCHAR, random()::VARCHAR
 ----
-9403958340877646113	303265579669909776
+0.18256470778688086	0.7935885720545943
 
 endloop
 
