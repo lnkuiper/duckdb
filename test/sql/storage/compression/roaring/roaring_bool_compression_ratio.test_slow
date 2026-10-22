@@ -6,6 +6,10 @@ require block_size 262144
 
 load {TEST_DIR}/test_roaring.db readwrite v1.5.0
 
+# Keep block packing stable for the physical compression-ratio assertions.
+statement ok
+SET threads=1
+
 statement ok
 set variable dataset_size = 120_000_000;
 
