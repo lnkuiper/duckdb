@@ -11,6 +11,7 @@
 
 #include <algorithm>
 #include <cstdint>
+#include <random>
 #include <stdlib.h>
 
 namespace duckdb {
@@ -125,6 +126,7 @@ struct ReservoirQuantileOperation {
 		}
 		D_ASSERT(state.v);
 		state.FillReservoir(bind_data.sample_size, input);
+		state.r_samp->num_entries_seen_total++;
 	}
 
 	template <class STATE, class OP>
@@ -138,8 +140,47 @@ struct ReservoirQuantileOperation {
 		if (!target.r_samp) {
 			target.r_samp = new BaseReservoirSampling();
 		}
-		for (idx_t src_idx = 0; src_idx < source.pos; src_idx++) {
-			target.FillReservoir(target.len, source.v[src_idx]);
+		D_ASSERT(target.len == source.len);
+		auto &sampler = *target.r_samp;
+		const auto total_seen = sampler.num_entries_seen_total + source.r_samp->num_entries_seen_total;
+		const auto sample_count = MinValue<idx_t>(target.len, total_seen);
+
+		// Draw the contribution of each population without replacement.
+		auto source_remaining = source.r_samp->num_entries_seen_total;
+		idx_t source_count = 0;
+		for (idx_t i = 0; i < sample_count; i++) {
+			std::uniform_int_distribution<idx_t> select_population(0, total_seen - i - 1);
+			if (select_population(sampler.random) < source_remaining) {
+				source_count++;
+				source_remaining--;
+			}
+		}
+		const auto target_count = sample_count - source_count;
+		D_ASSERT(source_count <= source.pos);
+		D_ASSERT(target_count <= target.pos);
+
+		// Keep a uniform subset of each local reservoir, leaving the source unchanged.
+		for (idx_t i = 0; i < target_count; i++) {
+			std::uniform_int_distribution<idx_t> select_index(i, target.pos - 1);
+			std::swap(target.v[i], target.v[select_index(sampler.random)]);
+		}
+		vector<idx_t> source_indices(source.pos);
+		for (idx_t i = 0; i < source.pos; i++) {
+			source_indices[i] = i;
+		}
+		for (idx_t i = 0; i < source_count; i++) {
+			std::uniform_int_distribution<idx_t> select_index(i, source.pos - 1);
+			auto index = select_index(sampler.random);
+			std::swap(source_indices[i], source_indices[index]);
+			target.v[target_count + i] = source.v[source_indices[i]];
+		}
+		target.pos = sample_count;
+		sampler.num_entries_seen_total = total_seen;
+		sampler.reservoir_weights = {};
+		if (target.pos == target.len) {
+			// Subsequent updates need weights representing the entire merged population.
+			SelectionVector sel(target.pos);
+			sampler.FillWeights(sel, target.pos);
 		}
 	}
 
