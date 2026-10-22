@@ -156,9 +156,11 @@ public:
 	duckdb::unique_ptr<OperatorState> GetOperatorState(ExecutionContext &) const override {
 		return make_uniq<MetadataCacheState>();
 	}
-	OperatorBatchResultType FlushBatch(ExecutionContext &context, OperatorChunk &output,
+	OperatorBatchResultType FlushBatch(ExecutionContext &context, DataChunk &output,
 	                                   OperatorBatchInput &input) const override {
 		auto &state = input.local_state.Cast<MetadataCacheState>();
+		REQUIRE_FALSE(state.input_metadata.batch.batch_index.IsValid());
+		REQUIRE_FALSE(state.output_metadata.batch.batch_index.IsValid());
 		if (state.block_flush) {
 			state.block_flush = false;
 			return OperatorBatchResultType::BLOCKED;
@@ -166,9 +168,11 @@ public:
 		state.block_flush = true;
 		return CachingPhysicalOperator::FlushBatch(context, output, input);
 	}
-	OperatorResultType ExecuteInternal(ExecutionContext &, OperatorChunk &input, OperatorChunk &output,
-	                                   GlobalOperatorState &, OperatorState &) const override {
+	OperatorResultType ExecuteInternal(ExecutionContext &, DataChunk &input, DataChunk &output, GlobalOperatorState &,
+	                                   OperatorState &state) const override {
+		REQUIRE_FALSE(state.output_metadata.batch.batch_index.IsValid());
 		output.Reference(input);
+		state.output_metadata = state.input_metadata;
 		return OperatorResultType::NEED_MORE_INPUT;
 	}
 };
@@ -191,15 +195,16 @@ public:
 	duckdb::unique_ptr<OperatorState> GetOperatorState(ExecutionContext &) const override {
 		return make_uniq<MetadataSplitState>();
 	}
-	OperatorResultType Execute(ExecutionContext &, OperatorChunk &input, OperatorChunk &output, GlobalOperatorState &,
+	OperatorResultType Execute(ExecutionContext &, DataChunk &input, DataChunk &output, GlobalOperatorState &,
 	                           OperatorState &state_p) const override {
 		auto &state = state_p.Cast<MetadataSplitState>();
-		output.chunk.Slice(input.chunk, state.offset, state.offset + 1);
-		output.metadata = input.metadata;
-		if (output.metadata.offset_in_batch.IsValid()) {
-			output.metadata.offset_in_batch = output.metadata.offset_in_batch.GetIndex() + state.offset;
+		REQUIRE_FALSE(state.output_metadata.batch.batch_index.IsValid());
+		output.Slice(input, state.offset, state.offset + 1);
+		state.output_metadata = state.input_metadata;
+		if (state.output_metadata.offset_in_batch.IsValid()) {
+			state.output_metadata.offset_in_batch = state.output_metadata.offset_in_batch.GetIndex() + state.offset;
 		}
-		if (++state.offset < input.chunk.size()) {
+		if (++state.offset < input.size()) {
 			return OperatorResultType::HAVE_MORE_OUTPUT;
 		}
 		state.offset = 0;
@@ -219,11 +224,21 @@ public:
 	BatchMetadataInfo RequestedMetadata() const override {
 		return BatchMetadataInfo::RowPositions();
 	}
-	OperatorResultType Execute(ExecutionContext &, OperatorChunk &input, OperatorChunk &output, GlobalOperatorState &,
-	                           OperatorState &) const override {
-		REQUIRE(input.metadata.offset_in_batch.IsValid());
+	OperatorResultType Execute(ExecutionContext &, DataChunk &input, DataChunk &output, GlobalOperatorState &,
+	                           OperatorState &state) const override {
+		REQUIRE(state.input_metadata.offset_in_batch.IsValid());
 		output.Reference(input);
+		state.output_metadata = state.input_metadata;
 		return OperatorResultType::NEED_MORE_INPUT;
+	}
+	bool RequiresFinalExecute() const override {
+		return true;
+	}
+	OperatorFinalizeResultType FinalExecute(ExecutionContext &, DataChunk &, GlobalOperatorState &,
+	                                        OperatorState &state) const override {
+		REQUIRE_FALSE(state.input_metadata.batch.batch_index.IsValid());
+		REQUIRE_FALSE(state.output_metadata.batch.batch_index.IsValid());
+		return OperatorFinalizeResultType::FINISHED;
 	}
 };
 
@@ -259,13 +274,15 @@ public:
 	duckdb::unique_ptr<GlobalOperatorState> GetGlobalOperatorState(ClientContext &) const override {
 		return make_uniq<MetadataObservation>();
 	}
-	OperatorResultType Execute(ExecutionContext &, OperatorChunk &input, OperatorChunk &output,
-	                           GlobalOperatorState &global_p, OperatorState &) const override {
+	OperatorResultType Execute(ExecutionContext &, DataChunk &input, DataChunk &output, GlobalOperatorState &global_p,
+	                           OperatorState &state) const override {
 		auto &global = global_p.Cast<MetadataObservation>();
 		duckdb::lock_guard<mutex> guard(global.lock);
-		global.metadata.push_back(input.metadata);
-		global.values.push_back(input.chunk.GetValue(0, 0).GetValue<idx_t>());
+		REQUIRE_FALSE(state.output_metadata.batch.batch_index.IsValid());
+		global.metadata.push_back(state.input_metadata);
+		global.values.push_back(input.GetValue(0, 0).GetValue<idx_t>());
 		output.Reference(input);
+		state.output_metadata = state.input_metadata;
 		return OperatorResultType::NEED_MORE_INPUT;
 	}
 };

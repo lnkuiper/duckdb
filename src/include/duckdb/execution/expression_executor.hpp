@@ -13,7 +13,7 @@
 #include "duckdb/planner/bound_tokens.hpp"
 #include "duckdb/planner/expression.hpp"
 #include "duckdb/common/enums/debug_vector_verification.hpp"
-#include "duckdb/execution/operator_chunk.hpp"
+#include "duckdb/execution/batch_metadata.hpp"
 
 namespace duckdb {
 class Allocator;
@@ -61,7 +61,7 @@ public:
 
 	//! Execute the set of expressions with the given input chunk and store the result in the output chunk
 	DUCKDB_API void Execute(DataChunk *input, DataChunk &result);
-	void Execute(OperatorChunk &input, DataChunk &result);
+	void Execute(DataChunk &input, DataChunk &result, const ChunkMetadata &metadata);
 	const ChunkMetadata &GetInputMetadata() const;
 	static StateInitialization GetStateInitialization(const Expression &expr);
 	static StateInitialization GetStateInitialization(const vector<unique_ptr<Expression>> &expressions);

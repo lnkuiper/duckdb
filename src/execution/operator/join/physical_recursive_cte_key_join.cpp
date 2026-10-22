@@ -529,13 +529,9 @@ OperatorResultType RecursiveCTEKeyJoinState::Execute(DataChunk &input, DataChunk
 	return ExecuteInternal<false>(input, output, layout, recursive_state);
 }
 
-OperatorResultType PhysicalRecursiveCTEKeyJoin::ExecuteInternal(ExecutionContext &context,
-                                                                OperatorChunk &operator_input,
-                                                                OperatorChunk &operator_output,
-                                                                GlobalOperatorState &gstate,
+OperatorResultType PhysicalRecursiveCTEKeyJoin::ExecuteInternal(ExecutionContext &context, DataChunk &input,
+                                                                DataChunk &chunk, GlobalOperatorState &gstate,
                                                                 OperatorState &state_p) const {
-	auto &input = operator_input.chunk;
-	auto &chunk = operator_output.chunk;
 	auto &state_scan = layout.StateScan();
 	if (!state_scan.recursive_cte || !state_scan.recursive_cte->sink_state) {
 		throw InternalException("USING KEY direct probe has no recursive state");

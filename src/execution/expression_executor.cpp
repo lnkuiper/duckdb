@@ -223,11 +223,11 @@ void ExpressionExecutor::Execute(DataChunk *input, DataChunk &result) {
 	result.Verify(context);
 }
 
-void ExpressionExecutor::Execute(OperatorChunk &input, DataChunk &result) {
+void ExpressionExecutor::Execute(DataChunk &input, DataChunk &result, const ChunkMetadata &metadata) {
 	D_ASSERT(!input_metadata);
-	input_metadata = input.metadata;
+	input_metadata = metadata;
 	try {
-		Execute(&input.chunk, result);
+		Execute(&input, result);
 	} catch (...) {
 		input_metadata = nullptr;
 		throw;

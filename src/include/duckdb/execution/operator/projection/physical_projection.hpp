@@ -36,7 +36,7 @@ public:
 	}
 	unique_ptr<GlobalOperatorState> GetGlobalOperatorState(ClientContext &context,
 	                                                       const OperatorStateInitInput &input) const override;
-	OperatorResultType Execute(ExecutionContext &context, OperatorChunk &input, OperatorChunk &chunk,
+	OperatorResultType Execute(ExecutionContext &context, DataChunk &input, DataChunk &chunk,
 	                           GlobalOperatorState &gstate, OperatorState &state) const override;
 
 	bool ParallelOperator() const override;

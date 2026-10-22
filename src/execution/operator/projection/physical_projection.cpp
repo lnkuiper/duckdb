@@ -57,13 +57,11 @@ void PhysicalProjection::InitializeOutputChunk(Allocator &allocator, DataChunk &
 	chunk.Initialize(allocator, types, initialize);
 }
 
-OperatorResultType PhysicalProjection::Execute(ExecutionContext &context, OperatorChunk &operator_input,
-                                               OperatorChunk &operator_output, GlobalOperatorState &gstate,
-                                               OperatorState &state_p) const {
-	auto &chunk = operator_output.chunk;
+OperatorResultType PhysicalProjection::Execute(ExecutionContext &context, DataChunk &input, DataChunk &chunk,
+                                               GlobalOperatorState &gstate, OperatorState &state_p) const {
 	auto &state = state_p.Cast<ProjectionState>();
-	state.executor.Execute(operator_input, chunk);
-	operator_output.metadata = operator_input.metadata;
+	state.executor.Execute(input, chunk, state.input_metadata);
+	state.output_metadata = state.input_metadata;
 	return OperatorResultType::NEED_MORE_INPUT;
 }
 

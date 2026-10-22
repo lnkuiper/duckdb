@@ -11,11 +11,8 @@ PhysicalSecureView::PhysicalSecureView(PhysicalPlan &physical_plan, PhysicalOper
 	children.push_back(child);
 }
 
-OperatorResultType PhysicalSecureView::Execute(ExecutionContext &context, OperatorChunk &operator_input,
-                                               OperatorChunk &operator_output, GlobalOperatorState &gstate,
-                                               OperatorState &state) const {
-	auto &input = operator_input.chunk;
-	auto &chunk = operator_output.chunk;
+OperatorResultType PhysicalSecureView::Execute(ExecutionContext &context, DataChunk &input, DataChunk &chunk,
+                                               GlobalOperatorState &gstate, OperatorState &state) const {
 	chunk.Reference(input);
 	return OperatorResultType::NEED_MORE_INPUT;
 }

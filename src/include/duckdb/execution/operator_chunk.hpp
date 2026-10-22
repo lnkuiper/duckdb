@@ -23,9 +23,17 @@ struct OperatorChunk {
 		metadata = ChunkMetadata();
 	}
 	void Move(OperatorChunk &other) {
-		chunk.Move(other.chunk);
-		metadata = other.metadata;
-		other.metadata = ChunkMetadata();
+		Move(other.chunk, other.metadata);
+	}
+	void Move(DataChunk &other, ChunkMetadata &other_metadata) {
+		chunk.Move(other);
+		metadata = other_metadata;
+		other_metadata = ChunkMetadata();
+	}
+	void MoveTo(DataChunk &target, ChunkMetadata &target_metadata) {
+		target.Move(chunk);
+		target_metadata = metadata;
+		metadata = ChunkMetadata();
 	}
 	void Reference(OperatorChunk &other) {
 		chunk.Reference(other.chunk);

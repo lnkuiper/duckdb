@@ -35,11 +35,8 @@ PhysicalPivot::PhysicalPivot(PhysicalPlan &physical_plan, vector<LogicalType> ty
 	}
 }
 
-OperatorResultType PhysicalPivot::Execute(ExecutionContext &context, OperatorChunk &operator_input,
-                                          OperatorChunk &operator_output, GlobalOperatorState &gstate,
-                                          OperatorState &state) const {
-	auto &input = operator_input.chunk;
-	auto &chunk = operator_output.chunk;
+OperatorResultType PhysicalPivot::Execute(ExecutionContext &context, DataChunk &input, DataChunk &chunk,
+                                          GlobalOperatorState &gstate, OperatorState &state) const {
 	// copy the groups as-is
 	input.Flatten();
 	for (idx_t i = 0; i < bound_pivot.group_count; i++) {

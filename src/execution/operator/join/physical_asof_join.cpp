@@ -271,9 +271,8 @@ SinkFinalizeType PhysicalAsOfJoin::Finalize(Pipeline &pipeline, Event &event, Cl
 //===--------------------------------------------------------------------===//
 // ExecuteInternal
 //===--------------------------------------------------------------------===//
-OperatorResultType PhysicalAsOfJoin::ExecuteInternal(ExecutionContext &context, OperatorChunk &operator_input,
-                                                     OperatorChunk &operator_output, GlobalOperatorState &gstate,
-                                                     OperatorState &lstate_p) const {
+OperatorResultType PhysicalAsOfJoin::ExecuteInternal(ExecutionContext &context, DataChunk &input, DataChunk &chunk,
+                                                     GlobalOperatorState &gstate, OperatorState &lstate_p) const {
 	return OperatorResultType::FINISHED;
 }
 

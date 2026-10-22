@@ -84,11 +84,8 @@ void PhysicalTableInOutFunction::SetOrdinality(DataChunk &chunk, const optional_
 	}
 }
 
-OperatorResultType PhysicalTableInOutFunction::Execute(ExecutionContext &context, OperatorChunk &operator_input,
-                                                       OperatorChunk &operator_output, GlobalOperatorState &gstate_p,
-                                                       OperatorState &state_p) const {
-	auto &input = operator_input.chunk;
-	auto &chunk = operator_output.chunk;
+OperatorResultType PhysicalTableInOutFunction::Execute(ExecutionContext &context, DataChunk &input, DataChunk &chunk,
+                                                       GlobalOperatorState &gstate_p, OperatorState &state_p) const {
 	auto &gstate = gstate_p.Cast<TableInOutGlobalState>();
 	auto &state = state_p.Cast<TableInOutLocalState>();
 	TableFunctionInput data(bind_data.get(), state.local_state.get(), gstate.global_state.get());
@@ -164,11 +161,9 @@ InsertionOrderPreservingMap<string> PhysicalTableInOutFunction::ParamsToString()
 	return result;
 }
 
-OperatorFinalizeResultType PhysicalTableInOutFunction::FinalExecute(ExecutionContext &context,
-                                                                    OperatorChunk &operator_output,
+OperatorFinalizeResultType PhysicalTableInOutFunction::FinalExecute(ExecutionContext &context, DataChunk &chunk,
                                                                     GlobalOperatorState &gstate_p,
                                                                     OperatorState &state_p) const {
-	auto &chunk = operator_output.chunk;
 	auto &gstate = gstate_p.Cast<TableInOutGlobalState>();
 	auto &state = state_p.Cast<TableInOutLocalState>();
 	if (!projected_input.empty()) {

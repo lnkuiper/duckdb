@@ -126,14 +126,14 @@ public:
 		return GetGlobalOperatorState(context);
 	}
 	virtual bool ResetGlobalOperatorState(ClientContext &context, GlobalOperatorState &state) const;
-	virtual OperatorResultType Execute(ExecutionContext &context, OperatorChunk &input, OperatorChunk &chunk,
+	virtual OperatorResultType Execute(ExecutionContext &context, DataChunk &input, DataChunk &chunk,
 	                                   GlobalOperatorState &gstate, OperatorState &state) const;
-	virtual OperatorFinalizeResultType FinalExecute(ExecutionContext &context, OperatorChunk &chunk,
+	virtual OperatorFinalizeResultType FinalExecute(ExecutionContext &context, DataChunk &chunk,
 	                                                GlobalOperatorState &gstate, OperatorState &state) const;
 	//! Drains this executor's contribution to a batch. FINISHED also supplies the output batch descriptor.
-	virtual OperatorBatchResultType FlushBatch(ExecutionContext &context, OperatorChunk &output,
+	virtual OperatorBatchResultType FlushBatch(ExecutionContext &context, DataChunk &output,
 	                                           OperatorBatchInput &input) const {
-		output.metadata.batch = input.batch;
+		input.local_state.output_metadata.batch = input.batch;
 		return OperatorBatchResultType::FINISHED;
 	}
 	virtual OperatorFinalResultType OperatorFinalize(Pipeline &pipeline, Event &event, ClientContext &context,
@@ -368,13 +368,13 @@ public:
 public:
 	//! This Execute will prevent small chunks from entering the pipeline, buffering them until a bigger chunk is
 	//! created.
-	OperatorResultType Execute(ExecutionContext &context, OperatorChunk &input, OperatorChunk &chunk,
+	OperatorResultType Execute(ExecutionContext &context, DataChunk &input, DataChunk &chunk,
 	                           GlobalOperatorState &gstate, OperatorState &state) const final;
 	//! FinalExecute is used here to send out the remainder of the chunk (< STANDARD_VECTOR_SIZE) that we still had
 	//! cached.
-	OperatorFinalizeResultType FinalExecute(ExecutionContext &context, OperatorChunk &chunk,
-	                                        GlobalOperatorState &gstate, OperatorState &state) const final;
-	OperatorBatchResultType FlushBatch(ExecutionContext &context, OperatorChunk &output,
+	OperatorFinalizeResultType FinalExecute(ExecutionContext &context, DataChunk &chunk, GlobalOperatorState &gstate,
+	                                        OperatorState &state) const final;
+	OperatorBatchResultType FlushBatch(ExecutionContext &context, DataChunk &output,
 	                                   OperatorBatchInput &input) const override;
 
 	bool RequiresFinalExecute() const final {
@@ -383,7 +383,7 @@ public:
 
 protected:
 	//! Child classes need to implement the ExecuteInternal method instead of the Execute
-	virtual OperatorResultType ExecuteInternal(ExecutionContext &context, OperatorChunk &input, OperatorChunk &chunk,
+	virtual OperatorResultType ExecuteInternal(ExecutionContext &context, DataChunk &input, DataChunk &chunk,
 	                                           GlobalOperatorState &gstate, OperatorState &state) const = 0;
 
 private:

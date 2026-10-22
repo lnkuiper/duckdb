@@ -150,6 +150,8 @@ void PipelineExecutor::Reset() {
 		} else {
 			intermediate_states[i]->Reset();
 		}
+		intermediate_states[i]->input_metadata = ChunkMetadata();
+		intermediate_states[i]->output_metadata = ChunkMetadata();
 
 		if (current_operator.IsSink() && current_operator.sink_state->state == SinkFinalizeType::NO_OUTPUT_POSSIBLE) {
 			FinishProcessing();
@@ -207,10 +209,13 @@ PipelineExecuteResult PipelineExecutor::FlushOperators(ExecutionBudget &chunk_bu
 		auto &output = idx + 1 >= intermediate_chunks.size() ? final_chunk : *intermediate_chunks[idx + 1];
 		if (in_process_operators.empty()) {
 			output.Reset();
+			auto &op_state = *intermediate_states[idx];
+			op_state.input_metadata = ChunkMetadata();
+			op_state.output_metadata = ChunkMetadata();
 			StartOperator(op);
 			if (batch) {
-				OperatorBatchInput input {*op.op_state, *intermediate_states[idx], interrupt_state, state.batch};
-				auto result = op.FlushBatch(context, output, input);
+				OperatorBatchInput input {*op.op_state, op_state, interrupt_state, state.batch};
+				auto result = op.FlushBatch(context, output.chunk, input);
 				if (result == OperatorBatchResultType::BLOCKED) {
 					D_ASSERT(output.chunk.size() == 0);
 					EndOperator(op, nullptr);
@@ -218,15 +223,16 @@ PipelineExecuteResult PipelineExecutor::FlushOperators(ExecutionBudget &chunk_bu
 				}
 				state.flush_operator = result == OperatorBatchResultType::HAVE_MORE_OUTPUT;
 			} else {
-				auto result = op.FinalExecute(context, output, *op.op_state, *intermediate_states[idx]);
+				auto result = op.FinalExecute(context, output.chunk, *op.op_state, op_state);
 				state.flush_operator = result == OperatorFinalizeResultType::HAVE_MORE_OUTPUT;
 			}
 			auto &properties = pipeline.GetMetadataPlan().edges[idx + 1];
 			if (!batch && properties.completion && output.chunk.size() > 0) {
 				throw InternalException("Operator emitted rows after completing its batch");
 			}
-			output.metadata.Restrict(properties);
-			output.metadata.Verify(properties, output.chunk.size());
+			op_state.output_metadata.Restrict(properties);
+			op_state.output_metadata.Verify(properties, output.chunk.size());
+			output.metadata = op_state.output_metadata;
 			if (batch && !state.flush_operator) {
 				output.metadata.batch.Verify(properties);
 				state.output_batch = output.metadata.batch;
@@ -934,12 +940,16 @@ OperatorResultType PipelineExecutor::Execute(OperatorChunk &input, OperatorChunk
 
 			// if current_idx > source_idx, we pass the previous operators' output through the Execute of the current
 			// operator
+			auto &op_state = *intermediate_states[current_intermediate - 1];
+			op_state.input_metadata = prev_chunk.metadata;
+			op_state.output_metadata = ChunkMetadata();
 			StartOperator(current_operator);
-			auto result = current_operator.Execute(context, prev_chunk, current_chunk, *current_operator.op_state,
-			                                       *intermediate_states[current_intermediate - 1]);
+			auto result = current_operator.Execute(context, prev_chunk.chunk, current_chunk.chunk,
+			                                       *current_operator.op_state, op_state);
 			auto &properties = pipeline.GetMetadataPlan().edges[current_idx];
-			current_chunk.metadata.Restrict(properties);
-			current_chunk.metadata.Verify(properties, current_chunk.chunk.size());
+			op_state.output_metadata.Restrict(properties);
+			op_state.output_metadata.Verify(properties, current_chunk.chunk.size());
+			current_chunk.metadata = op_state.output_metadata;
 			EndOperator(current_operator, &current_chunk.chunk);
 			if (result == OperatorResultType::HAVE_MORE_OUTPUT) {
 				// more data remains in this operator

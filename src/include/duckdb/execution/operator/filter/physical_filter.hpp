@@ -34,7 +34,7 @@ public:
 		result.row_positions = false;
 		return result;
 	}
-	OperatorBatchResultType FlushBatch(ExecutionContext &context, OperatorChunk &output,
+	OperatorBatchResultType FlushBatch(ExecutionContext &context, DataChunk &output,
 	                                   OperatorBatchInput &input) const override;
 	void InitializeOutputChunk(Allocator &allocator, DataChunk &chunk) const override;
 	unique_ptr<OperatorState> GetOperatorState(ExecutionContext &context) const override;
@@ -49,7 +49,7 @@ public:
 	InsertionOrderPreservingMap<string> ParamsToString() const override;
 
 protected:
-	OperatorResultType ExecuteInternal(ExecutionContext &context, OperatorChunk &input, OperatorChunk &chunk,
+	OperatorResultType ExecuteInternal(ExecutionContext &context, DataChunk &input, DataChunk &chunk,
 	                                   GlobalOperatorState &gstate, OperatorState &state) const override;
 };
 } // namespace duckdb

@@ -28,6 +28,10 @@ class InterruptState;
 // LCOV_EXCL_START
 class OperatorState {
 public:
+	//! Metadata for the current input and output, refreshed by the executor for each invocation.
+	ChunkMetadata input_metadata;
+	ChunkMetadata output_metadata;
+
 	virtual ~OperatorState() {
 	}
 

@@ -48,15 +48,12 @@ unique_ptr<OperatorState> PhysicalFilter::GetOperatorState(ExecutionContext &con
 	return make_uniq<FilterState>(context, *expression);
 }
 
-OperatorResultType PhysicalFilter::ExecuteInternal(ExecutionContext &context, OperatorChunk &operator_input,
-                                                   OperatorChunk &operator_output, GlobalOperatorState &gstate,
-                                                   OperatorState &state_p) const {
-	auto &input = operator_input.chunk;
-	auto &chunk = operator_output.chunk;
+OperatorResultType PhysicalFilter::ExecuteInternal(ExecutionContext &context, DataChunk &input, DataChunk &chunk,
+                                                   GlobalOperatorState &gstate, OperatorState &state_p) const {
 	auto &state = state_p.Cast<FilterState>();
-	operator_output.metadata = operator_input.metadata;
-	operator_output.metadata.ClearPositions();
-	operator_output.metadata.batch.row_count.SetInvalid();
+	state.output_metadata = state.input_metadata;
+	state.output_metadata.ClearPositions();
+	state.output_metadata.batch.row_count.SetInvalid();
 	idx_t result_count = state.executor.SelectExpression(input, state.sel);
 	if (result_count == input.size()) {
 		// nothing was filtered: skip adding any selection vectors
@@ -67,11 +64,11 @@ OperatorResultType PhysicalFilter::ExecuteInternal(ExecutionContext &context, Op
 	return OperatorResultType::NEED_MORE_INPUT;
 }
 
-OperatorBatchResultType PhysicalFilter::FlushBatch(ExecutionContext &context, OperatorChunk &output,
+OperatorBatchResultType PhysicalFilter::FlushBatch(ExecutionContext &context, DataChunk &output,
                                                    OperatorBatchInput &input) const {
 	auto result = CachingPhysicalOperator::FlushBatch(context, output, input);
-	output.metadata.ClearPositions();
-	output.metadata.batch.row_count.SetInvalid();
+	input.local_state.output_metadata.ClearPositions();
+	input.local_state.output_metadata.batch.row_count.SetInvalid();
 	return result;
 }
 

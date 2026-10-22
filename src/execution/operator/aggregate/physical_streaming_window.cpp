@@ -394,11 +394,8 @@ void PhysicalStreamingWindow::ExecuteDelayed(ExecutionContext &context, DataChun
 	ExecuteFunctions(context, output, input, gstate_p);
 }
 
-OperatorResultType PhysicalStreamingWindow::Execute(ExecutionContext &context, OperatorChunk &operator_input,
-                                                    OperatorChunk &operator_output, GlobalOperatorState &gstate_p,
-                                                    OperatorState &) const {
-	auto &input = operator_input.chunk;
-	auto &output = operator_output.chunk;
+OperatorResultType PhysicalStreamingWindow::Execute(ExecutionContext &context, DataChunk &input, DataChunk &output,
+                                                    GlobalOperatorState &gstate_p, OperatorState &) const {
 	auto &gstate = gstate_p.Cast<StreamingWindowGlobalState>();
 	auto &state = gstate.local_state->Cast<StreamingWindowState>();
 	if (!state.initialized) {
@@ -447,10 +444,8 @@ OperatorResultType PhysicalStreamingWindow::Execute(ExecutionContext &context, O
 	}
 }
 
-OperatorFinalizeResultType PhysicalStreamingWindow::FinalExecute(ExecutionContext &context,
-                                                                 OperatorChunk &operator_output,
+OperatorFinalizeResultType PhysicalStreamingWindow::FinalExecute(ExecutionContext &context, DataChunk &output,
                                                                  GlobalOperatorState &gstate_p, OperatorState &) const {
-	auto &output = operator_output.chunk;
 	auto &gstate = gstate_p.Cast<StreamingWindowGlobalState>();
 	auto &state = gstate.local_state->Cast<StreamingWindowState>();
 
