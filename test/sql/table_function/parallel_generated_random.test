@@ -19,9 +19,19 @@ PREPARE populate AS INSERT INTO generated SELECT i, random(), random() FROM rang
 statement ok
 PREPARE populate_chain AS INSERT INTO generated SELECT i, a, random() FROM (SELECT i, random() a FROM generate_series(0, 4096) t(i))
 
+# An unrelated CASE must not disable positional random state.
+statement ok
+PREPARE populate_case_sibling AS INSERT INTO generated
+SELECT CASE WHEN i % 2 = 0 THEN i ELSE -i END, random(), random() FROM range(4097) t(i)
+
+# The first chunk skips the first random expression through constant NULL handling.
+statement ok
+PREPARE populate_skipped_argument AS INSERT INTO generated
+SELECT i, (CASE WHEN i < 2048 THEN NULL::DOUBLE ELSE 0.5 END) * random(), random() FROM range(4097) t(i)
+
 # Compare each query with its own single-threaded baseline. Prepared execution
 # obtains fresh expression seeds, independently of the worker count.
-foreach population populate populate_chain
+foreach population populate populate_chain populate_case_sibling populate_skipped_argument
 
 statement ok
 SET threads=1
@@ -86,3 +96,9 @@ endloop
 
 statement ok
 PRAGMA disable_verify_parallelism
+
+# Selected random evaluation remains valid through the ordinary local RNG path.
+query I
+SELECT count(r) FROM (SELECT CASE WHEN i % 2 = 0 THEN random() END r FROM range(4097) t(i))
+----
+2049

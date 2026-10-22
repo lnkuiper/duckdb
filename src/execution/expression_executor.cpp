@@ -42,41 +42,25 @@ const FunctionGlobalState &ExpressionExecutorGlobalState::GetState(const BoundFu
 }
 
 static bool SupportsRowPositions(const Expression &expr, bool &has_global_state) {
-	switch (expr.GetExpressionClass()) {
-	case ExpressionClass::BOUND_REF:
-	case ExpressionClass::BOUND_CONSTANT:
-	case ExpressionClass::BOUND_PARAMETER:
-		return true;
-	case ExpressionClass::BOUND_FUNCTION: {
-		auto &function = expr.Cast<BoundFunctionExpression>();
-		auto &fun = function.Function();
-		if (fun.HasBindLambdaCallback() ||
-		    (fun.HasInitGlobalStateCallback() && fun.GetStability() != FunctionStability::VOLATILE) ||
-		    (fun.GetStability() == FunctionStability::VOLATILE && !fun.HasInitGlobalStateCallback())) {
-			return false;
-		}
-		bool earlier_arguments_nonnull = true;
-		for (auto &child : function.GetChildren()) {
-			bool child_has_global_state = false;
-			if (!SupportsRowPositions(*child, child_has_global_state)) {
-				return false;
-			}
-			// A constant NULL argument can skip all subsequent children.
-			if (fun.GetNullHandling() == FunctionNullHandling::DEFAULT_NULL_HANDLING && !earlier_arguments_nonnull &&
-			    child_has_global_state) {
-				return false;
-			}
-			has_global_state |= child_has_global_state;
-			earlier_arguments_nonnull &= child->GetExpressionClass() == ExpressionClass::BOUND_CONSTANT &&
-			                             !child->Cast<BoundConstantExpression>().GetValue().IsNull();
-		}
-		has_global_state |= fun.HasInitGlobalStateCallback();
-		return !fun.HasInitGlobalStateCallback() || function.GetChildren().empty() ||
-		       fun.GetNullHandling() == FunctionNullHandling::SPECIAL_HANDLING || earlier_arguments_nonnull;
+	bool children_supported = true;
+	bool subtree_has_global_state = false;
+	ExpressionIterator::EnumerateChildren(expr, [&](const Expression &child) {
+		children_supported &= SupportsRowPositions(child, subtree_has_global_state);
+	});
+	const bool is_function = expr.GetExpressionClass() == ExpressionClass::BOUND_FUNCTION;
+	if (is_function) {
+		subtree_has_global_state |= expr.Cast<BoundFunctionExpression>().Function().HasInitGlobalStateCallback();
 	}
-	default:
+	has_global_state |= subtree_has_global_state;
+	if (!subtree_has_global_state) {
+		return true;
+	}
+	if (!children_supported || !is_function) {
 		return false;
 	}
+	auto &fun = expr.Cast<BoundFunctionExpression>().Function();
+	return !fun.HasBindLambdaCallback() &&
+	       (!fun.HasInitGlobalStateCallback() || fun.GetStability() == FunctionStability::VOLATILE);
 }
 
 bool ExpressionExecutor::CanInitializeGlobalState(const vector<unique_ptr<Expression>> &expressions) {
