@@ -634,19 +634,38 @@ void Pipeline::Ready() {
 	}
 	ready = true;
 	std::reverse(operators.begin(), operators.end());
-	PrepareMetadata();
+}
+
+BatchMetadataInfo Pipeline::GetAvailableMetadata() {
+	D_ASSERT(ready);
+	if (preparing_capabilities) {
+		throw InternalException("Cycle in streaming metadata capabilities");
+	}
+	if (!metadata_capabilities.empty()) {
+		return metadata_capabilities.back();
+	}
+	preparing_capabilities = true;
+	auto available = source->SourceMetadata();
+	metadata_capabilities.push_back(available);
+	for (auto &op : operators) {
+		available = op.get().OutputMetadata(available);
+		metadata_capabilities.push_back(available);
+	}
+	preparing_capabilities = false;
+	return available;
 }
 
 void Pipeline::PrepareMetadata() {
+	if (metadata_prepared) {
+		return;
+	}
+	if (preparing_metadata) {
+		throw InternalException("Cycle in streaming metadata requests");
+	}
+	preparing_metadata = true;
+	auto available = GetAvailableMetadata();
 	metadata_plan.sink_partition_info = sink ? sink->RequiredPartitionInfo() : OperatorPartitionInfo::NoPartitionInfo();
 	metadata_plan.source_partition_info = metadata_plan.sink_partition_info;
-	// External metadata requires a transport contract with the producer.
-	auto available = IsExternalInput() ? BatchMetadataInfo() : source->SourceMetadata();
-	vector<BatchMetadataInfo> possible {available};
-	for (auto &op : operators) {
-		available = op.get().OutputMetadata(available);
-		possible.push_back(available);
-	}
 	auto requested = metadata_plan.sink_partition_info.metadata;
 	if (!available.Supports(requested)) {
 		throw InternalException("Pipeline cannot provide the sink's required batch metadata");
@@ -658,11 +677,13 @@ void Pipeline::PrepareMetadata() {
 	metadata_plan.edges.back() = requested;
 	for (idx_t i = operators.size(); i > 0; i--) {
 		auto &op = operators[i - 1].get();
-		requested = op.RequiredInputMetadata(requested).Intersect(possible[i - 1]);
-		requested.Merge(op.RequestedMetadata().Intersect(possible[i - 1]));
+		requested = op.RequiredInputMetadata(requested).Intersect(metadata_capabilities[i - 1]);
+		requested.Merge(op.RequestedMetadata().Intersect(metadata_capabilities[i - 1]));
 		metadata_plan.edges[i - 1] = requested;
 	}
 	metadata_plan.source_partition_info.metadata = requested;
+	preparing_metadata = false;
+	metadata_prepared = true;
 }
 
 void Pipeline::AddDependency(shared_ptr<Pipeline> &pipeline) {

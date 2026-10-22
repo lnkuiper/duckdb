@@ -322,7 +322,7 @@ OperatorPartitionData PipelineExecutor::GetNextPartition(OperatorChunk &source_c
 			auto source_data = pipeline.source->GetPartitionData(context, source_chunk.chunk, *global_source_state,
 			                                                     *local_source_state, required_partition_info);
 			next_data = ToPipelinePartitionData(source_data);
-			if (source_chunk.metadata.batch.batch_index.IsValid() &&
+			if (pipeline.GetMetadataPlan().edges[0].completion && source_chunk.metadata.batch.batch_index.IsValid() &&
 			    source_chunk.metadata.batch.batch_index.GetIndex() != next_data.batch_index) {
 				throw InternalException("Source partition and metadata batch indices disagree");
 			}
@@ -510,7 +510,7 @@ PipelineExecuteResult PipelineExecutor::Execute() {
 	return Execute(NumericLimits<idx_t>::Maximum());
 }
 
-PipelineExecuteResult PipelineExecutor::PushExternal(DataChunk &input,
+PipelineExecuteResult PipelineExecutor::PushExternal(OperatorChunk &input,
                                                      const OperatorPartitionData &source_partition_data,
                                                      optional_idx source_min_batch_index) {
 	D_ASSERT(pipeline.sink);
@@ -526,14 +526,22 @@ PipelineExecuteResult PipelineExecutor::PushExternal(DataChunk &input,
 	}
 	if (!remaining_sink_chunk && !next_batch_blocked) {
 		context.thread.profiler.StartOperator(pipeline.source.get());
-		context.thread.profiler.EndOperator(&input);
+		context.thread.profiler.EndOperator(&input.chunk);
 	}
 
 	ExecutionBudget chunk_budget(NumericLimits<idx_t>::Maximum());
 	auto &source_chunk = pipeline.operators.empty() ? final_chunk : *intermediate_chunks[0];
 	if (!remaining_sink_chunk && in_process_operators.empty()) {
 		source_chunk.Reset();
-		source_chunk.chunk.Reference(input);
+		source_chunk.Reference(input);
+		auto &properties = pipeline.GetMetadataPlan().edges[0];
+		source_chunk.metadata.Restrict(properties);
+		if (source_chunk.metadata.batch.batch_index.IsValid()) {
+			source_chunk.metadata.batch.batch_index =
+			    ToPipelinePartitionData(OperatorPartitionData(source_chunk.metadata.batch.batch_index.GetIndex()))
+			        .batch_index;
+		}
+		source_chunk.metadata.Verify(properties, source_chunk.chunk.size());
 	}
 	return PushInputChunk(source_chunk, chunk_budget, PipelineInputChunkMode::PUSH_INPUT);
 }
@@ -956,7 +964,9 @@ PipelineExecutor::SourceFetchResult PipelineExecutor::FetchFromSource(OperatorCh
 			throw InternalException("Source metadata batch index exceeds its pipeline namespace");
 		}
 		result.metadata.batch.batch_index = pipeline.GetBaseBatchIndex() + index + 1;
-		result.metadata.batch.stream_id = pipeline.GetStreamId();
+		if (!result.metadata.batch.stream_id.IsValid()) {
+			result.metadata.batch.stream_id = pipeline.GetStreamId();
+		}
 	}
 	result.metadata.Verify(properties, result.chunk.size());
 

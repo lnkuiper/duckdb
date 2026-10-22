@@ -65,7 +65,7 @@ public:
 	//! Returns true if execution is finished, false if Execute should be called again
 	PipelineExecuteResult Execute(idx_t max_chunks);
 	//! Pushes a chunk from an external producer through this pipeline into the sink
-	PipelineExecuteResult PushExternal(DataChunk &input, const OperatorPartitionData &partition_data,
+	PipelineExecuteResult PushExternal(OperatorChunk &input, const OperatorPartitionData &partition_data,
 	                                   optional_idx source_min_batch_index);
 	//! Advances an externally-fed pipeline to the producer's next batch
 	PipelineExecuteResult NextBatchExternal(const OperatorPartitionData &partition_data,

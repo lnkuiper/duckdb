@@ -267,6 +267,16 @@ void Executor::InitializeInternal(PhysicalOperator &plan) {
 			rec_cte.recursive_meta_pipeline->Ready();
 		}
 
+		vector<shared_ptr<Pipeline>> metadata_pipelines;
+		root_pipeline->GetPipelines(metadata_pipelines, true);
+		for (auto &rec_cte_ref : recursive_ctes) {
+			rec_cte_ref.get().Cast<PhysicalRecursiveCTE>().recursive_meta_pipeline->GetPipelines(metadata_pipelines,
+			                                                                                     true);
+		}
+		for (auto &pipeline : metadata_pipelines) {
+			pipeline->PrepareMetadata();
+		}
+
 		// set root pipelines, i.e., all pipelines that end in the final sink
 		root_pipeline->GetPipelines(root_pipelines, false);
 		root_pipeline_idx = 0;

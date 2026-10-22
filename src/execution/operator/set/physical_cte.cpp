@@ -85,7 +85,7 @@ SourceResultType PhysicalCTEConsumerSource::GetDataInternal(ExecutionContext &co
 	auto &gstate = input.global_state.Cast<CTEConsumerGlobalSourceState>();
 	auto &lstate = input.local_state.Cast<CTEConsumerLocalSourceState>();
 	return gstate.exchange->Scan(gstate.consumer_idx, chunk, *lstate.scan_state, lstate.exchange_batch_index,
-	                             input.batch_index_state, input.interrupt_state);
+	                             input.batch_index_state, input.interrupt_state, input.metadata);
 }
 
 OperatorPartitionData PhysicalCTEConsumerSource::GetPartitionData(ExecutionContext &context, DataChunk &chunk,
@@ -104,6 +104,14 @@ bool PhysicalCTEConsumerSource::SupportsPartitioning(const OperatorPartitionInfo
 
 OrderPreservationType PhysicalCTEConsumerSource::SourceOrder() const {
 	return exchange->SourceOrder();
+}
+
+BatchMetadataInfo PhysicalCTEConsumerSource::SourceMetadata() const {
+	return exchange->SourceMetadata();
+}
+
+BatchMetadataInfo PhysicalCTE::RequestedMetadata() const {
+	return exchange ? exchange->RequestedMetadata() : BatchMetadataInfo();
 }
 
 bool PhysicalCTEConsumerSource::ParallelSource() const {
@@ -290,7 +298,8 @@ SinkResultType PhysicalCTE::Sink(ExecutionContext &context, DataChunk &chunk, Op
 	if (lstate.execution_mode != CTEExecutionMode::MATERIALIZED) {
 		D_ASSERT(gstate.exchange);
 		D_ASSERT(lstate.exchange_state);
-		result = gstate.exchange->Push(chunk, *lstate.exchange_state, lstate.partition_info, input.interrupt_state);
+		result = gstate.exchange->Push(chunk, *lstate.exchange_state, lstate.partition_info, input.interrupt_state,
+		                               input.metadata ? *input.metadata : ChunkMetadata());
 		if (result == SinkResultType::BLOCKED) {
 			if (lstate.sink_execution_state != CTESinkExecutionState::BLOCKED) {
 				DUCKDB_LOG(context.client, PhysicalOperatorLogType, *this, "PhysicalCTE", "ExchangeBlocked",
@@ -505,7 +514,7 @@ void PhysicalCTE::RegisterBufferedConsumer(Pipeline &pipeline, idx_t consumer_id
 			scan_mode = PipelineBroadcastExchangeScanMode::BATCH;
 		}
 	}
-	exchange->SelectBufferedConsumer(consumer_idx, scan_mode);
+	exchange->SelectBufferedConsumer(consumer_idx, scan_mode, pipeline);
 	RegisterBatchPreference(pipeline);
 }
 

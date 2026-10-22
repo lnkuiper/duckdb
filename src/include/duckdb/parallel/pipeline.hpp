@@ -154,8 +154,11 @@ public:
 	}
 
 	void Ready();
+	//! Resolve capabilities upstream and requests downstream after all pipelines are ready.
+	BatchMetadataInfo GetAvailableMetadata();
+	void PrepareMetadata();
 	const PipelineMetadataPlan &GetMetadataPlan() const {
-		D_ASSERT(ready);
+		D_ASSERT(metadata_prepared);
 		return metadata_plan;
 	}
 	idx_t GetStreamId() const {
@@ -239,6 +242,10 @@ private:
 	bool ready;
 	const idx_t stream_id;
 	PipelineMetadataPlan metadata_plan;
+	vector<BatchMetadataInfo> metadata_capabilities;
+	bool preparing_capabilities = false;
+	bool preparing_metadata = false;
+	bool metadata_prepared = false;
 	//! Whether or not the pipeline has been initialized
 	atomic<bool> initialized;
 	//! The source of this pipeline
@@ -296,7 +303,6 @@ private:
 	void ScheduleSequentialTask(shared_ptr<Event> &event);
 	bool LaunchScanTasks(shared_ptr<Event> &event, idx_t max_threads);
 	void ResetSinkAndOperators();
-	void PrepareMetadata();
 	void ResetBatchIndexes();
 	shared_ptr<GlobalSourceState> GetSourceState();
 	void SetSourceState(shared_ptr<GlobalSourceState> state);

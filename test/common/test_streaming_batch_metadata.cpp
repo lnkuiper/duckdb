@@ -3,10 +3,12 @@
 #include "duckdb/common/vector/vector_writer.hpp"
 #include "duckdb/execution/physical_plan_generator.hpp"
 #include "duckdb/execution/operator/filter/physical_filter.hpp"
+#include "duckdb/execution/operator/set/physical_cte.hpp"
 #include "duckdb/planner/expression/bound_comparison_expression.hpp"
 #include "duckdb/planner/expression/bound_constant_expression.hpp"
 #include "duckdb/planner/expression/bound_reference_expression.hpp"
 #include "duckdb/parallel/pipeline_executor.hpp"
+#include "duckdb/parallel/pipeline_broadcast_exchange.hpp"
 
 using namespace duckdb;
 
@@ -128,6 +130,10 @@ struct MetadataCacheState : CachingOperatorState {
 
 class MetadataCache : public CachingPhysicalOperator {
 public:
+	PipelineExternalInputSupport GetExternalInputSupport() const override {
+		return PipelineExternalInputSupport::SUPPORTED;
+	}
+
 	explicit MetadataCache(PhysicalPlan &plan)
 	    : CachingPhysicalOperator(plan, PhysicalOperatorType::INVALID, {LogicalType::BIGINT}, 7) {
 	}
@@ -159,6 +165,10 @@ public:
 
 class MetadataSplit : public PhysicalOperator {
 public:
+	PipelineExternalInputSupport GetExternalInputSupport() const override {
+		return PipelineExternalInputSupport::SUPPORTED;
+	}
+
 	explicit MetadataSplit(PhysicalPlan &plan)
 	    : PhysicalOperator(plan, PhysicalOperatorType::INVALID, {LogicalType::BIGINT}, 7) {
 	}
@@ -215,6 +225,10 @@ struct MetadataObservation : GlobalOperatorState {
 
 class MetadataObserver : public PhysicalOperator {
 public:
+	PipelineExternalInputSupport GetExternalInputSupport() const override {
+		return PipelineExternalInputSupport::SUPPORTED;
+	}
+
 	explicit MetadataObserver(PhysicalPlan &plan)
 	    : PhysicalOperator(plan, PhysicalOperatorType::INVALID, {LogicalType::BIGINT}, 7) {
 	}
@@ -248,6 +262,10 @@ struct MetadataSinkState : LocalSinkState {
 
 class MetadataSink : public PhysicalOperator {
 public:
+	PipelineExternalInputSupport GetExternalInputSupport() const override {
+		return PipelineExternalInputSupport::SUPPORTED;
+	}
+
 	MetadataSink(PhysicalPlan &plan, bool require_metadata_p)
 	    : PhysicalOperator(plan, PhysicalOperatorType::INVALID, {LogicalType::BIGINT}, 7),
 	      require_metadata(require_metadata_p) {
@@ -295,7 +313,131 @@ public:
 	}
 };
 
+struct MetadataExchangeLocal : LocalSinkState {
+	explicit MetadataExchangeLocal(duckdb::unique_ptr<PipelineBroadcastExchangeLocalState> state_p)
+	    : state(std::move(state_p)) {
+	}
+	duckdb::unique_ptr<PipelineBroadcastExchangeLocalState> state;
+};
+
+class MetadataExchangeSink : public PhysicalOperator {
+public:
+	MetadataExchangeSink(PhysicalPlan &plan, duckdb::shared_ptr<PipelineBroadcastExchange> exchange_p)
+	    : PhysicalOperator(plan, PhysicalOperatorType::INVALID, {LogicalType::BIGINT}, 7),
+	      exchange(std::move(exchange_p)) {
+	}
+	duckdb::shared_ptr<PipelineBroadcastExchange> exchange;
+	bool IsSink() const override {
+		return true;
+	}
+	bool ParallelSink() const override {
+		return true;
+	}
+	BatchMetadataInfo RequestedMetadata() const override {
+		return exchange->RequestedMetadata();
+	}
+	duckdb::unique_ptr<GlobalSinkState> GetGlobalSinkState(ClientContext &) const override {
+		exchange->Reset();
+		return make_uniq<GlobalSinkState>();
+	}
+	duckdb::unique_ptr<LocalSinkState> GetLocalSinkState(ExecutionContext &context) const override {
+		return make_uniq<MetadataExchangeLocal>(
+		    exchange->GetLocalState(context.client, context.pipeline->GetBaseBatchIndex()));
+	}
+	SinkResultType Sink(ExecutionContext &, DataChunk &chunk, OperatorSinkInput &input) const override {
+		auto &local = input.local_state.Cast<MetadataExchangeLocal>();
+		return exchange->Push(chunk, *local.state, local.partition_info, input.interrupt_state, *input.metadata);
+	}
+	SinkCombineResultType Combine(ExecutionContext &, OperatorSinkCombineInput &input) const override {
+		auto &local = input.local_state.Cast<MetadataExchangeLocal>();
+		return exchange->FinishLocal(*local.state, local.partition_info, input.interrupt_state);
+	}
+};
+
 } // namespace
+
+TEST_CASE("Exchange negotiation carries producer positions through independent consumer wrappers",
+          "[streaming_batch_metadata]") {
+	DuckDB db;
+	Connection con(db);
+	auto pending = con.Submit("SELECT 1");
+	REQUIRE_NO_FAIL(*pending);
+	auto &context = *con.context;
+	PhysicalPlan plan(Allocator::Get(context));
+	duckdb::vector<LogicalType> types {LogicalType::BIGINT};
+	auto exchange = make_shared_ptr<PipelineBroadcastExchange>(
+	    context, types, PipelineBroadcastExchangeCompletionMode::RUN_TO_COMPLETION, OrderPreservationType::NO_ORDER,
+	    false, PipelineBroadcastExchangeBufferMode::BUFFER_ALL);
+	auto &source = plan.Make<MetadataSource>(true);
+	auto &exchange_sink = plan.Make<MetadataExchangeSink>(exchange);
+	auto producer = make_shared_ptr<Pipeline>(context.GetExecutor());
+	PipelineBuildState state;
+	state.SetPipelineSource(*producer, source);
+	state.SetPipelineSink(*producer, &exchange_sink, 2);
+	state.AddPipelineOperator(*producer, plan.Make<MetadataCache>());
+	exchange->SetProducerPipelines({producer});
+	duckdb::vector<duckdb::shared_ptr<Pipeline>> consumers;
+	duckdb::vector<reference<PhysicalOperator>> observers;
+	for (idx_t i = 0; i < 2; i++) {
+		auto consumer_idx = exchange->RegisterConsumer();
+		auto &scan = plan.Make<PhysicalCTEConsumerSource>(types, 7, TableIndex(0), exchange, consumer_idx);
+		auto &sink = plan.Make<MetadataSink>(true);
+		auto &observer = plan.Make<MetadataObserver>();
+		auto consumer = make_shared_ptr<Pipeline>(context.GetExecutor());
+		state.SetPipelineSource(*consumer, scan);
+		state.SetPipelineSink(*consumer, &sink, i + 3);
+		state.AddPipelineOperator(*consumer, observer);
+		state.AddPipelineOperator(*consumer, plan.Make<MetadataSplit>());
+		state.AddPipelineOperator(*consumer, plan.Make<MetadataCache>());
+		if (i == 0) {
+			REQUIRE(exchange->TryRegisterDirectConsumer(*consumer, consumer_idx));
+		} else {
+			exchange->SelectBufferedConsumer(consumer_idx, PipelineBroadcastExchangeScanMode::CHUNK, *consumer);
+		}
+		consumer->Ready();
+		consumers.push_back(std::move(consumer));
+		observers.push_back(observer);
+	}
+	producer->Ready();
+	producer->PrepareMetadata();
+	REQUIRE(producer->GetMetadataPlan().source_partition_info.metadata.row_positions);
+	REQUIRE_FALSE(producer->GetMetadataPlan().TracksBatches());
+	const duckdb::vector<idx_t> expected {0, 1, 2, 3, 4, 5, 6};
+	for (idx_t run = 0; run < 2; run++) {
+		if (run == 0) {
+			producer->Reset();
+			consumers[1]->Reset();
+		} else {
+			producer->ResetForReschedule(true);
+			for (auto &consumer : consumers) {
+				consumer->ResetForReschedule(true);
+			}
+		}
+		PipelineExecutor producer_executor(context, *producer);
+		idx_t calls = 0;
+		while (producer_executor.Execute(1) != PipelineExecuteResult::FINISHED) {
+			REQUIRE(++calls < 100);
+		}
+		exchange->Finish();
+		PipelineExecutor buffered_executor(context, *consumers[1]);
+		while (buffered_executor.Execute(1) != PipelineExecuteResult::FINISHED) {
+			REQUIRE(++calls < 200);
+		}
+		for (idx_t i = 0; i < consumers.size(); i++) {
+			CAPTURE(run, i);
+			auto &observed = observers[i].get().op_state->Cast<MetadataObservation>();
+			REQUIRE(observed.values == expected);
+			for (idx_t row = 0; row < expected.size(); row++) {
+				auto &metadata = observed.metadata[row];
+				REQUIRE(metadata.batch.stream_id.GetIndex() == producer->GetStreamId());
+				REQUIRE(metadata.batch.batch_index.GetIndex() == consumers[i]->GetBaseBatchIndex() + row / 5 + 1);
+				REQUIRE(metadata.batch.first_row_index.GetIndex() + metadata.offset_in_batch.GetIndex() == row);
+				REQUIRE(metadata.batch.row_count.GetIndex() == (row < 5 ? 5 : 2));
+			}
+		}
+		consumers[1]->FinishSource();
+	}
+}
 
 TEST_CASE("Streaming operators request chunk metadata independently of sink ordering", "[streaming_batch_metadata]") {
 	bool supported = true;
@@ -344,6 +486,7 @@ TEST_CASE("Streaming operators request chunk metadata independently of sink orde
 		state.AddPipelineOperator(*pipeline, plan.Make<MetadataCache>());
 	}
 	pipeline->Ready();
+	pipeline->PrepareMetadata();
 	REQUIRE(pipeline->GetMetadataPlan().source_partition_info.metadata.row_positions == supported);
 	REQUIRE_FALSE(pipeline->GetMetadataPlan().sink_partition_info.RequiresPartitioning());
 	pipeline->Reset();
@@ -377,6 +520,47 @@ TEST_CASE("Streaming operators request chunk metadata independently of sink orde
 			}
 		}
 	}
+}
+
+TEST_CASE("An exchange does not combine independent ordinal domains into one dense stream",
+          "[streaming_batch_metadata]") {
+	DuckDB db;
+	Connection con(db);
+	auto pending = con.Submit("SELECT 1");
+	REQUIRE_NO_FAIL(*pending);
+	auto &context = *con.context;
+	PhysicalPlan plan(Allocator::Get(context));
+	duckdb::vector<LogicalType> types {LogicalType::BIGINT};
+	auto exchange = make_shared_ptr<PipelineBroadcastExchange>(
+	    context, types, PipelineBroadcastExchangeCompletionMode::RUN_TO_COMPLETION, OrderPreservationType::NO_ORDER,
+	    false);
+	auto &sink = plan.Make<MetadataExchangeSink>(exchange);
+	PipelineBuildState state;
+	duckdb::vector<duckdb::shared_ptr<Pipeline>> producers;
+	for (idx_t i = 0; i < 2; i++) {
+		auto producer = make_shared_ptr<Pipeline>(context.GetExecutor());
+		state.SetPipelineSource(*producer, plan.Make<MetadataSource>(true));
+		state.SetPipelineSink(*producer, &sink, i);
+		producer->Ready();
+		producers.push_back(std::move(producer));
+	}
+	exchange->SetProducerPipelines(producers);
+	auto consumer_idx = exchange->RegisterConsumer();
+	auto consumer = make_shared_ptr<Pipeline>(context.GetExecutor());
+	state.SetPipelineSource(*consumer,
+	                        plan.Make<PhysicalCTEConsumerSource>(types, 14, TableIndex(0), exchange, consumer_idx));
+	state.SetPipelineSink(*consumer, &plan.Make<MetadataSink>(false), 0);
+	state.AddPipelineOperator(*consumer, plan.Make<MetadataObserver>());
+	exchange->SelectBufferedConsumer(consumer_idx, PipelineBroadcastExchangeScanMode::CHUNK, *consumer);
+	consumer->Ready();
+	for (auto &producer : producers) {
+		producer->PrepareMetadata();
+		REQUIRE(producer->GetMetadataPlan().source_partition_info.metadata.batch_index);
+		REQUIRE_FALSE(producer->GetMetadataPlan().source_partition_info.metadata.row_positions);
+		REQUIRE_FALSE(producer->GetMetadataPlan().TracksBatches());
+	}
+	REQUIRE(consumer->GetMetadataPlan().edges[0].batch_index);
+	REQUIRE_FALSE(consumer->GetMetadataPlan().edges[0].row_positions);
 }
 
 namespace {
@@ -514,6 +698,7 @@ TEST_CASE("Batch completion drains caches before acknowledgement and minimum rel
 	}
 	state.AddPipelineOperator(*pipeline, plan.Make<MetadataCache>());
 	pipeline->Ready();
+	pipeline->PrepareMetadata();
 	REQUIRE(pipeline->GetMetadataPlan().source_partition_info.metadata.completion);
 	REQUIRE_FALSE(pipeline->GetMetadataPlan().source_partition_info.RequiresPartitioning());
 	pipeline->Reset();
@@ -562,6 +747,7 @@ TEST_CASE("Completion-only workers release their reservation even without an inp
 	state.SetPipelineSink(*pipeline, &sink, 0);
 	state.AddPipelineOperator(*pipeline, plan.Make<MetadataCache>());
 	pipeline->Ready();
+	pipeline->PrepareMetadata();
 	pipeline->Reset();
 	PipelineExecutor active(context, *pipeline);
 	PipelineExecutor idle(context, *pipeline);
