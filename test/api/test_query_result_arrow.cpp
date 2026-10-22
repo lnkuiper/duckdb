@@ -160,6 +160,7 @@ TEST_CASE("A formatted Arrow stream drains an ordered plan in row order", "[api]
 	REQUIRE_NO_FAIL(con.Query("CREATE TABLE t AS SELECT range i FROM range(50000)"));
 
 	SECTION("through the simple store") {
+		REQUIRE_NO_FAIL(con.Query("SET threads=1"));
 		auto handle = SubmitArrow(con, "SELECT i FROM range(50000) t(i)", 4096);
 		DrainWatchdog watchdog(con);
 		QueryResultStream<ArrowFormat> stream(std::move(handle));

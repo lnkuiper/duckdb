@@ -55,6 +55,11 @@ SELECT COUNT(DISTINCT block_id) < 5 FROM pragma_storage_info('integers_parquet')
 true
 
 # verify that loading in separate SQL statements within the same transaction generates the same size table
+# Serial inserts pack partial blocks across statements; parallel inserts write them optimistically.
+
+statement ok
+SET threads=1
+
 statement ok
 CREATE TABLE integers_batched_load(i INTEGER)
 

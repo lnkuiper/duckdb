@@ -4,6 +4,10 @@
 
 require parquet
 
+# Schema inference must see the first row group before a later group is prepared.
+statement ok
+SET threads=1
+
 # the first file shreds DECIMAL(4,1), the second DECIMAL(4,2), rewriting both shreds the first row group's type
 statement ok
 COPY (SELECT (i % 10)::DECIMAL(4,1)::VARIANT AS v FROM range(122880) r(i)) TO '{TEST_DIR}/variant_decimal_scale_1.parquet'

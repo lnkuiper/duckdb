@@ -92,6 +92,7 @@ TEST_CASE("A blocking fetch on a batched stream observes an interrupt with chunk
 TEST_CASE("Completing a simple undecided query retains every row", "[api][stream_buffer]") {
 	DuckDB db(nullptr);
 	Connection con(db);
+	REQUIRE_NO_FAIL(con.Query("SET threads=1"));
 	REQUIRE_NO_FAIL(con.Query("SET max_streaming_buffer_size='100KB'"));
 
 	auto handle = Submit(con, "SELECT i FROM range(500000) t(i)");
@@ -170,8 +171,8 @@ TEST_CASE("A simple stream reports an execution error while a chunk is still buf
 	REQUIRE_NO_FAIL(con.Query("SET max_streaming_buffer_size='1b'"));
 
 	auto stream = ExecuteStreaming(con, "SELECT (CASE WHEN i = " + to_string(2 * STANDARD_VECTOR_SIZE) +
-	                                        " THEN 'boom' ELSE i::VARCHAR END)::INT FROM range(" +
-	                                        to_string(4 * STANDARD_VECTOR_SIZE) + ") t(i)");
+	                                        " THEN 'boom' ELSE i::VARCHAR END)::INT FROM unnest(range(" +
+	                                        to_string(4 * STANDARD_VECTOR_SIZE) + ")) t(i)");
 	// The pop wakes the parked producer, whose next chunk fails on the worker thread
 	REQUIRE(stream->Fetch());
 	REQUIRE(PollToTerminal(*stream) == QueryResultState::EXECUTION_ERROR);
@@ -351,6 +352,7 @@ TEST_CASE("A batched stream survives a cap below one chunk", "[api][stream_buffe
 TEST_CASE("A simple stream result never exceeds the buffer cap", "[api][stream_buffer]") {
 	DuckDB db(nullptr);
 	Connection con(db);
+	REQUIRE_NO_FAIL(con.Query("SET threads=1"));
 	// The blocking consumer must stop replenishing on a saturated buffer, not only on
 	// an exactly-full one, or the size-aware block spins the replenish loop
 	REQUIRE_NO_FAIL(con.Query("SET max_streaming_buffer_size='100000b'"));
@@ -448,8 +450,8 @@ TEST_CASE("Poll on a draining stream reports READY exactly when a chunk is poppa
 	// A small buffer keeps producers parking for the whole drain
 	REQUIRE_NO_FAIL(con.Query("SET max_streaming_buffer_size='64KB'"));
 
-	// The unordered plan uses the simple store, the table scan the batched one
-	for (auto query : {"SELECT i FROM range(2000000) t(i)", "SELECT i FROM t"}) {
+	// The unnest source uses the simple store, the table scan the batched one.
+	for (auto query : {"SELECT i FROM unnest(range(2000000)) t(i)", "SELECT i FROM t"}) {
 		auto result = ExecuteStreaming(con, query);
 		auto &stream = *result;
 		auto &buffered = stream.GetBufferedData();
@@ -495,7 +497,7 @@ TEST_CASE("Submit returns before any chunk is buffered", "[api][stream_buffer]")
 	REQUIRE_NO_FAIL(con.Query("CREATE TABLE t AS SELECT range i FROM range(500000)"));
 	REQUIRE_NO_FAIL(con.Query("SET max_streaming_buffer_size='100KB'"));
 
-	for (auto query : {"SELECT i FROM range(500000) t(i)", "SELECT i FROM t"}) {
+	for (auto query : {"SELECT i FROM unnest(range(500000)) t(i)", "SELECT i FROM t"}) {
 		auto handle = Submit(con, query);
 		auto &buffered = handle->GetBufferedData();
 		// The first producer parks with its chunk unconsumed until the consumer chooses

@@ -5,13 +5,13 @@
 load {TEST_DIR}/buffer_managed_query_result.db
 
 statement ok
+create table range as from range(100_000_000);
+
+statement ok
 set memory_limit='100mb';
 
 statement ok
 set temp_directory='';
-
-statement ok
-create table range as from range(100_000_000);
 
 # test batched
 statement error

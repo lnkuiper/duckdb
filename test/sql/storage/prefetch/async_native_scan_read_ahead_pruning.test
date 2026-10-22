@@ -6,6 +6,10 @@ require block_size 262144
 
 load {TEST_DIR}/async_native_scan_read_ahead_pruning.db
 
+# Serial construction fixes the segment and block layout exercised below.
+statement ok
+SET threads=1
+
 # sorted values with per-row noise keep the bitpacking segments wide, so a row group spans two blocks
 statement ok
 SET force_compression='bitpacking'

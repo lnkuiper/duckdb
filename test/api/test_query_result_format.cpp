@@ -161,6 +161,7 @@ TEST_CASE("A formatted stream drains an ordered plan in row order", "[api][query
 	REQUIRE_NO_FAIL(con.Query("CREATE TABLE t AS SELECT range i FROM range(200000)"));
 
 	SECTION("through the simple store") {
+		REQUIRE_NO_FAIL(con.Query("SET threads=1"));
 		auto handle = SubmitFormatted(con, "SELECT i FROM range(200000) t(i)", 4096);
 		DrainWatchdog watchdog(con);
 		QueryResultStream<TestFormat> stream(std::move(handle));
@@ -280,6 +281,7 @@ TEST_CASE("Combine finishes the partial unit of every producer", "[api][query_re
 	Connection con(db);
 
 	SECTION("a row cap no producer reaches") {
+		REQUIRE_NO_FAIL(con.Query("SET threads=1"));
 		// The simple store runs no NextBatch, so Combine is the only thing that can finish the unit
 		auto handle = SubmitFormatted(con, "SELECT i FROM range(1000) t(i)", 1000000);
 		DrainWatchdog watchdog(con);
@@ -921,7 +923,7 @@ TEST_CASE("SOURCE_ORDERED has exactly one local state under threads=4, drained a
 	Connection con(db);
 	REQUIRE_NO_FAIL(con.Query("SET threads=4"));
 	const idx_t row_count = 100000;
-	const string query = "SELECT i FROM range(" + to_string(row_count) + ") t(i)";
+	const string query = "SELECT i FROM unnest(range(" + to_string(row_count) + ")) t(i)";
 
 	SECTION("drained") {
 		auto handle = SubmitFormatted(con, query, 4096);

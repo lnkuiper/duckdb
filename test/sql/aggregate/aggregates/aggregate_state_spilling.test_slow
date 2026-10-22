@@ -114,6 +114,10 @@ ORDER BY iter;
 
 # few groups with very large states: the arena pressure check must trigger the export before
 # the hash table ever fills, and the exported partitions grow until finalize fits in memory
+# Allow the four producers' input vectors while keeping the 200MB of states above the limit.
+statement ok
+SET memory_limit='128MB';
+
 query II
 SELECT count(*), sum(length(w)) FROM (
   SELECT k, first(wide) AS w
