@@ -22,6 +22,7 @@
 #include "duckdb/execution/physical_operator_states.hpp"
 #include "duckdb/execution/progress_data.hpp"
 #include "duckdb/execution/operator_chunk.hpp"
+#include "duckdb/execution/operator_initialization.hpp"
 
 namespace duckdb {
 
@@ -102,6 +103,10 @@ public:
 	bool CanSaturateThreads(ClientContext &context) const;
 
 	virtual void Verify();
+	//! Covers global and local initialization in all roles of this operator.
+	virtual OperatorInitializationInfo GetInitializationInfo() const {
+		return OperatorInitializationInfo();
+	}
 
 public:
 	// Operator interface
@@ -116,6 +121,10 @@ public:
 	}
 	virtual unique_ptr<OperatorState> GetOperatorState(ExecutionContext &context) const;
 	virtual unique_ptr<GlobalOperatorState> GetGlobalOperatorState(ClientContext &context) const;
+	virtual unique_ptr<GlobalOperatorState> GetGlobalOperatorState(ClientContext &context,
+	                                                               const OperatorStateInitInput &) const {
+		return GetGlobalOperatorState(context);
+	}
 	virtual bool ResetGlobalOperatorState(ClientContext &context, GlobalOperatorState &state) const;
 	virtual OperatorResultType Execute(ExecutionContext &context, OperatorChunk &input, OperatorChunk &chunk,
 	                                   GlobalOperatorState &gstate, OperatorState &state) const;

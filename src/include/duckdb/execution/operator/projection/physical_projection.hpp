@@ -15,6 +15,8 @@ namespace duckdb {
 
 class PhysicalProjection : public PhysicalOperator {
 public:
+	OperatorInitializationInfo GetInitializationInfo() const override;
+	BatchMetadataInfo RequestedMetadata() const override;
 	static constexpr const PhysicalOperatorType TYPE = PhysicalOperatorType::PROJECTION;
 
 public:
@@ -29,7 +31,11 @@ public:
 	}
 	void InitializeOutputChunk(Allocator &allocator, DataChunk &chunk) const override;
 	unique_ptr<OperatorState> GetOperatorState(ExecutionContext &context) const override;
-	unique_ptr<GlobalOperatorState> GetGlobalOperatorState(ClientContext &context) const override;
+	unique_ptr<GlobalOperatorState> GetGlobalOperatorState(ClientContext &context) const override {
+		return GetGlobalOperatorState(context, OperatorStateInitInput());
+	}
+	unique_ptr<GlobalOperatorState> GetGlobalOperatorState(ClientContext &context,
+	                                                       const OperatorStateInitInput &input) const override;
 	OperatorResultType Execute(ExecutionContext &context, OperatorChunk &input, OperatorChunk &chunk,
 	                           GlobalOperatorState &gstate, OperatorState &state) const override;
 

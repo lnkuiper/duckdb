@@ -586,6 +586,8 @@ enum class SourceResultType : uint8_t;
 
 enum class StarExpressionType : uint8_t;
 
+enum class StateInitialization : uint8_t;
+
 enum class StateMemoryOwnership : uint8_t;
 
 enum class StatementReturnType : uint8_t;
@@ -1523,6 +1525,9 @@ const char* EnumUtil::ToChars<SourceResultType>(SourceResultType value);
 
 template<>
 const char* EnumUtil::ToChars<StarExpressionType>(StarExpressionType value);
+
+template<>
+const char* EnumUtil::ToChars<StateInitialization>(StateInitialization value);
 
 template<>
 const char* EnumUtil::ToChars<StateMemoryOwnership>(StateMemoryOwnership value);
@@ -2514,6 +2519,9 @@ SourceResultType EnumUtil::FromString<SourceResultType>(const char *value);
 
 template<>
 StarExpressionType EnumUtil::FromString<StarExpressionType>(const char *value);
+
+template<>
+StateInitialization EnumUtil::FromString<StateInitialization>(const char *value);
 
 template<>
 StateMemoryOwnership EnumUtil::FromString<StateMemoryOwnership>(const char *value);

@@ -152,6 +152,7 @@ typedef unique_ptr<FunctionLocalState> (*init_local_state_t)(ExpressionState &st
 //! Shared initialization for execution with dense logical row positions.
 typedef unique_ptr<FunctionGlobalState> (*init_global_state_t)(ClientContext &context,
                                                                const BoundFunctionExpression &expr);
+typedef StateInitialization (*state_initialization_t)(const BoundFunctionExpression &expr);
 //! The type to directly access the selection vector of a scalar function
 typedef idx_t (*scalar_function_select_t)(DataChunk &args, ExpressionState &state,
                                           optional_ptr<const SelectionVector> sel,
@@ -202,6 +203,7 @@ public:
 	//! Init thread local state for the function (if any)
 	init_local_state_t init_local_state = nullptr;
 	init_global_state_t init_global_state = nullptr;
+	state_initialization_t state_initialization = nullptr;
 	//! The statistics propagation function (if any)
 	function_statistics_t statistics = nullptr;
 	//! The lambda bind function (if any)
@@ -307,6 +309,15 @@ public: // Callbacks
 	auto HasInitGlobalStateCallback() const -> bool { return callbacks.init_global_state != nullptr; }
 	auto GetInitGlobalStateCallback() const -> init_global_state_t { return callbacks.init_global_state; }
 	auto SetInitGlobalStateCallback(init_global_state_t callback) -> void { callbacks.init_global_state = callback; }
+
+	auto SetStateInitializationCallback(state_initialization_t callback) -> void { callbacks.state_initialization = callback; }
+	StateInitialization GetStateInitialization(const BoundFunctionExpression &expr) const {
+		if (callbacks.state_initialization) {
+			return callbacks.state_initialization(expr);
+		}
+		return HasInitGlobalStateCallback() ? StateInitialization::SHARED
+		       : HasInitStateCallback() ? StateInitialization::UNKNOWN : StateInitialization::INDEPENDENT;
+	}
 
 	auto HasStatisticsCallback() const -> bool { return callbacks.statistics != nullptr; }
 	auto GetStatisticsCallback() const -> function_statistics_t { return callbacks.statistics; }

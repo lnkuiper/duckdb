@@ -8,6 +8,8 @@
 
 #pragma once
 
+#include "duckdb/common/enums/state_initialization.hpp"
+
 #include "duckdb/common/identifier.hpp"
 #include "duckdb/common/named_parameter_map.hpp"
 #include "duckdb/common/types/data_chunk.hpp"

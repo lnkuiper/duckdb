@@ -84,7 +84,7 @@ static unique_ptr<GlobalTableFunctionState> RangeFunctionGlobalInit(ClientContex
 		return nullptr;
 	}
 	auto &bind_data = input.bind_data->Cast<RangeFunctionBindData>();
-	return make_uniq<GeneratedRowsGlobalState>(context, bind_data.row_count);
+	return make_uniq<GeneratedRowsGlobalState>(context, bind_data.row_count, input.metadata);
 }
 
 static void RangeSourceFunction(ClientContext &, TableFunctionInput &input, DataChunk &output) {
@@ -95,7 +95,7 @@ static void RangeSourceFunction(ClientContext &, TableFunctionInput &input, Data
 		return;
 	}
 	auto start = bind_data.start + bind_data.increment * local_state.offset;
-	input.row_offset = Hugeint::Cast<idx_t>(local_state.offset);
+	input.metadata = local_state.GetMetadata(global_state);
 	output.data[0].Sequence(Hugeint::Cast<int64_t>(start), Hugeint::Cast<int64_t>(bind_data.increment),
 	                        local_state.count);
 }
@@ -483,7 +483,9 @@ void RangeTableFunction::RegisterFunction(BuiltinFunctions &set) {
 	                             RangeFunctionLocalInit);
 	range_function.table_scan_progress = GeneratedRowsGlobalState::Progress;
 	range_function.get_partition_data = GeneratedRowsLocalState::GetPartitionData;
-	range_function.provides_row_offsets = true;
+	range_function.source_metadata = BatchMetadataInfo::RowPositions();
+	range_function.source_metadata.Merge(BatchMetadataInfo::Completion());
+	range_function.state_initialization = StateInitialization::INDEPENDENT;
 	range_function.in_out_function = RangeFunction<false>;
 	range_function.cardinality = RangeCardinality;
 	range_function.is_repeatable = RangeIsRepeatable;

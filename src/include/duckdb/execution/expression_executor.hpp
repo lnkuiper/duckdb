@@ -13,7 +13,7 @@
 #include "duckdb/planner/bound_tokens.hpp"
 #include "duckdb/planner/expression.hpp"
 #include "duckdb/common/enums/debug_vector_verification.hpp"
-#include "duckdb/common/mutex.hpp"
+#include "duckdb/execution/operator_chunk.hpp"
 
 namespace duckdb {
 class Allocator;
@@ -23,7 +23,11 @@ class ExecutionContext;
 //! Shared by executors evaluating the same expressions at dense logical row positions.
 //! Initialization follows the ordinary local expression initialization order.
 struct ExpressionExecutorGlobalState {
-	mutex lock;
+	explicit ExpressionExecutorGlobalState(ClientContext &context, const vector<unique_ptr<Expression>> &expressions);
+	const FunctionGlobalState &GetState(const BoundFunctionExpression &expr) const;
+
+private:
+	void Prepare(ClientContext &context, const Expression &expr);
 	unordered_map<const BoundFunctionExpression *, unique_ptr<FunctionGlobalState>> functions;
 };
 
@@ -43,8 +47,7 @@ public:
 	//! The data chunk of the current physical operator, used to resolve
 	//! column references and determines the output cardinality
 	DataChunk *chunk = nullptr;
-	optional_ptr<ExpressionExecutorGlobalState> global_state;
-	optional_idx row_offset;
+	optional_ptr<const ExpressionExecutorGlobalState> global_state;
 
 public:
 	bool HasContext();
@@ -58,6 +61,11 @@ public:
 
 	//! Execute the set of expressions with the given input chunk and store the result in the output chunk
 	DUCKDB_API void Execute(DataChunk *input, DataChunk &result);
+	void Execute(OperatorChunk &input, DataChunk &result);
+	const ChunkMetadata &GetInputMetadata() const;
+	static StateInitialization GetStateInitialization(const Expression &expr);
+	static StateInitialization GetStateInitialization(const vector<unique_ptr<Expression>> &expressions);
+	static bool SupportsRowPositions(const vector<unique_ptr<Expression>> &expressions);
 	inline void Execute(DataChunk &input, DataChunk &result) {
 		Execute(&input, result);
 	}
@@ -169,6 +177,8 @@ private:
 	vector<unique_ptr<ExpressionExecutorState>> states;
 	//! The vector verification (debug setting)
 	DebugVectorVerification debug_vector_verification = DebugVectorVerification::NONE;
+	//! Borrowed only for the duration of synchronous execution.
+	optional_ptr<const ChunkMetadata> input_metadata;
 
 private:
 	// it is possible to create an expression executor without a ClientContext - but it should be avoided

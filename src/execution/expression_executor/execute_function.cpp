@@ -140,13 +140,7 @@ unique_ptr<ExpressionState> ExpressionExecutor::InitializeState(const BoundFunct
 
 	result->Finalize();
 	if (root.executor->global_state && expr.Function().HasInitGlobalStateCallback()) {
-		auto &shared = *root.executor->global_state;
-		lock_guard<mutex> guard(shared.lock);
-		auto &function_state = shared.functions[&expr];
-		if (!function_state) {
-			function_state = expr.Function().GetInitGlobalStateCallback()(result->GetContext(), expr);
-		}
-		result->global_state = function_state.get();
+		result->global_state = root.executor->global_state->GetState(expr);
 	}
 	if (expr.Function().HasInitStateCallback()) {
 		try {

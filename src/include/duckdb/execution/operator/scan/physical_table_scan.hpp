@@ -24,6 +24,14 @@ namespace duckdb {
 //! Represents a scan of a base table
 class PhysicalTableScan : public PhysicalOperator {
 public:
+	OperatorInitializationInfo GetInitializationInfo() const override {
+		return function.state_initialization == StateInitialization::INDEPENDENT
+		           ? OperatorInitializationInfo::Independent()
+		           : OperatorInitializationInfo();
+	}
+	BatchMetadataInfo SourceMetadata() const override {
+		return function.source_metadata;
+	}
 	static constexpr const PhysicalOperatorType TYPE = PhysicalOperatorType::TABLE_SCAN;
 
 public:
@@ -72,6 +80,8 @@ public:
 	unique_ptr<LocalSourceState> GetLocalSourceState(ExecutionContext &context,
 	                                                 GlobalSourceState &gstate) const override;
 	unique_ptr<GlobalSourceState> GetGlobalSourceState(ClientContext &context) const override;
+	unique_ptr<GlobalSourceState> GetGlobalSourceState(ClientContext &context,
+	                                                   const OperatorPartitionInfo &partition_info) const override;
 	SourceResultType GetDataInternal(ExecutionContext &context, DataChunk &chunk,
 	                                 OperatorSourceInput &input) const override;
 	OperatorPartitionData GetPartitionData(ExecutionContext &context, DataChunk &chunk, GlobalSourceState &gstate,

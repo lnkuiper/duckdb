@@ -13,9 +13,14 @@ CREATE TABLE generated(i BIGINT, a DOUBLE, b DOUBLE)
 statement ok
 PREPARE populate AS INSERT INTO generated SELECT i, random(), random() FROM range(4097) t(i)
 
+statement ok
+PREPARE populate_chain AS INSERT INTO generated SELECT i, a, random() FROM (SELECT i, random() a FROM generate_series(0, 4096) t(i))
+
 # This digest comes from the serial range implementation. The prepared
 # statement must obtain fresh expression seeds at execution, independent of workers.
-foreach threads 1 4
+foreach population populate populate_chain
+
+foreach threads 1 4 8
 
 statement ok
 SET threads={threads}
@@ -27,7 +32,7 @@ statement ok
 SELECT setseed(0.42)
 
 statement ok
-EXECUTE populate
+EXECUTE {population}
 
 query IT
 SELECT count(*), md5(string_agg(i || ':' || a || ':' || b, ',' ORDER BY i)) FROM generated
@@ -39,6 +44,8 @@ query TT
 SELECT random()::VARCHAR, random()::VARCHAR
 ----
 0.18256470778688086	0.7935885720545943
+
+endloop
 
 endloop
 

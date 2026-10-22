@@ -29,7 +29,7 @@ static unique_ptr<FunctionData> RepeatBind(ClientContext &context, TableFunction
 
 static unique_ptr<GlobalTableFunctionState> RepeatInit(ClientContext &context, TableFunctionInitInput &input) {
 	auto &bind_data = input.bind_data->Cast<RepeatFunctionData>();
-	return make_uniq<GeneratedRowsGlobalState>(context, Hugeint::Convert(bind_data.target_count));
+	return make_uniq<GeneratedRowsGlobalState>(context, Hugeint::Convert(bind_data.target_count), input.metadata);
 }
 
 static void RepeatFunction(ClientContext &context, TableFunctionInput &data_p, DataChunk &output) {
@@ -39,7 +39,7 @@ static void RepeatFunction(ClientContext &context, TableFunctionInput &data_p, D
 	if (!local_state.Next(global_state)) {
 		return;
 	}
-	data_p.row_offset = Hugeint::Cast<idx_t>(local_state.offset);
+	data_p.metadata = local_state.GetMetadata(global_state);
 	output.data[0].Reference(bind_data.value, count_t(local_state.count));
 	output.SetChildCardinality(local_state.count);
 }
@@ -58,7 +58,9 @@ void RepeatTableFunction::RegisterFunction(BuiltinFunctions &set) {
 	repeat.cardinality = RepeatCardinality;
 	repeat.table_scan_progress = GeneratedRowsGlobalState::Progress;
 	repeat.get_partition_data = GeneratedRowsLocalState::GetPartitionData;
-	repeat.provides_row_offsets = true;
+	repeat.source_metadata = BatchMetadataInfo::RowPositions();
+	repeat.source_metadata.Merge(BatchMetadataInfo::Completion());
+	repeat.state_initialization = StateInitialization::INDEPENDENT;
 	set.AddFunction(repeat);
 }
 

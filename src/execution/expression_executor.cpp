@@ -9,8 +9,137 @@
 #include "duckdb/function/cast/cast_function_set.hpp"
 #include "duckdb/common/type_visitor.hpp"
 #include "duckdb/storage/table/variant_column_data.hpp"
+#include "duckdb/planner/expression_iterator.hpp"
 
 namespace duckdb {
+
+ExpressionExecutorGlobalState::ExpressionExecutorGlobalState(ClientContext &context,
+                                                             const vector<unique_ptr<Expression>> &expressions) {
+	for (auto &expr : expressions) {
+		Prepare(context, *expr);
+	}
+}
+
+void ExpressionExecutorGlobalState::Prepare(ClientContext &context, const Expression &expr) {
+	ExpressionIterator::EnumerateChildren(expr, [&](const Expression &child) { Prepare(context, child); });
+	if (expr.GetExpressionClass() != ExpressionClass::BOUND_FUNCTION) {
+		return;
+	}
+	auto &function = expr.Cast<BoundFunctionExpression>();
+	if (function.Function().HasInitGlobalStateCallback()) {
+		auto state = function.Function().GetInitGlobalStateCallback()(context, function);
+		if (!state || !functions.emplace(&function, std::move(state)).second) {
+			throw InternalException("Invalid shared expression state preparation");
+		}
+	}
+}
+
+const FunctionGlobalState &ExpressionExecutorGlobalState::GetState(const BoundFunctionExpression &expr) const {
+	auto entry = functions.find(&expr);
+	if (entry == functions.end()) {
+		throw InternalException("Expression state was not prepared before execution");
+	}
+	return *entry->second;
+}
+
+static StateInitialization MergeInitialization(StateInitialization left, StateInitialization right) {
+	if (left == StateInitialization::UNKNOWN || right == StateInitialization::UNKNOWN) {
+		return StateInitialization::UNKNOWN;
+	}
+	return left == StateInitialization::SHARED || right == StateInitialization::SHARED
+	           ? StateInitialization::SHARED
+	           : StateInitialization::INDEPENDENT;
+}
+
+StateInitialization ExpressionExecutor::GetStateInitialization(const Expression &expr) {
+	auto result = StateInitialization::INDEPENDENT;
+	switch (expr.GetExpressionClass()) {
+	case ExpressionClass::BOUND_FUNCTION: {
+		auto &function = expr.Cast<BoundFunctionExpression>();
+		auto &fun = function.Function();
+		result = fun.GetStateInitialization(function);
+		if (fun.HasBindLambdaCallback() ||
+		    (fun.GetStability() == FunctionStability::VOLATILE && !fun.HasInitGlobalStateCallback())) {
+			result = StateInitialization::UNKNOWN;
+		}
+		break;
+	}
+	case ExpressionClass::BOUND_AGGREGATE: {
+		// Aggregate state callbacks may reach client state through bind data or extra function info.
+		auto &aggregate = expr.Cast<BoundAggregateExpression>();
+		if (aggregate.BindInfo() || aggregate.Function().HasExtraFunctionInfo() ||
+		    aggregate.Function().HasInitLocalStateFinalizeCallback()) {
+			result = StateInitialization::UNKNOWN;
+		}
+		break;
+	}
+	case ExpressionClass::BOUND_REF:
+	case ExpressionClass::BOUND_CONSTANT:
+	case ExpressionClass::BOUND_PARAMETER:
+	case ExpressionClass::BOUND_CASE:
+	case ExpressionClass::BOUND_CONJUNCTION:
+	case ExpressionClass::BOUND_OPERATOR:
+		break;
+	default:
+		result = StateInitialization::UNKNOWN;
+		break;
+	}
+	ExpressionIterator::EnumerateChildren(
+	    expr, [&](const Expression &child) { result = MergeInitialization(result, GetStateInitialization(child)); });
+	return result;
+}
+
+StateInitialization ExpressionExecutor::GetStateInitialization(const vector<unique_ptr<Expression>> &expressions) {
+	auto result = StateInitialization::INDEPENDENT;
+	for (auto &expr : expressions) {
+		result = MergeInitialization(result, GetStateInitialization(*expr));
+	}
+	return result;
+}
+
+static bool SupportsRowPositions(const Expression &expr) {
+	switch (expr.GetExpressionClass()) {
+	case ExpressionClass::BOUND_REF:
+	case ExpressionClass::BOUND_CONSTANT:
+	case ExpressionClass::BOUND_PARAMETER:
+		return true;
+	case ExpressionClass::BOUND_FUNCTION: {
+		auto &function = expr.Cast<BoundFunctionExpression>();
+		auto &fun = function.Function();
+		if (fun.HasBindLambdaCallback() || fun.GetStateInitialization(function) == StateInitialization::UNKNOWN ||
+		    (fun.HasInitGlobalStateCallback() && fun.GetStability() != FunctionStability::VOLATILE) ||
+		    (fun.GetStability() == FunctionStability::VOLATILE && !fun.HasInitGlobalStateCallback())) {
+			return false;
+		}
+		bool earlier_arguments_nonnull = true;
+		for (auto &child : function.GetChildren()) {
+			if (!SupportsRowPositions(*child)) {
+				return false;
+			}
+			// A constant NULL argument can skip all subsequent children.
+			if (fun.GetNullHandling() == FunctionNullHandling::DEFAULT_NULL_HANDLING && !earlier_arguments_nonnull &&
+			    ExpressionExecutor::GetStateInitialization(*child) == StateInitialization::SHARED) {
+				return false;
+			}
+			earlier_arguments_nonnull &= child->GetExpressionClass() == ExpressionClass::BOUND_CONSTANT &&
+			                             !child->Cast<BoundConstantExpression>().GetValue().IsNull();
+		}
+		return !fun.HasInitGlobalStateCallback() || function.GetChildren().empty() ||
+		       fun.GetNullHandling() == FunctionNullHandling::SPECIAL_HANDLING || earlier_arguments_nonnull;
+	}
+	default:
+		return false;
+	}
+}
+
+bool ExpressionExecutor::SupportsRowPositions(const vector<unique_ptr<Expression>> &expressions) {
+	for (auto &expr : expressions) {
+		if (!duckdb::SupportsRowPositions(*expr)) {
+			return false;
+		}
+	}
+	return true;
+}
 
 ExpressionExecutor::ExpressionExecutor(ClientContext &context) : context(&context) {
 	debug_vector_verification = Settings::Get<DebugVerifyVectorSetting>(context);
@@ -94,6 +223,25 @@ void ExpressionExecutor::Execute(DataChunk *input, DataChunk &result) {
 	result.Verify(context);
 }
 
+void ExpressionExecutor::Execute(OperatorChunk &input, DataChunk &result) {
+	D_ASSERT(!input_metadata);
+	input_metadata = input.metadata;
+	try {
+		Execute(&input.chunk, result);
+	} catch (...) {
+		input_metadata = nullptr;
+		throw;
+	}
+	input_metadata = nullptr;
+}
+
+const ChunkMetadata &ExpressionExecutor::GetInputMetadata() const {
+	if (!input_metadata || !chunk) {
+		throw InternalException("Expression executed without its promised input metadata");
+	}
+	input_metadata->Verify(BatchMetadataInfo::RowPositions(), chunk->size());
+	return *input_metadata;
+}
 void ExpressionExecutor::ExecuteExpression(DataChunk &input, Vector &result) {
 	SetChunk(&input);
 	ExecuteExpression(result);

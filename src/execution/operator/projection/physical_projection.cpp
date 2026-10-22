@@ -4,20 +4,18 @@
 #include "duckdb/planner/expression/bound_function_expression.hpp"
 #include "duckdb/planner/expression_iterator.hpp"
 #include "duckdb/planner/expression/bound_reference_expression.hpp"
-#include "duckdb/execution/operator/scan/physical_table_scan.hpp"
-#include "duckdb/parallel/pipeline.hpp"
 
 namespace duckdb {
 
 class ProjectionGlobalState : public GlobalOperatorState {
 public:
-	unique_ptr<ExpressionExecutorGlobalState> expressions;
+	optional_ptr<const ExpressionExecutorGlobalState> expressions;
 };
 
 class ProjectionState : public OperatorState {
 public:
 	ProjectionState(ExecutionContext &context, const vector<unique_ptr<Expression>> &expressions,
-	                optional_ptr<ExpressionExecutorGlobalState> global)
+	                optional_ptr<const ExpressionExecutorGlobalState> global)
 	    : executor(context.client) {
 		executor.global_state = global;
 		for (auto &expression : expressions) {
@@ -62,62 +60,37 @@ void PhysicalProjection::InitializeOutputChunk(Allocator &allocator, DataChunk &
 OperatorResultType PhysicalProjection::Execute(ExecutionContext &context, OperatorChunk &operator_input,
                                                OperatorChunk &operator_output, GlobalOperatorState &gstate,
                                                OperatorState &state_p) const {
-	auto &input = operator_input.chunk;
 	auto &chunk = operator_output.chunk;
 	auto &state = state_p.Cast<ProjectionState>();
-	state.executor.row_offset = context.source_row_offset;
-	state.executor.Execute(input, chunk);
+	state.executor.Execute(operator_input, chunk);
 	operator_output.metadata = operator_input.metadata;
 	return OperatorResultType::NEED_MORE_INPUT;
 }
 
 unique_ptr<OperatorState> PhysicalProjection::GetOperatorState(ExecutionContext &context) const {
-	optional_ptr<ExpressionExecutorGlobalState> shared = op_state->Cast<ProjectionGlobalState>().expressions.get();
-	if (shared && (!context.pipeline || context.pipeline->IsExternalInput() ||
-	               context.pipeline->GetSource().get() != &children[0].get())) {
-		shared = nullptr;
-	}
-	return make_uniq<ProjectionState>(context, select_list, shared);
+	return make_uniq<ProjectionState>(context, select_list, op_state->Cast<ProjectionGlobalState>().expressions);
 }
 
-//! Prototype: a source ordinal is an RNG draw ordinal only for unconditional scalar projections.
-static bool SupportsDensePositions(const Expression &expr) {
-	if (!expr.IsVolatile()) {
-		return true;
+OperatorInitializationInfo PhysicalProjection::GetInitializationInfo() const {
+	auto effect = ExpressionExecutor::GetStateInitialization(select_list);
+	if (effect == StateInitialization::INDEPENDENT) {
+		return OperatorInitializationInfo::Independent();
 	}
-	if (expr.GetExpressionClass() != ExpressionClass::BOUND_FUNCTION) {
-		return false;
+	if (effect == StateInitialization::SHARED && ExpressionExecutor::SupportsRowPositions(select_list)) {
+		return OperatorInitializationInfo::Shared(select_list);
 	}
-	auto &function = expr.Cast<BoundFunctionExpression>().Function();
-	if (function.HasBindLambdaCallback() ||
-	    (function.GetStability() == FunctionStability::VOLATILE && !function.HasInitGlobalStateCallback())) {
-		return false;
-	}
-	for (auto &child : expr.Cast<BoundFunctionExpression>().GetChildren()) {
-		if (!SupportsDensePositions(*child)) {
-			return false;
-		}
-	}
-	return true;
+	return OperatorInitializationInfo();
 }
 
-unique_ptr<GlobalOperatorState> PhysicalProjection::GetGlobalOperatorState(ClientContext &) const {
+BatchMetadataInfo PhysicalProjection::RequestedMetadata() const {
+	return GetInitializationInfo().effect == StateInitialization::SHARED ? BatchMetadataInfo::RowPositions()
+	                                                                     : BatchMetadataInfo();
+}
+
+unique_ptr<GlobalOperatorState> PhysicalProjection::GetGlobalOperatorState(ClientContext &,
+                                                                           const OperatorStateInitInput &input) const {
 	auto result = make_uniq<ProjectionGlobalState>();
-	// Keep the prototype's row-position contract local: no intervening filter, join, or expansion.
-	if (children.size() != 1 || children[0].get().type != PhysicalOperatorType::TABLE_SCAN ||
-	    !children[0].get().Cast<PhysicalTableScan>().function.provides_row_offsets) {
-		return std::move(result);
-	}
-	bool has_volatile = false;
-	for (auto &expression : select_list) {
-		if (!SupportsDensePositions(*expression)) {
-			return std::move(result);
-		}
-		has_volatile = has_volatile || expression->IsVolatile();
-	}
-	if (has_volatile) {
-		result->expressions = make_uniq<ExpressionExecutorGlobalState>();
-	}
+	result->expressions = input.expressions;
 	return std::move(result);
 }
 

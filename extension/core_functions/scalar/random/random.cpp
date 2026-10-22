@@ -76,9 +76,11 @@ void RandomFunction(DataChunk &args, ExpressionState &state, Vector &result) {
 	auto &lstate = ExecuteFunctionState::GetFunctionState(state)->Cast<RandomLocalState>();
 	if (state.Cast<ExecuteFunctionState>().global_state) {
 		auto &executor = *state.root.executor;
-		D_ASSERT(executor.row_offset.IsValid());
-		D_ASSERT(executor.chunk && executor.chunk->size() == args.size());
-		auto position = executor.row_offset.GetIndex();
+		auto &metadata = executor.GetInputMetadata();
+		if (executor.chunk->size() != args.size()) {
+			throw InternalException("Positional random expression was not evaluated once per input row");
+		}
+		auto position = metadata.batch.first_row_index.GetIndex() + metadata.offset_in_batch.GetIndex();
 		// Both the PCG period and this unsigned subtraction wrap modulo 2^64.
 		// Each double consumes two 32-bit outputs.
 		lstate.random_engine.Advance((position - lstate.position) * uint64_t(2));

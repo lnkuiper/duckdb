@@ -18,6 +18,7 @@ namespace duckdb {
 //! adds a selection vector to the chunk.
 class PhysicalFilter : public CachingPhysicalOperator {
 public:
+	OperatorInitializationInfo GetInitializationInfo() const override;
 	static constexpr const PhysicalOperatorType TYPE = PhysicalOperatorType::FILTER;
 
 public:

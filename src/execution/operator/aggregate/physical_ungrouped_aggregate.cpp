@@ -27,6 +27,12 @@
 
 namespace duckdb {
 
+OperatorInitializationInfo PhysicalUngroupedAggregate::GetInitializationInfo() const {
+	return ExpressionExecutor::GetStateInitialization(aggregates) == StateInitialization::INDEPENDENT
+	           ? OperatorInitializationInfo::Independent()
+	           : OperatorInitializationInfo();
+}
+
 PhysicalUngroupedAggregate::PhysicalUngroupedAggregate(PhysicalPlan &physical_plan, vector<LogicalType> types,
                                                        vector<unique_ptr<Expression>> expressions,
                                                        idx_t estimated_cardinality,

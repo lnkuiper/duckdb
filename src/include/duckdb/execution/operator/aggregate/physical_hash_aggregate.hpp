@@ -60,6 +60,7 @@ public:
 //! This only contains read-only variables, anything that is stateful instead gets stored in the Global/Local states
 class PhysicalHashAggregate : public PhysicalOperator {
 public:
+	OperatorInitializationInfo GetInitializationInfo() const override;
 	static constexpr const PhysicalOperatorType TYPE = PhysicalOperatorType::HASH_GROUP_BY;
 
 public:

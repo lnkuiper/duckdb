@@ -21,6 +21,7 @@ namespace duckdb {
 //! PhysicalUngroupedAggregate is an aggregate operator that can only perform aggregates without any groups
 class PhysicalUngroupedAggregate : public PhysicalOperator {
 public:
+	OperatorInitializationInfo GetInitializationInfo() const override;
 	static constexpr const PhysicalOperatorType TYPE = PhysicalOperatorType::UNGROUPED_AGGREGATE;
 
 public:

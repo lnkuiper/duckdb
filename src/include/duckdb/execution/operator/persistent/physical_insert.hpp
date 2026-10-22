@@ -71,6 +71,7 @@ public:
 //! Physically insert a set of data into a table
 class PhysicalInsert : public PhysicalOperator {
 public:
+	OperatorInitializationInfo GetInitializationInfo() const override;
 	static constexpr const PhysicalOperatorType TYPE = PhysicalOperatorType::INSERT;
 
 public:

@@ -164,6 +164,8 @@ struct TableFunctionInitInput {
 	optional_ptr<TableFilterSet> filters;
 	optional_ptr<SampleOptions> sample_options;
 	optional_ptr<const PhysicalOperator> op;
+	//! Immutable streaming metadata requested by the calling pipeline.
+	BatchMetadataInfo metadata;
 	//! (Optional) Set when a multi-file scan initializes this function to read one of its files
 	optional_ptr<const TableFunctionFileInitInput> multi_file_input;
 
@@ -201,8 +203,8 @@ public:
 	AsyncResultsExecutionMode results_execution_mode {AsyncResultsExecutionMode::SYNCHRONOUS};
 	//! Interrupt state of the calling task, so the function might park and wake-up by returning a taskless Blocked res
 	optional_ptr<const InterruptState> interrupt_state;
-	//! First logical row in the output, for sources declaring provides_row_offsets.
-	optional_idx row_offset;
+	//! Descriptor of the returned output chunk.
+	ChunkMetadata metadata;
 };
 
 struct TableFunctionPartitionInput {
@@ -518,8 +520,9 @@ public:
 	table_function_progress_t table_scan_progress;
 	//! (Optional) returns the partition info of the current scan operator
 	table_function_get_partition_data_t get_partition_data;
-	//! Whether each output chunk consists of consecutive logical rows, starting at row_offset.
-	bool provides_row_offsets = false;
+	//! Guaranteed streaming properties of this source.
+	BatchMetadataInfo source_metadata;
+	StateInitialization state_initialization = StateInitialization::UNKNOWN;
 	//! (Optional) returns extra bind info
 	table_function_get_bind_info_t get_bind_info;
 	//! (Optional) the table a bound call scans, e.g. for a scan of a catalog table

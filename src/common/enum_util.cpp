@@ -79,6 +79,7 @@
 #include "duckdb/common/enums/set_scope.hpp"
 #include "duckdb/common/enums/set_type.hpp"
 #include "duckdb/common/enums/show_behavior.hpp"
+#include "duckdb/common/enums/state_initialization.hpp"
 #include "duckdb/common/enums/statement_type.hpp"
 #include "duckdb/common/enums/storage_block_prefetch.hpp"
 #include "duckdb/common/enums/subquery_type.hpp"
@@ -6377,6 +6378,25 @@ const char* EnumUtil::ToChars<StarExpressionType>(StarExpressionType value) {
 template<>
 StarExpressionType EnumUtil::FromString<StarExpressionType>(const char *value) {
 	return static_cast<StarExpressionType>(StringUtil::StringToEnum(GetStarExpressionTypeValues(), 4, "StarExpressionType", value));
+}
+
+const StringUtil::EnumStringLiteral *GetStateInitializationValues() {
+	static constexpr StringUtil::EnumStringLiteral values[] {
+		{ static_cast<uint32_t>(StateInitialization::UNKNOWN), "UNKNOWN" },
+		{ static_cast<uint32_t>(StateInitialization::INDEPENDENT), "INDEPENDENT" },
+		{ static_cast<uint32_t>(StateInitialization::SHARED), "SHARED" }
+	};
+	return values;
+}
+
+template<>
+const char* EnumUtil::ToChars<StateInitialization>(StateInitialization value) {
+	return StringUtil::EnumToString(GetStateInitializationValues(), 3, "StateInitialization", static_cast<uint32_t>(value));
+}
+
+template<>
+StateInitialization EnumUtil::FromString<StateInitialization>(const char *value) {
+	return static_cast<StateInitialization>(StringUtil::StringToEnum(GetStateInitializationValues(), 3, "StateInitialization", value));
 }
 
 const StringUtil::EnumStringLiteral *GetStateMemoryOwnershipValues() {

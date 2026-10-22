@@ -10,7 +10,6 @@
 
 #include "duckdb/common/common.hpp"
 #include "duckdb/common/optional_ptr.hpp"
-#include "duckdb/common/optional_idx.hpp"
 
 namespace duckdb {
 class ClientContext;
@@ -29,8 +28,6 @@ public:
 	ThreadContext &thread;
 	//! Reference to the pipeline for this execution, can be used for example by operators determine caching strategy
 	optional_ptr<Pipeline> pipeline;
-	//! Logical position of the first row in the most recently fetched dense source chunk.
-	optional_idx source_row_offset;
 };
 
 } // namespace duckdb
