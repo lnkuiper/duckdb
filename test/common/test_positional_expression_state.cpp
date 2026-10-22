@@ -203,6 +203,31 @@ TEST_CASE("Shared expression preparation follows projection order and query gene
 	REQUIRE(prepared_expressions == duckdb::vector<string> {"position_probe_a"});
 }
 
+TEST_CASE("Unrelated expressions and skipped arguments allow shared expression preparation",
+          "[streaming_batch_metadata]") {
+	DuckDB db;
+	Connection con(db);
+	RegisterPositionProbes(con);
+	REQUIRE_NO_FAIL(con.Query("PRAGMA verify_parallelism"));
+#ifndef DUCKDB_NO_THREADS
+	REQUIRE_NO_FAIL(con.Query("SET threads=4"));
+#endif
+	const duckdb::vector<pair<string, int64_t>> queries {
+	    {"SELECT sum(a), count(u) FROM (SELECT position_probe_a() a, uuid() u FROM range(4097))", 4097 * 2048},
+	    {"SELECT sum(a) + sum(b) FROM (SELECT position_probe_a() a, unknown_init_probe() b FROM range(4097))",
+	     4097 * 2047},
+	    {"SELECT sum((CASE WHEN i < 2048 THEN NULL ELSE 1 END) + position_probe_a()) FROM range(4097) t(i)",
+	     2049 * 3073}};
+	for (auto &query : queries) {
+		CAPTURE(query.first);
+		ClearPositionProbes();
+		auto result = con.Query(query.first);
+		REQUIRE_NO_FAIL(*result);
+		REQUIRE(result->Collection().GetValue(0, 0).GetValue<int64_t>() == query.second);
+		REQUIRE(prepared_expressions == duckdb::vector<string> {"position_probe_a"});
+	}
+}
+
 TEST_CASE("Unsupported expression and stream domains never partially prepare shared seeds",
           "[streaming_batch_metadata]") {
 	DuckDB db;
@@ -216,8 +241,6 @@ TEST_CASE("Unsupported expression and stream domains never partially prepare sha
 	    "SELECT sum(position_probe_a()) FROM range(4097) t(i) WHERE i % 2 = 0",
 	    "SELECT sum(a) + sum(b) FROM (SELECT position_probe_a() a, "
 	    "CASE WHEN i % 2 = 0 THEN position_probe_b() ELSE 0 END b FROM range(4097) t(i))",
-	    "SELECT sum(a), count(u) FROM (SELECT position_probe_a() a, uuid() u FROM range(4097))",
-	    "SELECT sum(a) + sum(b) FROM (SELECT position_probe_a() a, unknown_init_probe() b FROM range(4097))",
 	    "SELECT sum(nonvolatile_global_probe(position_probe_a())) FROM range(4097)",
 	    "SELECT sum(position_probe_a()) FROM (SELECT i FROM range(2048) t(i) UNION ALL SELECT i FROM range(2049) t(i))",
 	    "SELECT sum(position_probe_a()) FROM range(2048) UNION ALL SELECT sum(position_probe_b()) FROM range(2049)",
@@ -227,7 +250,6 @@ TEST_CASE("Unsupported expression and stream domains never partially prepare sha
 	    "(SELECT i FROM range(2049) t(i) WHERE i%2=0 UNION ALL SELECT i FROM range(2048) t(i))",
 	    "SELECT sum(position_probe_a()) FROM "
 	    "(SELECT i, unknown_init_probe() b FROM range(4097) t(i)) WHERE b < 0",
-	    "SELECT sum((CASE WHEN i < 2048 THEN NULL ELSE 1 END) + position_probe_a()) FROM range(4097) t(i)",
 	    "WITH RECURSIVE t(i) AS (SELECT 0 UNION ALL SELECT i+1 FROM t WHERE i<2) "
 	    "SELECT sum(position_probe_a()) FROM t"};
 	for (auto &query : queries) {
