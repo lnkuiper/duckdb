@@ -95,6 +95,8 @@ public:
 	unordered_map<TableIndex, RecursiveCTEPlanningInfo> recursive_cte_planning;
 	//! Materialized CTE ids must be collected.
 	unordered_map<TableIndex, vector<const_reference<PhysicalOperator>>> materialized_ctes;
+	//! Logical consumer identities retained until the owning physical CTE has been planned.
+	unordered_map<TableIndex, vector<pair<TableIndex, vector<LogicalType>>>> materialized_cte_filter_consumers;
 	unordered_map<TableIndex, OrderPreservationType> materialized_cte_orders;
 	//! The index for duplicate eliminated joins.
 	idx_t delim_index = 0;

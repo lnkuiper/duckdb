@@ -151,7 +151,7 @@ optional_ptr<LogicalGet> RowGroupPruner::FindLogicalGet(const LogicalOrder &logi
 		return nullptr;
 	}
 
-	auto &logical_get = pushdown_targets.front().get;
+	auto &logical_get = pushdown_targets.front().GetScan();
 
 	if (!logical_get.function.set_scan_order) {
 		return nullptr;

@@ -6,6 +6,7 @@ add_library_unity(
   build_probe_side_optimizer.cpp
   column_binding_rewrite.cpp
   common_subplan_nonserializable.cpp
+  cte_runtime_filters.cpp
   dynamic_filter_groups.cpp
   expression_type_serialization.cpp
   filter_pushdown_alias.cpp

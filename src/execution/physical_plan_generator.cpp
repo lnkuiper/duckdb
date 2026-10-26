@@ -12,6 +12,7 @@
 #include "duckdb/planner/operator/list.hpp"
 #include "duckdb/execution/operator/helper/physical_verify_vector.hpp"
 #include "duckdb/main/settings.hpp"
+#include "duckdb/optimizer/join_filter_pushdown_optimizer.hpp"
 
 namespace duckdb {
 
@@ -34,6 +35,7 @@ PhysicalOperator &PhysicalPlanGenerator::ResolveAndPlan(unique_ptr<LogicalOperat
 	{
 		auto timer = profiler.StartTimer<MetricPhysicalPlannerResolveTypes>();
 		op->ResolveOperatorTypes();
+		JoinFilterPushdownOptimizer::FinalizeCTEFilters(*op);
 	}
 
 	// Resolve the column references.

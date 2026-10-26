@@ -716,6 +716,10 @@ void DynamicTableFilterGroup::PushFilterSnapshot(TableFilterSet &result) const {
 		expression = std::move(disjunction);
 	}
 	if (columns.size() == 1) {
+		auto existing = result.TryGetFilterByColumnIndex(columns[0]);
+		if (existing && existing->Cast<ExpressionFilter>().expr->Equals(*expression)) {
+			return;
+		}
 		result.PushFilter(columns[0], make_uniq<ExpressionFilter>(std::move(expression)));
 	} else {
 		result.PushMultiColumnFilter(make_uniq<ExpressionFilter>(std::move(expression), std::move(columns)));

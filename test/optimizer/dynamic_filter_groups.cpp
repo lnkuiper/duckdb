@@ -128,6 +128,11 @@ TEST_CASE("Consumer filter groups preserve every alternative through partial pub
 	REQUIRE(next);
 	REQUIRE_FALSE(next->HasMultiColumnFilters());
 	REQUIRE(EvaluateGroupTestFilter(*test.con.context, *next, {Value::INTEGER(1)}));
+	auto duplicate = root.GetFinalTableFilters(test.scan, next.get());
+	REQUIRE(duplicate);
+	REQUIRE(duplicate->GetFilterByColumnIndex(ProjectionIndex(0))
+	            .Cast<ExpressionFilter>()
+	            .Equals(next->GetFilterByColumnIndex(ProjectionIndex(0)).Cast<ExpressionFilter>()));
 	REQUIRE(EvaluateGroupTestFilter(*test.con.context, *next, {Value::INTEGER(3)}));
 	REQUIRE_FALSE(EvaluateGroupTestFilter(*test.con.context, *next, {Value::INTEGER(2)}));
 }

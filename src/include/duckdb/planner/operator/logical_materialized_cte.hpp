@@ -10,6 +10,7 @@
 
 #include "duckdb/planner/operator/logical_cte.hpp"
 #include "duckdb/planner/logical_operator.hpp"
+#include "duckdb/planner/cte_filter_pushdown.hpp"
 
 namespace duckdb {
 
@@ -49,6 +50,7 @@ public:
 	CTEMaterialize materialize = CTEMaterialize::CTE_MATERIALIZE_ALWAYS;
 	//! Valid only for the original generated consumers, until CTE filter pushdown. Deliberately not serialized.
 	unique_ptr<CTEFilterDependency> filter_dependency;
+	unique_ptr<CTEFilterPushdownInfo> filter_pushdown;
 
 public:
 	InsertionOrderPreservingMap<string> ParamsToString() const override;

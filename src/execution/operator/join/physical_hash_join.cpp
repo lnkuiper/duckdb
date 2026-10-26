@@ -58,6 +58,9 @@ PhysicalHashJoin::PhysicalHashJoin(PhysicalPlan &physical_plan, LogicalOperator 
       delim_types(std::move(delim_types)) {
 	D_ASSERT(join_type != JoinType::MARK || !predicate);
 	filter_pushdown = std::move(pushdown_info_p);
+	if (filter_pushdown) {
+		filter_pushdown->RegisterProducer(*this);
+	}
 
 	children.push_back(left);
 	children.push_back(right);
@@ -1646,6 +1649,12 @@ bool JoinFilterPushdownInfo::TryRegisterPrefixRangeFilter(const JoinFilterPushdo
 
 	DeferRuntimeFilter(DeferredRuntimeFilterType::PREFIX_RANGE, op, info, column, filter_col_idx, gstate);
 	return true;
+}
+
+void JoinFilterPushdownInfo::RegisterProducer(const PhysicalOperator &op) const {
+	for (auto &target : probe_info) {
+		target.dynamic_filters->RegisterProducer(op);
+	}
 }
 
 unique_ptr<DataChunk> JoinFilterPushdownInfo::FinalizeMinMax(JoinFilterGlobalState &gstate) const {

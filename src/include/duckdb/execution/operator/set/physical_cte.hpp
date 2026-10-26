@@ -16,6 +16,7 @@ class ColumnDataCollection;
 class Pipeline;
 class PipelineBroadcastExchange;
 class RecursiveCTEState;
+class DynamicTableFilterGroup;
 
 enum class CTEExecutionMode : uint8_t { MATERIALIZED, STREAMING_FANOUT, HYBRID_FANOUT };
 enum class CTEPipelineSelectionState : uint8_t { UNRESOLVED, RESOLVED };
@@ -67,6 +68,7 @@ public:
 	~PhysicalCTE() override;
 
 	vector<const_reference<PhysicalOperator>> cte_scans;
+	vector<shared_ptr<DynamicTableFilterGroup>> filter_groups;
 
 	shared_ptr<ColumnDataCollection> working_table;
 	shared_ptr<PipelineBroadcastExchange> exchange;
@@ -133,6 +135,7 @@ public:
 
 private:
 	void RegisterBatchPreference(Pipeline &pipeline);
+	void UpdateFilterGroups();
 };
 
 } // namespace duckdb

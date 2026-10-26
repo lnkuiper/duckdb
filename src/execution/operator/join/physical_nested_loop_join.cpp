@@ -19,6 +19,9 @@ PhysicalNestedLoopJoin::PhysicalNestedLoopJoin(PhysicalPlan &physical_plan, Logi
     : PhysicalComparisonJoin(physical_plan, op, PhysicalOperatorType::NESTED_LOOP_JOIN, std::move(conds), join_type,
                              estimated_cardinality) {
 	filter_pushdown = std::move(pushdown_info_p);
+	if (filter_pushdown) {
+		filter_pushdown->RegisterProducer(*this);
+	}
 	D_ASSERT(join_type != JoinType::MARK || (conditions.size() == 1 && !predicate));
 	track_unknown =
 	    join_type == JoinType::MARK && (conditions[0].GetLHS().GetReturnType().id() == LogicalTypeId::TUPLE ||
