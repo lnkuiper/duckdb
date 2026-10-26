@@ -13,6 +13,7 @@
 #include "duckdb/common/reference_map.hpp"
 #include "duckdb/common/types.hpp"
 #include "duckdb/common/map.hpp"
+#include "duckdb/common/atomic.hpp"
 
 namespace duckdb {
 
@@ -113,18 +114,69 @@ private:
 	vector<unique_ptr<TableFilter>> multi_column_filters;
 };
 
+class DynamicTableFilterGroup;
+
 class DynamicTableFilterSet {
 public:
+	explicit DynamicTableFilterSet(bool require_registration = false);
+
+	void RegisterProducer(const PhysicalOperator &op);
+	//! Reset a producer contribution and its availability for a new execution.
+	void ResetFilters(const PhysicalOperator &op, bool enabled);
 	void ClearFilters(const PhysicalOperator &op);
 	void PushFilter(const PhysicalOperator &op, ProjectionIndex column_index, unique_ptr<TableFilter> filter);
 
+	//! Groups are attached during planning; registered-producer leaves cannot contain groups.
+	void AddGroup(shared_ptr<DynamicTableFilterGroup> group);
+	vector<shared_ptr<DynamicTableFilterSet>> GetActiveGroupFilters() const;
 	bool HasFilters() const;
 	unique_ptr<TableFilterSet> GetFinalTableFilters(const PhysicalTableScan &scan,
 	                                                optional_ptr<TableFilterSet> existing_filters) const;
 
 private:
+	friend class DynamicTableFilterGroup;
+
+	bool HasRegisteredProducers() const;
+	void ResetRegisteredProducers();
+	unique_ptr<TableFilterSet> CopyFilters(optional_ptr<TableFilterSet> existing_filters = nullptr) const;
+	vector<shared_ptr<DynamicTableFilterGroup>> GetGroups() const;
+
+	struct FilterEntry {
+		bool enabled = true;
+		unique_ptr<TableFilterSet> filters;
+	};
+
+	const bool require_registration;
 	mutable mutex lock;
-	reference_map_t<const PhysicalOperator, unique_ptr<TableFilterSet>> filters;
+	reference_map_t<const PhysicalOperator, FilterEntry> filters;
+	vector<shared_ptr<DynamicTableFilterGroup>> groups;
+};
+
+//! A bounded disjunction of consumer conjunctions, shared by a scan and its CTE owner.
+class DynamicTableFilterGroup {
+public:
+	explicit DynamicTableFilterGroup(vector<unique_ptr<TableFilterSet>> static_filters);
+
+	idx_t ConsumerCount() const;
+	shared_ptr<DynamicTableFilterSet> GetConsumerFilters(idx_t consumer_idx) const;
+	bool HasPotentialFilters() const;
+	bool HasFilters() const;
+	bool IsActive() const;
+	void SetActive(bool enabled);
+	//! Reset all registered producers, including those absent from the next schedule.
+	void Reset();
+	void PushFilterSnapshot(TableFilterSet &result) const;
+
+private:
+	struct ConsumerFilters {
+		explicit ConsumerFilters(unique_ptr<TableFilterSet> static_filters);
+
+		unique_ptr<TableFilterSet> static_filters;
+		shared_ptr<DynamicTableFilterSet> runtime_filters;
+	};
+
+	vector<ConsumerFilters> consumers;
+	atomic<bool> active {false};
 };
 
 } // namespace duckdb

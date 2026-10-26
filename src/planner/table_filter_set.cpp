@@ -449,55 +449,277 @@ const vector<unique_ptr<TableFilter>> &TableFilterSet::GetMultiColumnFilters() c
 	return multi_column_filters;
 }
 
+static bool HasAnyFilters(const TableFilterSet &filters) {
+	return filters.HasFilters() || filters.HasMultiColumnFilters();
+}
+
+static void AppendTableFilters(TableFilterSet &result, const TableFilterSet &filters) {
+	for (auto &entry : filters) {
+		result.PushFilter(entry.GetIndex(), entry.Filter().Cast<ExpressionFilter>().Copy());
+	}
+	for (auto &filter : filters.GetMultiColumnFilters()) {
+		result.PushMultiColumnFilter(filter->Cast<ExpressionFilter>().Copy());
+	}
+}
+
+DynamicTableFilterSet::DynamicTableFilterSet(bool require_registration_p)
+    : require_registration(require_registration_p) {
+}
+
+void DynamicTableFilterSet::RegisterProducer(const PhysicalOperator &op) {
+	lock_guard<mutex> l(lock);
+	auto entry = filters.find(op);
+	if (entry == filters.end()) {
+		filters[op].enabled = !require_registration;
+	}
+}
+
+void DynamicTableFilterSet::ResetFilters(const PhysicalOperator &op, bool enabled) {
+	lock_guard<mutex> l(lock);
+	if (require_registration && filters.find(op) == filters.end()) {
+		return;
+	}
+	auto &entry = filters[op];
+	entry.enabled = enabled;
+	entry.filters.reset();
+}
+
+bool DynamicTableFilterSet::HasRegisteredProducers() const {
+	lock_guard<mutex> l(lock);
+	return !filters.empty();
+}
+
+void DynamicTableFilterSet::ResetRegisteredProducers() {
+	lock_guard<mutex> l(lock);
+	D_ASSERT(require_registration);
+	for (auto &entry : filters) {
+		entry.second.enabled = false;
+		entry.second.filters.reset();
+	}
+}
+
 void DynamicTableFilterSet::ClearFilters(const PhysicalOperator &op) {
 	lock_guard<mutex> l(lock);
-	filters.erase(op);
+	auto entry = filters.find(op);
+	if (entry != filters.end()) {
+		entry->second.filters.reset();
+	}
 }
 
 void DynamicTableFilterSet::PushFilter(const PhysicalOperator &op, ProjectionIndex column_index,
                                        unique_ptr<TableFilter> filter) {
 	lock_guard<mutex> l(lock);
-	auto entry = filters.find(op);
-	optional_ptr<TableFilterSet> filter_ptr;
-	if (entry == filters.end()) {
-		auto filter_set = make_uniq<TableFilterSet>();
-		filter_ptr = filter_set.get();
-		filters[op] = std::move(filter_set);
-	} else {
-		filter_ptr = entry->second.get();
+	if (require_registration && filters.find(op) == filters.end()) {
+		return;
 	}
-	filter_ptr->PushFilter(column_index, std::move(filter));
+	auto &entry = filters[op];
+	if (!entry.enabled) {
+		return;
+	}
+	if (!entry.filters) {
+		entry.filters = make_uniq<TableFilterSet>();
+	}
+	entry.filters->PushFilter(column_index, std::move(filter));
+}
+
+void DynamicTableFilterSet::AddGroup(shared_ptr<DynamicTableFilterGroup> group) {
+	if (require_registration || !group) {
+		throw InternalException("Dynamic filter groups require a root filter set");
+	}
+	lock_guard<mutex> l(lock);
+	groups.push_back(std::move(group));
+}
+
+vector<shared_ptr<DynamicTableFilterGroup>> DynamicTableFilterSet::GetGroups() const {
+	lock_guard<mutex> l(lock);
+	return groups;
+}
+
+vector<shared_ptr<DynamicTableFilterSet>> DynamicTableFilterSet::GetActiveGroupFilters() const {
+	vector<shared_ptr<DynamicTableFilterSet>> result;
+	for (auto &group : GetGroups()) {
+		if (!group->IsActive() || !group->HasPotentialFilters()) {
+			continue;
+		}
+		for (idx_t i = 0; i < group->ConsumerCount(); i++) {
+			result.push_back(group->GetConsumerFilters(i));
+		}
+	}
+	return result;
 }
 
 bool DynamicTableFilterSet::HasFilters() const {
+	{
+		lock_guard<mutex> l(lock);
+		for (auto &entry : filters) {
+			if (entry.second.enabled && entry.second.filters && HasAnyFilters(*entry.second.filters)) {
+				return true;
+			}
+		}
+	}
+	for (auto &group : GetGroups()) {
+		if (group->HasFilters()) {
+			return true;
+		}
+	}
+	return false;
+}
+
+unique_ptr<TableFilterSet> DynamicTableFilterSet::CopyFilters(optional_ptr<TableFilterSet> existing_filters) const {
+	auto result = make_uniq<TableFilterSet>();
+	if (existing_filters) {
+		AppendTableFilters(*result, *existing_filters);
+	}
 	lock_guard<mutex> l(lock);
-	return !filters.empty();
+	for (auto &entry : filters) {
+		if (entry.second.enabled && entry.second.filters) {
+			AppendTableFilters(*result, *entry.second.filters);
+		}
+	}
+	return result;
 }
 
 unique_ptr<TableFilterSet>
 DynamicTableFilterSet::GetFinalTableFilters(const PhysicalTableScan &scan,
                                             optional_ptr<TableFilterSet> existing_filters) const {
-	lock_guard<mutex> l(lock);
-	D_ASSERT(!filters.empty());
-	auto result = make_uniq<TableFilterSet>();
-	if (existing_filters) {
-		for (auto &filter_entry : *existing_filters) {
-			result->PushFilter(filter_entry.GetIndex(), filter_entry.Filter().Cast<ExpressionFilter>().Copy());
-		}
-		for (const auto &filter : existing_filters->GetMultiColumnFilters()) {
-			result->PushMultiColumnFilter(
-			    ExpressionFilter::GetExpressionFilter(*filter, "DynamicTableFilterSet::GetFinalTableFilters").Copy());
-		}
+	auto result = CopyFilters(existing_filters);
+	for (auto &group : GetGroups()) {
+		group->PushFilterSnapshot(*result);
 	}
-	for (auto &entry : filters) {
-		for (auto &filter_entry : *entry.second) {
-			result->PushFilter(filter_entry.GetIndex(), filter_entry.Filter().Cast<ExpressionFilter>().Copy());
-		}
-	}
-	if (!result->HasFilters() && !result->HasMultiColumnFilters()) {
+	if (!HasAnyFilters(*result)) {
 		return nullptr;
 	}
 	return result;
+}
+
+DynamicTableFilterGroup::ConsumerFilters::ConsumerFilters(unique_ptr<TableFilterSet> static_filters_p)
+    : static_filters(std::move(static_filters_p)), runtime_filters(make_shared_ptr<DynamicTableFilterSet>(true)) {
+}
+
+DynamicTableFilterGroup::DynamicTableFilterGroup(vector<unique_ptr<TableFilterSet>> static_filters) {
+	for (auto &filters : static_filters) {
+		consumers.emplace_back(std::move(filters));
+	}
+}
+
+idx_t DynamicTableFilterGroup::ConsumerCount() const {
+	return consumers.size();
+}
+
+shared_ptr<DynamicTableFilterSet> DynamicTableFilterGroup::GetConsumerFilters(idx_t consumer_idx) const {
+	return consumers.at(consumer_idx).runtime_filters;
+}
+
+bool DynamicTableFilterGroup::HasPotentialFilters() const {
+	if (consumers.empty()) {
+		return false;
+	}
+	for (auto &consumer : consumers) {
+		if ((!consumer.static_filters || !HasAnyFilters(*consumer.static_filters)) &&
+		    !consumer.runtime_filters->HasRegisteredProducers()) {
+			return false;
+		}
+	}
+	return true;
+}
+
+bool DynamicTableFilterGroup::HasFilters() const {
+	if (!IsActive() || consumers.empty()) {
+		return false;
+	}
+	for (auto &consumer : consumers) {
+		if ((!consumer.static_filters || !HasAnyFilters(*consumer.static_filters)) &&
+		    !consumer.runtime_filters->HasFilters()) {
+			return false;
+		}
+	}
+	return true;
+}
+
+bool DynamicTableFilterGroup::IsActive() const {
+	return active;
+}
+
+void DynamicTableFilterGroup::SetActive(bool enabled) {
+	active = enabled;
+}
+
+void DynamicTableFilterGroup::Reset() {
+	active = false;
+	for (auto &consumer : consumers) {
+		consumer.runtime_filters->ResetRegisteredProducers();
+	}
+}
+
+static void AppendFilterExpressions(const TableFilterSet &filters, vector<unique_ptr<Expression>> &expressions,
+                                    vector<ProjectionIndex> &columns) {
+	auto append = [&](const ExpressionFilter &filter, const vector<ProjectionIndex> &inputs) {
+		vector<idx_t> indexes;
+		for (auto column : inputs) {
+			idx_t index = 0;
+			for (; index < columns.size(); index++) {
+				if (columns[index] == column) {
+					break;
+				}
+			}
+			if (index == columns.size()) {
+				columns.push_back(column);
+			}
+			indexes.push_back(index);
+		}
+		auto expression = filter.expr->Copy();
+		ExpressionIterator::VisitExpressionMutable<BoundReferenceExpression>(
+		    expression, [&](BoundReferenceExpression &ref, unique_ptr<Expression> &) {
+			    ref.IndexMutable() = indexes.at(ref.Index());
+		    });
+		expressions.push_back(std::move(expression));
+	};
+	for (auto &entry : filters) {
+		append(entry.Filter().Cast<ExpressionFilter>(), {entry.GetIndex()});
+	}
+	for (auto &filter : filters.GetMultiColumnFilters()) {
+		auto &expression_filter = filter->Cast<ExpressionFilter>();
+		append(expression_filter, expression_filter.column_indexes);
+	}
+}
+
+void DynamicTableFilterGroup::PushFilterSnapshot(TableFilterSet &result) const {
+	if (!IsActive() || consumers.empty()) {
+		return;
+	}
+	auto disjunction = make_uniq<BoundConjunctionExpression>(ExpressionType::CONJUNCTION_OR);
+	vector<ProjectionIndex> columns;
+	for (auto &consumer : consumers) {
+		auto conjunction = make_uniq<BoundConjunctionExpression>(ExpressionType::CONJUNCTION_AND);
+		auto &children = conjunction->GetChildrenMutable();
+		if (consumer.static_filters) {
+			AppendFilterExpressions(*consumer.static_filters, children, columns);
+		}
+		auto runtime_filters = consumer.runtime_filters->CopyFilters();
+		AppendFilterExpressions(*runtime_filters, children, columns);
+		if (children.empty()) {
+			return;
+		}
+		if (children.size() == 1) {
+			disjunction->GetChildrenMutable().push_back(std::move(children[0]));
+		} else {
+			disjunction->GetChildrenMutable().push_back(std::move(conjunction));
+		}
+	}
+	if (columns.empty()) {
+		return;
+	}
+	unique_ptr<Expression> expression;
+	if (disjunction->GetChildren().size() == 1) {
+		expression = std::move(disjunction->GetChildrenMutable()[0]);
+	} else {
+		expression = std::move(disjunction);
+	}
+	if (columns.size() == 1) {
+		result.PushFilter(columns[0], make_uniq<ExpressionFilter>(std::move(expression)));
+	} else {
+		result.PushMultiColumnFilter(make_uniq<ExpressionFilter>(std::move(expression), std::move(columns)));
+	}
 }
 
 map<ProjectionIndex, unique_ptr<TableFilter>>

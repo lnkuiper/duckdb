@@ -462,7 +462,7 @@ private:
 		sel.Initialize(result_sel);
 	}
 
-	optional_ptr<PrefixRangeFilter> filter;
+	shared_ptr<const PrefixRangeFilter> filter;
 	bool filters_null_values;
 	SelectionVector local_sel;
 	SelectionVector result_sel;

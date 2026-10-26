@@ -93,14 +93,14 @@ TEST_CASE("Prefix range filter prune handles all-NULL and missing statistics", "
 	key_data[0] = 1;
 	key_data[1] = 100;
 
-	auto filter = PrefixRangeFilter::CreatePrefixRangeFilter(LogicalType::BIGINT);
+	shared_ptr<PrefixRangeFilter> filter = PrefixRangeFilter::CreatePrefixRangeFilter(LogicalType::BIGINT);
 	filter->Initialize(context, 2, Value::BIGINT(1), Value::BIGINT(100), 1ULL << 26);
 	auto build_state = filter->InitializeBuildState(context);
 	filter->InsertKeys(keys, *build_state);
 	filter->MergeBuildState(*build_state);
 	REQUIRE(filter->IsInitialized());
 
-	auto make_expr = [](optional_ptr<PrefixRangeFilter> prf, bool filters_null_values) {
+	auto make_expr = [](shared_ptr<const PrefixRangeFilter> prf, bool filters_null_values) {
 		vector<unique_ptr<Expression>> children;
 		children.push_back(make_uniq<BoundReferenceExpression>(LogicalType::BIGINT, 0ULL));
 		return make_uniq<BoundFunctionExpression>(
@@ -119,16 +119,16 @@ TEST_CASE("Prefix range filter prune handles all-NULL and missing statistics", "
 	all_null.SetHasNull();
 	auto unknown = BaseStatistics::CreateUnknown(LogicalType::BIGINT);
 
-	auto null_rejecting = make_expr(filter.get(), true);
+	auto null_rejecting = make_expr(filter, true);
 	REQUIRE(prune(*null_rejecting, &all_null) == FilterPropagateResult::FILTER_ALWAYS_FALSE);
 	REQUIRE(prune(*null_rejecting, &unknown) == FilterPropagateResult::NO_PRUNING_POSSIBLE);
 	REQUIRE(prune(*null_rejecting, nullptr) == FilterPropagateResult::NO_PRUNING_POSSIBLE);
 
-	auto null_keeping = make_expr(filter.get(), false);
+	auto null_keeping = make_expr(filter, false);
 	REQUIRE(prune(*null_keeping, &all_null) == FilterPropagateResult::NO_PRUNING_POSSIBLE);
 
-	auto uninitialized = PrefixRangeFilter::CreatePrefixRangeFilter(LogicalType::BIGINT);
-	auto no_build = make_expr(uninitialized.get(), true);
+	shared_ptr<PrefixRangeFilter> uninitialized = PrefixRangeFilter::CreatePrefixRangeFilter(LogicalType::BIGINT);
+	auto no_build = make_expr(uninitialized, true);
 	REQUIRE(prune(*no_build, &all_null) == FilterPropagateResult::NO_PRUNING_POSSIBLE);
 }
 
@@ -338,7 +338,7 @@ TEST_CASE("Dense numeric prefix filters prune only contained non-NULL ranges", "
 		after = Value::BIGINT(33);
 	}
 
-	auto filter = PrefixRangeFilter::CreatePrefixRangeFilter(type);
+	shared_ptr<PrefixRangeFilter> filter = PrefixRangeFilter::CreatePrefixRangeFilter(type);
 	filter->Initialize(context, keys.size(), min_value, max_value, 128);
 	auto state = filter->InitializeBuildState(context);
 	filter->InsertKeys(keys, *state);
@@ -355,7 +355,7 @@ TEST_CASE("Dense numeric prefix filters prune only contained non-NULL ranges", "
 	children.push_back(make_uniq<BoundReferenceExpression>(type, idx_t(0)));
 	auto expression = make_uniq<BoundFunctionExpression>(
 	    BoundScalarFunction(PrefixRangeScalarFun::GetFunction(type)), std::move(children),
-	    make_uniq<PrefixRangeFunctionData>(filter.get(), true, "k", type, 0.0f, idx_t(0)));
+	    make_uniq<PrefixRangeFunctionData>(filter, true, "k", type, 0.0f, idx_t(0)));
 	auto stats = BaseStatistics::CreateEmpty(type);
 	stats.SetHasNoNull();
 	NumericStats::SetMin(stats, min_value);

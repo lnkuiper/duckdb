@@ -210,11 +210,12 @@ public:
 
 //! FunctionData for prefix range internal function
 struct PrefixRangeFunctionData : public FunctionData {
-	PrefixRangeFunctionData(optional_ptr<PrefixRangeFilter> filter_p, bool filters_null_values_p,
+	PrefixRangeFunctionData(shared_ptr<const PrefixRangeFilter> filter_p, bool filters_null_values_p,
 	                        const string &key_column_name_p, const LogicalType &key_type_p,
 	                        float selectivity_threshold_p, idx_t n_vectors_to_check_p);
 
-	optional_ptr<PrefixRangeFilter> filter;
+	//! Snapshots retain the completed payload after the join drops its ownership.
+	shared_ptr<const PrefixRangeFilter> filter;
 	bool filters_null_values;
 	string key_column_name;
 	LogicalType key_type;
