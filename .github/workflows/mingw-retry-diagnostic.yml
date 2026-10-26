@@ -1,0 +1,70 @@
+name: MinGW retry-wait A/B diagnosis
+on:
+  push:
+    branches:
+      - v2.1-ci-mingw-27782-20261026
+permissions:
+  contents: read
+jobs:
+  compare:
+    runs-on: windows-2022
+    timeout-minutes: 100
+    env:
+      GEN: ninja
+      CC: C:/rtools42/x86_64-w64-mingw32.static.posix/bin/gcc.exe
+      CXX: C:/rtools42/x86_64-w64-mingw32.static.posix/bin/g++.exe
+      DUCKDB_CAPABILITIES: httplib loadable_extensions
+      CMAKE_BUILD_PARALLEL_LEVEL: '4'
+    steps:
+      - uses: actions/checkout@v6
+        with:
+          path: diagnostic
+          persist-credentials: false
+      - uses: actions/checkout@v6
+        with:
+          repository: duckdb/duckdb
+          ref: 1e0351e4d2c44dda2c00475ed578ef74bdc87d81
+          path: base
+          persist-credentials: false
+      - uses: actions/checkout@v6
+        with:
+          repository: duckdb/duckdb
+          ref: 1d65d79d577b8e5079ace0dc6389649ff7992f7f
+          path: head
+          persist-credentials: false
+      - uses: actions/setup-python@v6
+        with:
+          python-version: '3.12'
+      - uses: r-lib/actions/setup-r@d3c5be51b12e724e68f33216ca3c148b66d5f0b6
+        with:
+          r-version: devel
+          update-rtools: true
+          rtools-version: '42'
+      - name: Build tools
+        shell: pwsh
+        run: |
+          choco install make ninja --yes --no-progress
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+          'C:/Program Files/Git/bin' | Out-File -Append -Encoding utf8 $env:GITHUB_PATH
+          'C:/ProgramData/Chocolatey/bin' | Out-File -Append -Encoding utf8 $env:GITHUB_PATH
+          'C:/rtools42/x86_64-w64-mingw32.static.posix/bin' | Out-File -Append -Encoding utf8 $env:GITHUB_PATH
+      - name: Runtime and standalone wait probe
+        shell: pwsh
+        run: |
+          g++ --version
+          g++ -std=c++17 -O2 diagnostic/.github/ci_diagnostics/mingw_retry/probe.cpp -o sleep_probe.exe
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+          New-Item -ItemType Directory -Force evidence | Out-Null
+          ./sleep_probe.exe | Tee-Object evidence/sleep-probe.log
+      - name: Exact upstream base
+        shell: pwsh
+        run: python diagnostic/.github/ci_diagnostics/mingw_retry/driver.py base
+      - name: Exact tested merge
+        shell: pwsh
+        run: python diagnostic/.github/ci_diagnostics/mingw_retry/driver.py head
+      - uses: actions/upload-artifact@v7
+        if: always()
+        with:
+          name: mingw-retry-wait-evidence
+          path: evidence
+          retention-days: 7
