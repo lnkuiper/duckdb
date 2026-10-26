@@ -121,8 +121,8 @@ public:
 	explicit DynamicTableFilterSet(bool require_registration = false);
 
 	void RegisterProducer(const PhysicalOperator &op);
-	//! Reset a producer contribution and its availability for a new execution.
-	void ResetFilters(const PhysicalOperator &op, bool enabled);
+	//! Start a producer's contribution for this execution.
+	void InitializeProducer(const PhysicalOperator &op);
 	void ClearFilters(const PhysicalOperator &op);
 	void PushFilter(const PhysicalOperator &op, ProjectionIndex column_index, unique_ptr<TableFilter> filter);
 
@@ -142,7 +142,7 @@ private:
 	vector<shared_ptr<DynamicTableFilterGroup>> GetGroups() const;
 
 	struct FilterEntry {
-		bool enabled = true;
+		bool initialized = true;
 		unique_ptr<TableFilterSet> filters;
 	};
 

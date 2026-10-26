@@ -298,7 +298,7 @@ unique_ptr<JoinFilterGlobalState> JoinFilterPushdownInfo::GetGlobalState(ClientC
 	// clear any previously set filters
 	// we can have previous filters for this operator in case of e.g. recursive CTEs
 	for (auto &info : probe_info) {
-		info.dynamic_filters->ClearFilters(op);
+		info.dynamic_filters->InitializeProducer(op);
 	}
 	auto result = make_uniq<JoinFilterGlobalState>();
 	result->global_aggregate_state =

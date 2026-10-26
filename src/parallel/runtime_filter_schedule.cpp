@@ -108,6 +108,9 @@ void ScheduleRuntimeFilters(PipelineSchedule &schedule) {
 			continue;
 		}
 		sources[*scan.dynamic_filters].push_back(stage_idx);
+		for (auto &filters : scan.dynamic_filters->GetActiveGroupFilters()) {
+			sources[*filters].push_back(stage_idx);
+		}
 	}
 
 	for (auto &producer_ref : producers) {

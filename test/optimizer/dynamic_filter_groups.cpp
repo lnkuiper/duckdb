@@ -7,12 +7,115 @@
 #include "duckdb/execution/operator/scan/physical_table_scan.hpp"
 #include "duckdb/execution/physical_plan_generator.hpp"
 #include "duckdb/planner/expression/bound_function_expression.hpp"
+#include "duckdb/planner/expression/bound_conjunction_expression.hpp"
 #include "duckdb/planner/expression/bound_reference_expression.hpp"
 #include "duckdb/planner/expression_iterator.hpp"
 #include "duckdb/planner/filter/expression_filter.hpp"
 #include "duckdb/planner/filter/table_filter_functions.hpp"
+#include "duckdb/planner/table_filter_state.hpp"
 
 using namespace duckdb;
+
+TEST_CASE("Disjunctive scan filters preserve selection, validity and repeated execution", "[dynamic_filter_groups]") {
+	DuckDB db(nullptr);
+	Connection con(db);
+	const auto strings = GENERATE(false, true);
+	const auto optional = GENERATE(false, true);
+	const auto nested = GENERATE(false, true);
+	const auto type = strings ? LogicalType::VARCHAR : LogicalType::INTEGER;
+	auto value = [&](int32_t number) {
+		return strings ? Value(std::to_string(number)) : Value::INTEGER(number);
+	};
+	auto comparison = [&](ExpressionType comparison_type, int32_t number) {
+		return ExpressionFilter::CreateComparisonFilter(comparison_type, value(number))->expr->Copy();
+	};
+	auto disjunction = make_uniq<BoundConjunctionExpression>(ExpressionType::CONJUNCTION_OR);
+	for (int32_t lower : {2, 4}) {
+		auto conjunction = make_uniq<BoundConjunctionExpression>(ExpressionType::CONJUNCTION_AND);
+		conjunction->GetChildrenMutable().push_back(comparison(ExpressionType::COMPARE_GREATERTHANOREQUALTO, lower));
+		conjunction->GetChildrenMutable().push_back(
+		    comparison(ExpressionType::COMPARE_LESSTHANOREQUALTO, lower == 2 ? 5 : 8));
+		disjunction->GetChildrenMutable().push_back(std::move(conjunction));
+	}
+	if (optional) {
+		disjunction->GetChildrenMutable().push_back(
+		    CreateOptionalFilterExpression(comparison(ExpressionType::COMPARE_EQUAL, 0), type));
+	}
+	unique_ptr<Expression> expression = std::move(disjunction);
+	if (nested) {
+		auto conjunction = make_uniq<BoundConjunctionExpression>(ExpressionType::CONJUNCTION_AND);
+		conjunction->GetChildrenMutable().push_back(std::move(expression));
+		conjunction->GetChildrenMutable().push_back(comparison(ExpressionType::COMPARE_LESSTHAN, 7));
+		expression = std::move(conjunction);
+	}
+	ExpressionFilterState state(*con.context, *expression);
+	REQUIRE(state.fast_executor);
+	auto check = [&](Vector &input, SelectionVector &selection, idx_t &count) {
+		DataChunk chunk;
+		chunk.data.emplace_back(Vector::Ref(input));
+		SelectionVector expected(STANDARD_VECTOR_SIZE);
+		auto expected_count =
+		    state.executor->SelectExpression(chunk, expected, selection.IsSet() ? &selection : nullptr, count);
+		state.fast_executor->FilterSelection(selection, input, input.size(), count);
+		REQUIRE(count == expected_count);
+		for (idx_t i = 0; i < count; i++) {
+			REQUIRE(selection.get_index(i) == expected.get_index(i));
+		}
+	};
+	for (idx_t size : {idx_t(0), idx_t(1), idx_t(31), idx_t(STANDARD_VECTOR_SIZE)}) {
+		Vector source(type, size);
+		if (strings) {
+			auto writer = FlatVector::Writer<string_t>(source, size);
+			for (idx_t i = 0; i < size; i++) {
+				if (i % 7 == 0) {
+					writer.WriteNull();
+				} else {
+					writer.WriteValue(std::to_string(i % 10));
+				}
+			}
+		} else {
+			auto writer = FlatVector::Writer<int32_t>(source, size);
+			for (idx_t i = 0; i < size; i++) {
+				if (i % 7 == 0) {
+					writer.WriteNull();
+				} else {
+					writer.WriteValue(int32_t(i % 10));
+				}
+			}
+		}
+		for (idx_t representation = 0; representation < 4; representation++) {
+			Vector input(Vector::Ref(source));
+			if (representation == 1) {
+				SelectionVector dictionary(size);
+				for (idx_t i = 0; i < size; i++) {
+					dictionary.set_index(i, (size - i - 1) / 2);
+				}
+				input.Slice(dictionary, size);
+			} else if (representation >= 2) {
+				Vector constant(representation == 2 ? value(4) : Value(type), count_t(size));
+				input.Reference(constant);
+			}
+			for (bool sparse : {false, true}) {
+				SelectionVector selected;
+				idx_t count = size;
+				if (sparse) {
+					selected.Initialize(size);
+					count = 0;
+					for (idx_t i = 1; i < size; i += 3) {
+						selected.set_index(count++, i);
+					}
+				}
+				check(input, selected, count);
+				check(input, selected, count);
+				if (selected.IsSet() && count >= 4) {
+					selected.ShiftLeft(count - 4, 4);
+					count = 4;
+					check(input, selected, count);
+				}
+			}
+		}
+	}
+}
 
 static unique_ptr<TableFilterSet> GroupTestStaticFilter(idx_t column, int32_t value) {
 	auto result = make_uniq<TableFilterSet>();
@@ -75,6 +178,23 @@ struct FilterGroupTest {
 	PhysicalTableScan &scan;
 };
 
+TEST_CASE("Identical consumer predicates retain one copy of the existing static filter", "[dynamic_filter_groups]") {
+	FilterGroupTest test;
+	DynamicTableFilterSet root;
+	vector<unique_ptr<TableFilterSet>> static_filters;
+	static_filters.push_back(GroupTestStaticFilter(0, 1));
+	static_filters.push_back(GroupTestStaticFilter(0, 1));
+	auto group = make_shared_ptr<DynamicTableFilterGroup>(std::move(static_filters));
+	group->SetActive(true);
+	root.AddGroup(group);
+	auto existing = GroupTestStaticFilter(0, 1);
+	auto snapshot = root.GetFinalTableFilters(test.scan, existing.get());
+	REQUIRE(snapshot);
+	REQUIRE(snapshot->GetFilterByColumnIndex(ProjectionIndex(0))
+	            .Cast<ExpressionFilter>()
+	            .Equals(existing->GetFilterByColumnIndex(ProjectionIndex(0)).Cast<ExpressionFilter>()));
+}
+
 TEST_CASE("Consumer filter groups preserve every alternative through partial publication", "[dynamic_filter_groups]") {
 	FilterGroupTest test;
 	DynamicTableFilterSet root;
@@ -93,7 +213,7 @@ TEST_CASE("Consumer filter groups preserve every alternative through partial pub
 	group->SetActive(true);
 	REQUIRE(root.GetActiveGroupFilters().size() == 2);
 
-	first->ResetFilters(test.first, true);
+	first->InitializeProducer(test.first);
 	test.Push(*first, test.first, 1, 2);
 	auto partial = root.GetFinalTableFilters(test.scan, nullptr);
 	REQUIRE(partial);
@@ -103,7 +223,7 @@ TEST_CASE("Consumer filter groups preserve every alternative through partial pub
 	REQUIRE(EvaluateGroupTestFilter(*test.con.context, *partial, {Value::INTEGER(3), Value::INTEGER(2)}));
 	REQUIRE(EvaluateGroupTestFilter(*test.con.context, *partial, {Value::INTEGER(3), Value::INTEGER(4)}));
 
-	second->ResetFilters(test.second, true);
+	second->InitializeProducer(test.second);
 	test.Push(*second, test.second, 1, 4);
 	auto complete = root.GetFinalTableFilters(test.scan, nullptr);
 	REQUIRE(complete);
@@ -148,14 +268,14 @@ TEST_CASE("Unrestricted consumer alternatives weaken groups without weakening or
 	auto second = group->GetConsumerFilters(1);
 	first->RegisterProducer(test.first);
 	group->SetActive(true);
-	first->ResetFilters(test.first, true);
+	first->InitializeProducer(test.first);
 	test.Push(*first, test.first, 0, 1);
 	REQUIRE_FALSE(group->HasPotentialFilters());
 	REQUIRE(root.GetActiveGroupFilters().empty());
 	REQUIRE_FALSE(root.HasFilters());
 	REQUIRE_FALSE(root.GetFinalTableFilters(test.scan, nullptr));
 
-	second->ResetFilters(test.second, true);
+	second->InitializeProducer(test.second);
 	test.Push(*second, test.second, 0, 2);
 	REQUIRE_FALSE(second->HasFilters());
 	second->RegisterProducer(test.second);
@@ -165,7 +285,7 @@ TEST_CASE("Unrestricted consumer alternatives weaken groups without weakening or
 	REQUIRE(root.GetActiveGroupFilters().size() == 2);
 	REQUIRE_FALSE(root.HasFilters());
 
-	second->ResetFilters(test.second, true);
+	second->InitializeProducer(test.second);
 	test.Push(*second, test.second, 0, 2);
 	REQUIRE(root.HasFilters());
 	auto snapshot = root.GetFinalTableFilters(test.scan, nullptr);
@@ -232,8 +352,12 @@ TEST_CASE("Each available producer remains an independent consumer conjunct", "[
 			auto leaf = group->GetConsumerFilters(consumer_idx);
 			leaf->RegisterProducer(test.first);
 			leaf->RegisterProducer(test.second);
-			leaf->ResetFilters(test.first, (mask & (1ULL << (2 * consumer_idx))) != 0);
-			leaf->ResetFilters(test.second, (mask & (1ULL << (2 * consumer_idx + 1))) != 0);
+			if (mask & (1ULL << (2 * consumer_idx))) {
+				leaf->InitializeProducer(test.first);
+			}
+			if (mask & (1ULL << (2 * consumer_idx + 1))) {
+				leaf->InitializeProducer(test.second);
+			}
 			test.Push(*leaf, test.first, 0, int32_t(consumer_idx + 1));
 			test.Push(*leaf, test.second, 1, int32_t(consumer_idx + 3));
 		}
@@ -295,7 +419,7 @@ TEST_CASE("Composed prefix-range snapshots retain their payload after owner rese
 		root.AddGroup(group);
 		auto leaf = group->GetConsumerFilters(0);
 		leaf->RegisterProducer(test.first);
-		leaf->ResetFilters(test.first, true);
+		leaf->InitializeProducer(test.first);
 		shared_ptr<PrefixRangeFilter> payload = PrefixRangeFilter::CreatePrefixRangeFilter(LogicalType::INTEGER);
 		payload->Initialize(*test.con.context, 2, Value::INTEGER(1), Value::INTEGER(3), 128);
 		Vector keys(LogicalType::INTEGER, 2);

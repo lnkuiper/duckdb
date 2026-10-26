@@ -15,6 +15,7 @@
 #include "duckdb/planner/expression/bound_reference_expression.hpp"
 #include "duckdb/planner/expression/bound_conjunction_expression.hpp"
 #include "duckdb/planner/expression_iterator.hpp"
+#include "duckdb/parser/expression_map.hpp"
 #include "duckdb/planner/filter/table_filter_functions.hpp"
 #include "duckdb/common/exception.hpp"
 #include "duckdb/common/string_util.hpp"
@@ -470,17 +471,17 @@ void DynamicTableFilterSet::RegisterProducer(const PhysicalOperator &op) {
 	lock_guard<mutex> l(lock);
 	auto entry = filters.find(op);
 	if (entry == filters.end()) {
-		filters[op].enabled = !require_registration;
+		filters[op].initialized = !require_registration;
 	}
 }
 
-void DynamicTableFilterSet::ResetFilters(const PhysicalOperator &op, bool enabled) {
+void DynamicTableFilterSet::InitializeProducer(const PhysicalOperator &op) {
 	lock_guard<mutex> l(lock);
 	if (require_registration && filters.find(op) == filters.end()) {
 		return;
 	}
 	auto &entry = filters[op];
-	entry.enabled = enabled;
+	entry.initialized = true;
 	entry.filters.reset();
 }
 
@@ -493,7 +494,7 @@ void DynamicTableFilterSet::ResetRegisteredProducers() {
 	lock_guard<mutex> l(lock);
 	D_ASSERT(require_registration);
 	for (auto &entry : filters) {
-		entry.second.enabled = false;
+		entry.second.initialized = false;
 		entry.second.filters.reset();
 	}
 }
@@ -513,7 +514,7 @@ void DynamicTableFilterSet::PushFilter(const PhysicalOperator &op, ProjectionInd
 		return;
 	}
 	auto &entry = filters[op];
-	if (!entry.enabled) {
+	if (!entry.initialized) {
 		return;
 	}
 	if (!entry.filters) {
@@ -552,7 +553,7 @@ bool DynamicTableFilterSet::HasFilters() const {
 	{
 		lock_guard<mutex> l(lock);
 		for (auto &entry : filters) {
-			if (entry.second.enabled && entry.second.filters && HasAnyFilters(*entry.second.filters)) {
+			if (entry.second.initialized && entry.second.filters && HasAnyFilters(*entry.second.filters)) {
 				return true;
 			}
 		}
@@ -572,7 +573,7 @@ unique_ptr<TableFilterSet> DynamicTableFilterSet::CopyFilters(optional_ptr<Table
 	}
 	lock_guard<mutex> l(lock);
 	for (auto &entry : filters) {
-		if (entry.second.enabled && entry.second.filters) {
+		if (entry.second.initialized && entry.second.filters) {
 			AppendTableFilters(*result, *entry.second.filters);
 		}
 	}
@@ -653,6 +654,10 @@ void DynamicTableFilterGroup::Reset() {
 
 static void AppendFilterExpressions(const TableFilterSet &filters, vector<unique_ptr<Expression>> &expressions,
                                     vector<ProjectionIndex> &columns) {
+	expression_set_t seen;
+	for (auto &expression : expressions) {
+		seen.insert(*expression);
+	}
 	auto append = [&](const ExpressionFilter &filter, const vector<ProjectionIndex> &inputs) {
 		vector<idx_t> indexes;
 		for (auto column : inputs) {
@@ -672,7 +677,9 @@ static void AppendFilterExpressions(const TableFilterSet &filters, vector<unique
 		    expression, [&](BoundReferenceExpression &ref, unique_ptr<Expression> &) {
 			    ref.IndexMutable() = indexes.at(ref.Index());
 		    });
-		expressions.push_back(std::move(expression));
+		if (seen.insert(*expression).second) {
+			expressions.push_back(std::move(expression));
+		}
 	};
 	for (auto &entry : filters) {
 		append(entry.Filter().Cast<ExpressionFilter>(), {entry.GetIndex()});
@@ -688,6 +695,7 @@ void DynamicTableFilterGroup::PushFilterSnapshot(TableFilterSet &result) const {
 		return;
 	}
 	auto disjunction = make_uniq<BoundConjunctionExpression>(ExpressionType::CONJUNCTION_OR);
+	expression_set_t alternatives;
 	vector<ProjectionIndex> columns;
 	for (auto &consumer : consumers) {
 		auto conjunction = make_uniq<BoundConjunctionExpression>(ExpressionType::CONJUNCTION_AND);
@@ -700,10 +708,9 @@ void DynamicTableFilterGroup::PushFilterSnapshot(TableFilterSet &result) const {
 		if (children.empty()) {
 			return;
 		}
-		if (children.size() == 1) {
-			disjunction->GetChildrenMutable().push_back(std::move(children[0]));
-		} else {
-			disjunction->GetChildrenMutable().push_back(std::move(conjunction));
+		unique_ptr<Expression> alternative = children.size() == 1 ? std::move(children[0]) : std::move(conjunction);
+		if (alternatives.insert(*alternative).second) {
+			disjunction->GetChildrenMutable().push_back(std::move(alternative));
 		}
 	}
 	if (columns.empty()) {

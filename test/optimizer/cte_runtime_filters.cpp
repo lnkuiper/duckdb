@@ -18,6 +18,7 @@
 #include "duckdb/planner/operator/logical_cteref.hpp"
 #include "duckdb/planner/operator/logical_get.hpp"
 #include "duckdb/planner/operator/logical_materialized_cte.hpp"
+#include "duckdb/planner/operator/logical_set_operation.hpp"
 #include "duckdb/planner/planner.hpp"
 
 using namespace duckdb;
@@ -118,6 +119,13 @@ TEST_CASE("Final CTE filter mapping rejects stale endpoints and unsupported prod
 		auto ref = FindCTEFilterTestOperator<LogicalCTERef>(*plan);
 		REQUIRE(ref);
 		ref->cte_index = TableIndex(999999);
+	}
+	SECTION("Additional current consumer") {
+		auto extra = make_uniq<LogicalCTERef>(TableIndex(999998), cte->table_index, cte->children[0]->types,
+		                                      vector<Identifier> {"k"});
+		cte->children[1] = make_uniq<LogicalSetOperation>(TableIndex(999999), idx_t(1), std::move(cte->children[1]),
+		                                                  std::move(extra), LogicalOperatorType::LOGICAL_UNION, true);
+		cte->children[1]->ResolveOperatorTypes();
 	}
 	SECTION("Changed consumer type") {
 		auto ref = FindCTEFilterTestOperator<LogicalCTERef>(*plan);
@@ -223,7 +231,7 @@ TEST_CASE("CTE pipeline construction resets producers absent from the schedule",
 	leaf->RegisterProducer(absent);
 	for (idx_t iteration = 0; iteration < 2; iteration++) {
 		group->SetActive(true);
-		leaf->ResetFilters(absent, true);
+		leaf->InitializeProducer(absent);
 		leaf->PushFilter(absent, ProjectionIndex(0),
 		                 ExpressionFilter::CreateComparisonFilter(ExpressionType::COMPARE_EQUAL, Value::BIGINT(42)));
 		REQUIRE(leaf->HasFilters());
