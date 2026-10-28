@@ -128,13 +128,13 @@ static unique_ptr<ParsedExpression> TableScanColumnToSQL(const ColumnIndex &inde
 
 static unique_ptr<ParsedExpression> TableFunctionColumn(const LogicalGet &get, const TableRef &function_ref,
                                                         const ColumnIndex &index) {
+	if (index.IsRowNumberColumn() && (get.GetTable() || get.SupportsRowNumber())) {
+		auto row_number = make_uniq<WindowExpression>("system", "main", "row_number");
+		row_number->WindowStartMutable() = WindowBoundary::UNBOUNDED_PRECEDING;
+		row_number->WindowEndMutable() = WindowBoundary::CURRENT_ROW_RANGE;
+		return std::move(row_number);
+	}
 	if (get.GetTable()) {
-		if (index.IsRowNumberColumn()) {
-			auto row_number = make_uniq<WindowExpression>("system", "main", "row_number");
-			row_number->WindowStartMutable() = WindowBoundary::UNBOUNDED_PRECEDING;
-			row_number->WindowEndMutable() = WindowBoundary::CURRENT_ROW_RANGE;
-			return std::move(row_number);
-		}
 		if (!index.IsVirtualColumn()) {
 			auto &column = get.GetTable()->GetColumn(index.ToLogical());
 			auto expression = make_uniq<ColumnRefExpression>(function_ref.column_name_alias[index.GetPrimaryIndex()],
