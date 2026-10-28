@@ -21,14 +21,12 @@
 #include "duckdb/execution/partition_info.hpp"
 #include "duckdb/execution/physical_operator_states.hpp"
 #include "duckdb/execution/progress_data.hpp"
-#include "duckdb/execution/operator_chunk.hpp"
 
 namespace duckdb {
 
 class DictionaryEntry;
 class Event;
 class Executor;
-class Expression;
 class PhysicalOperator;
 class Pipeline;
 class PipelineBuildState;
@@ -106,19 +104,6 @@ public:
 
 public:
 	// Operator interface
-	virtual BatchMetadataInfo RequestedMetadata() const {
-		return BatchMetadataInfo();
-	}
-	virtual BatchMetadataInfo OutputMetadata(const BatchMetadataInfo &input) const {
-		return BatchMetadataInfo();
-	}
-	virtual BatchMetadataInfo RequiredInputMetadata(const BatchMetadataInfo &output) const {
-		return output;
-	}
-	//! Expressions eligible for shared initialization with dense input row positions.
-	virtual optional_ptr<const vector<unique_ptr<Expression>>> GetGlobalExpressions() const {
-		return nullptr;
-	}
 	virtual unique_ptr<OperatorState> GetOperatorState(ExecutionContext &context) const;
 	virtual unique_ptr<GlobalOperatorState> GetGlobalOperatorState(ClientContext &context) const;
 	virtual bool ResetGlobalOperatorState(ClientContext &context, GlobalOperatorState &state) const;
@@ -126,12 +111,6 @@ public:
 	                                   GlobalOperatorState &gstate, OperatorState &state) const;
 	virtual OperatorFinalizeResultType FinalExecute(ExecutionContext &context, DataChunk &chunk,
 	                                                GlobalOperatorState &gstate, OperatorState &state) const;
-	//! Drains this executor's contribution to a batch. FINISHED also supplies the output batch descriptor.
-	virtual OperatorBatchResultType FlushBatch(ExecutionContext &context, DataChunk &output,
-	                                           OperatorBatchInput &input) const {
-		input.local_state.output_metadata.batch = input.batch;
-		return OperatorBatchResultType::FINISHED;
-	}
 	virtual OperatorFinalResultType OperatorFinalize(Pipeline &pipeline, Event &event, ClientContext &context,
 	                                                 OperatorFinalizeInput &input) const;
 
@@ -165,9 +144,6 @@ public:
 
 public:
 	// Source interface
-	virtual BatchMetadataInfo SourceMetadata() const {
-		return BatchMetadataInfo();
-	}
 	virtual unique_ptr<LocalSourceState> GetLocalSourceState(ExecutionContext &context,
 	                                                         GlobalSourceState &gstate) const;
 	virtual unique_ptr<GlobalSourceState> GetGlobalSourceState(ClientContext &context) const;
@@ -202,7 +178,7 @@ public:
 	virtual TableFunctionParallelism SourceParallelism() const;
 
 	virtual bool SupportsPartitioning(const OperatorPartitionInfo &partition_info) const {
-		if (partition_info.RequiresPartitioning()) {
+		if (partition_info.AnyRequired()) {
 			return false;
 		}
 		return true;
@@ -251,10 +227,6 @@ public:
 	virtual SinkNextBatchType NextBatch(ExecutionContext &context, OperatorSinkNextBatchInput &input) const;
 	//! Called after NextBatch when the pipeline minimum advances without subsequent input for this local sink state
 	virtual SinkNextBatchType UpdateMinBatchIndex(ExecutionContext &context, OperatorSinkNextBatchInput &input) const;
-	//! Acknowledges a local batch contribution after all its rows have been accepted.
-	virtual SinkNextBatchType CompleteBatch(ExecutionContext &context, OperatorSinkBatchInput &input) const {
-		return SinkNextBatchType::READY;
-	}
 
 	virtual unique_ptr<LocalSinkState> GetLocalSinkState(ExecutionContext &context) const;
 	virtual unique_ptr<GlobalSinkState> GetGlobalSinkState(ClientContext &context) const;
@@ -338,7 +310,7 @@ public:
 		dict_cache_active = false;
 	}
 
-	unique_ptr<OperatorChunk> cached_chunk;
+	unique_ptr<DataChunk> cached_chunk;
 	bool initialized = false;
 	//! Whether or not the chunk can be cached
 	OperatorCachingMode can_cache_chunk = OperatorCachingMode::NONE;
@@ -370,8 +342,6 @@ public:
 	//! cached.
 	OperatorFinalizeResultType FinalExecute(ExecutionContext &context, DataChunk &chunk, GlobalOperatorState &gstate,
 	                                        OperatorState &state) const final;
-	OperatorBatchResultType FlushBatch(ExecutionContext &context, DataChunk &output,
-	                                   OperatorBatchInput &input) const override;
 
 	bool RequiresFinalExecute() const final {
 		return caching_supported;

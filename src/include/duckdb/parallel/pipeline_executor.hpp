@@ -65,15 +65,13 @@ public:
 	//! Returns true if execution is finished, false if Execute should be called again
 	PipelineExecuteResult Execute(idx_t max_chunks);
 	//! Pushes a chunk from an external producer through this pipeline into the sink
-	PipelineExecuteResult PushExternal(OperatorChunk &input, const OperatorPartitionData &partition_data,
+	PipelineExecuteResult PushExternal(DataChunk &input, const OperatorPartitionData &partition_data,
 	                                   optional_idx source_min_batch_index);
 	//! Advances an externally-fed pipeline to the producer's next batch
 	PipelineExecuteResult NextBatchExternal(const OperatorPartitionData &partition_data,
 	                                        optional_idx source_min_batch_index);
-	//! Drains and acknowledges the specified batch before its producer releases it.
-	PipelineExecuteResult CompleteBatchExternal(const BatchMetadata &batch, optional_idx source_min_batch_index);
-	//! Drain terminal output before the producer releases its minimum; Combine follows afterwards.
-	PipelineExecuteResult FlushExternal(optional_idx source_min_batch_index);
+	//! Completes the current batch of an externally-fed pipeline
+	PipelineExecuteResult FinishBatchExternal(optional_idx source_min_batch_index);
 	//! Propagates a minimum batch index change through an externally-fed pipeline
 	PipelineExecuteResult UpdateMinBatchIndexExternal(optional_idx source_min_batch_index);
 	//! Finalizes an externally-fed pipeline executor after the producer is exhausted
@@ -105,27 +103,10 @@ public:
 private:
 	enum class PipelineInputChunkMode : uint8_t { PUSH_INPUT, RESUME_INPUT };
 	enum class SourceFinishNotificationState : uint8_t { PENDING, SENT };
-	enum class SourceInputPhase : uint8_t { NONE, BATCH, COMPLETE, MINIMUM_UPDATE, ADMIT };
-	enum class BatchTransitionPhase : uint8_t { NONE, FLUSH, COMPLETE, DRAINED, RELEASE };
+	enum class PendingBatchAdvanceState : uint8_t { NONE, NEXT_BATCH, MINIMUM_UPDATE };
 	struct SourceFetchResult {
 		SourceResultType result = SourceResultType::BLOCKED;
 		SourceBatchIndexState batch_index_state = SourceBatchIndexState::UNCHANGED;
-		bool batch_complete = false;
-	};
-	struct OperatorFlushState {
-		bool initialized = false;
-		idx_t operator_idx = 0;
-		bool flush_operator = true;
-		BatchMetadata batch;
-		BatchMetadata output_batch;
-	};
-	struct BatchTransition {
-		BatchTransitionPhase phase = BatchTransitionPhase::NONE;
-		OperatorFlushState flush;
-		OperatorPartitionData next_partition {0};
-		BatchMetadata next_batch;
-		optional_idx external_min_batch_index;
-		bool force = false;
 	};
 
 	//! The pipeline to process
@@ -136,7 +117,7 @@ private:
 	ExecutionContext context;
 
 	//! Intermediate chunks for the operators
-	vector<unique_ptr<OperatorChunk>> intermediate_chunks;
+	vector<unique_ptr<DataChunk>> intermediate_chunks;
 	//! Intermediate states for the operators
 	vector<unique_ptr<OperatorState>> intermediate_states;
 
@@ -150,15 +131,7 @@ private:
 	InterruptState interrupt_state;
 
 	//! The final chunk used for moving data into the sink
-	OperatorChunk final_chunk;
-	//! Incoming rows remain separate while the previous batch's buffers drain.
-	unique_ptr<OperatorChunk> pending_input;
-	SourceFetchResult pending_source_result;
-	SourceInputPhase source_input_phase = SourceInputPhase::NONE;
-	BatchMetadata active_batch;
-	BatchTransition batch_transition;
-	OperatorFlushState terminal_flush;
-	optional_idx external_final_min_batch_index;
+	DataChunk final_chunk;
 
 	//! The operators that are not yet finished executing and have data remaining
 	//! If the stack of in_process_operators is empty, we fetch from the source instead
@@ -190,6 +163,12 @@ private:
 	//! This flag is set when the pipeline gets interrupted by NextBatch -> NextBatch should be called again and the
 	//! source_chunk should be sent through the pipeline
 	bool next_batch_blocked = false;
+	PendingBatchAdvanceState pending_batch_advance_state = PendingBatchAdvanceState::NONE;
+
+	//! Current operator being flushed
+	idx_t flushing_idx;
+	//! Whether the current flushing_idx should be flushed: this needs to be stored to make flushing code re-entrant
+	bool should_flush_current_idx = true;
 	//! Whether this executor has already run at least once
 	bool has_executed = false;
 	//! Whether an externally-fed sink has observed its initial batch
@@ -203,7 +182,7 @@ private:
 
 	//! Reset the operator index to the first operator
 	void GoToSource(idx_t &current_idx, idx_t initial_idx);
-	SourceFetchResult FetchFromSource(OperatorChunk &result);
+	SourceFetchResult FetchFromSource(DataChunk &result);
 	//! Reports the last source chunk to the progress verifier (if any), once it has been fully processed
 	void SampleProgress();
 
@@ -216,18 +195,15 @@ private:
 	SinkResultType Sink(DataChunk &chunk, OperatorSinkInput &input);
 	SinkNextBatchType UpdateMinBatchIndex();
 
-	OperatorResultType ExecutePushInternal(OperatorChunk &input, ExecutionBudget &chunk_budget, idx_t initial_idx = 0);
-	PipelineExecuteResult PushInputChunk(OperatorChunk &input, ExecutionBudget &chunk_budget,
-	                                     PipelineInputChunkMode mode);
+	OperatorResultType ExecutePushInternal(DataChunk &input, ExecutionBudget &chunk_budget, idx_t initial_idx = 0);
+	PipelineExecuteResult PushInputChunk(DataChunk &input, ExecutionBudget &chunk_budget, PipelineInputChunkMode mode);
 	PipelineExecuteResult FlushAndFinalize(ExecutionBudget &chunk_budget);
-	PipelineExecuteResult FlushInput(ExecutionBudget &chunk_budget);
 	//! Pushes a chunk through the pipeline and returns a single result chunk
 	//! Returns whether or not a new input chunk is needed, or whether or not we are finished
-	OperatorResultType Execute(OperatorChunk &input, OperatorChunk &result, idx_t initial_index = 0);
+	OperatorResultType Execute(DataChunk &input, DataChunk &result, idx_t initial_index = 0);
 
 	//! Notifies the sink that a new batch has started
-	SinkNextBatchType NextBatch(OperatorChunk &source_chunk, const SourceFetchResult &source_result);
-	OperatorPartitionData GetNextPartition(OperatorChunk &source_chunk, const SourceFetchResult &source_result);
+	SinkNextBatchType NextBatch(DataChunk &source_chunk, const SourceFetchResult &source_result);
 	SinkNextBatchType NextBatch(OperatorPartitionData next_data, bool force = false,
 	                            optional_idx external_min_batch_index = optional_idx());
 	OperatorPartitionData ToPipelinePartitionData(const OperatorPartitionData &source_data) const;
@@ -235,11 +211,7 @@ private:
 
 	//! Tries to flush all state from intermediate operators. Will return true if all state is flushed, false in the
 	//! case of a blocked sink.
-	PipelineExecuteResult FlushOperators(ExecutionBudget &chunk_budget, OperatorFlushState &state, bool batch);
-	PipelineExecuteResult FinishBatch(ExecutionBudget &chunk_budget);
-	PipelineExecuteResult AdvanceBatch(OperatorPartitionData next_partition, const BatchMetadata &next_batch,
-	                                   ExecutionBudget &chunk_budget, bool force = false,
-	                                   optional_idx external_min_batch_index = optional_idx());
+	bool TryFlushCachingOperators(ExecutionBudget &chunk_budget);
 
 	static bool CanCacheType(const LogicalType &type);
 	void CacheChunk(DataChunk &input, idx_t operator_idx);

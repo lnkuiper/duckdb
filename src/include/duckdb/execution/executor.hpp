@@ -35,7 +35,6 @@ class Task;
 struct PipelineEventStack;
 struct ProducerToken;
 struct ScheduleEventData;
-struct ExpressionExecutorGlobalState;
 
 class Executor {
 	friend class Pipeline;
@@ -71,7 +70,6 @@ public:
 	void SignalTaskRescheduled(lock_guard<mutex> &);
 
 	void Reset();
-	optional_ptr<const ExpressionExecutorGlobalState> GetExpressionState(const PhysicalOperator &op) const;
 
 	vector<LogicalType> GetTypes();
 
@@ -155,7 +153,6 @@ private:
 	//! retained never parks, so the retained hot path skips the readiness checks
 	bool ResultStoreCanPark();
 	void InitializeInternal(PhysicalOperator &physical_plan);
-	void PrepareExpressionStates(const vector<shared_ptr<Pipeline>> &pipelines);
 
 	void ScheduleEvents(const vector<shared_ptr<MetaPipeline>> &meta_pipelines);
 	void ScheduleEventsInternal(ScheduleEventData &event_data);
@@ -186,10 +183,6 @@ private:
 	unique_ptr<PhysicalOperator> owned_plan;
 
 	mutex executor_lock;
-	//! Allocated while building pipelines, before scheduling.
-	idx_t next_stream_id = 0;
-	//! Query-generation ownership; local expression states only borrow these immutable objects.
-	reference_map_t<const PhysicalOperator, unique_ptr<ExpressionExecutorGlobalState>> expression_states;
 	//! All pipelines of the query plan
 	vector<shared_ptr<Pipeline>> pipelines;
 	//! The root pipelines of the query

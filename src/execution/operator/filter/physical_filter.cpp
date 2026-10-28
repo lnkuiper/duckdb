@@ -45,9 +45,6 @@ unique_ptr<OperatorState> PhysicalFilter::GetOperatorState(ExecutionContext &con
 OperatorResultType PhysicalFilter::ExecuteInternal(ExecutionContext &context, DataChunk &input, DataChunk &chunk,
                                                    GlobalOperatorState &gstate, OperatorState &state_p) const {
 	auto &state = state_p.Cast<FilterState>();
-	state.output_metadata = state.input_metadata;
-	state.output_metadata.ClearPositions();
-	state.output_metadata.batch.row_count.SetInvalid();
 	idx_t result_count = state.executor.SelectExpression(input, state.sel);
 	if (result_count == input.size()) {
 		// nothing was filtered: skip adding any selection vectors
@@ -56,14 +53,6 @@ OperatorResultType PhysicalFilter::ExecuteInternal(ExecutionContext &context, Da
 		chunk.Slice(input, state.sel, result_count);
 	}
 	return OperatorResultType::NEED_MORE_INPUT;
-}
-
-OperatorBatchResultType PhysicalFilter::FlushBatch(ExecutionContext &context, DataChunk &output,
-                                                   OperatorBatchInput &input) const {
-	auto result = CachingPhysicalOperator::FlushBatch(context, output, input);
-	input.local_state.output_metadata.ClearPositions();
-	input.local_state.output_metadata.batch.row_count.SetInvalid();
-	return result;
 }
 
 InsertionOrderPreservingMap<string> PhysicalFilter::ParamsToString() const {

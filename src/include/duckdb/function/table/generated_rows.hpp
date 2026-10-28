@@ -24,20 +24,20 @@ struct GeneratedRowsProgress {
 
 //! Allocate ordered batches without materializing the generated rows.
 struct GeneratedRowsGlobalState : public GlobalTableFunctionState {
-	GeneratedRowsGlobalState(ClientContext &context, hugeint_t row_count_p, BatchMetadataInfo metadata_p)
+	GeneratedRowsGlobalState(ClientContext &context, hugeint_t row_count_p, const vector<column_t> &column_ids_p)
 	    : row_count(row_count_p), batch_size(ClientConfig::GetConfig(context).verify_parallelism
 	                                             ? MaxValue<idx_t>(DEFAULT_STANDARD_VECTOR_SIZE, STANDARD_VECTOR_SIZE)
 	                                             : DEFAULT_ROW_GROUP_SIZE),
 	      batch_count(
 	          Hugeint::Cast<idx_t>((row_count + Hugeint::Convert(batch_size) - 1) / Hugeint::Convert(batch_size))),
-	      metadata(metadata_p) {
+	      column_ids(column_ids_p) {
 		D_ASSERT(row_count >= 0);
 	}
 
 	const hugeint_t row_count;
 	const idx_t batch_size;
 	const idx_t batch_count;
-	const BatchMetadataInfo metadata;
+	const vector<column_t> column_ids;
 	atomic<idx_t> next_batch {0};
 	mutable mutex progress_lock;
 	vector<unique_ptr<GeneratedRowsProgress>> local_progress;
@@ -73,21 +73,6 @@ struct GeneratedRowsLocalState : public LocalTableFunctionState {
 	hugeint_t offset = 0;
 	idx_t count = 0;
 	idx_t remaining = 0;
-	idx_t batch_row_count = 0;
-
-	ChunkMetadata GetMetadata(const GeneratedRowsGlobalState &global) const {
-		ChunkMetadata result;
-		if (global.metadata.Any()) {
-			result.batch.batch_index = batch_index;
-			result.batch.row_count = batch_row_count;
-			if (global.metadata.row_positions) {
-				auto first_row = batch_index.GetIndex() * global.batch_size;
-				result.batch.first_row_index = first_row;
-				result.offset_in_batch = batch_row_count - remaining;
-			}
-		}
-		return result;
-	}
 
 	bool Next(GeneratedRowsGlobalState &global_state) {
 		D_ASSERT(remaining >= count);
@@ -108,7 +93,6 @@ struct GeneratedRowsLocalState : public LocalTableFunctionState {
 			offset = Hugeint::Convert(next_batch) * Hugeint::Convert(global_state.batch_size);
 			remaining = Hugeint::Cast<idx_t>(
 			    MinValue<hugeint_t>(global_state.row_count - offset, Hugeint::Convert(global_state.batch_size)));
-			batch_row_count = remaining;
 		}
 		count = MinValue<idx_t>(remaining, STANDARD_VECTOR_SIZE);
 		return true;
@@ -127,6 +111,19 @@ struct GeneratedRowsLocalState : public LocalTableFunctionState {
 	static OperatorPartitionData GetPartitionData(ClientContext &, TableFunctionGetPartitionInput &input) {
 		auto &state = input.local_state->Cast<GeneratedRowsLocalState>();
 		return OperatorPartitionData(state.batch_index.GetIndex());
+	}
+
+	void RowNumber(Vector &result) const {
+		auto last = Hugeint::Cast<int64_t>(offset + Hugeint::Convert(count));
+		result.Sequence(last - NumericCast<int64_t>(count) + 1, 1, count);
+	}
+
+	static virtual_column_map_t GetVirtualColumns(ClientContext &, optional_ptr<FunctionData> bind_data) {
+		virtual_column_map_t result;
+		if (bind_data) {
+			result.emplace(COLUMN_IDENTIFIER_ROW_NUMBER, TableColumn("row_number", LogicalType::BIGINT));
+		}
+		return result;
 	}
 };
 

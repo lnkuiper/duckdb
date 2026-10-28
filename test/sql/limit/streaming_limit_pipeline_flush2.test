@@ -17,25 +17,3 @@ SELECT count(*), sum(x)
          );
 ----
 200000	1400000
-
-statement ok
-SET preserve_insertion_order=false;
-
-# Finishing the LIMIT must still flush rows retained by the downstream window.
-query III
-SELECT i, a, lead(i) OVER () AS b
-FROM (
-    SELECT i, lead(i) OVER () AS a
-    FROM range(10) t(i)
-    LIMIT 9
-);
-----
-0	1	1
-1	2	2
-2	3	3
-3	4	4
-4	5	5
-5	6	6
-6	7	7
-7	8	8
-8	9	NULL

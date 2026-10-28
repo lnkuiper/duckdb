@@ -30,6 +30,7 @@ add_library_unity(
   test_minmax_n_heap.cpp
   test_numeric_utils.cpp
   test_optional_idx.cpp
+  test_input_ordinality.cpp
   test_random_engine.cpp
   test_parse_expression.cpp
   test_parse_load_statement.cpp
@@ -38,8 +39,6 @@ add_library_unity(
   test_parser_statement.cpp
   test_parse_memory_limit_slurm.cpp
   test_pipeline_broadcast_exchange.cpp
-  test_positional_expression_state.cpp
-  test_streaming_batch_metadata.cpp
   test_recursive_cte_metrics.cpp
   test_scalar_executor.cpp
   test_logical_type_is_complete.cpp

@@ -7,72 +7,11 @@
 #include "duckdb/storage/statistics/base_statistics.hpp"
 #include "duckdb/planner/expression/list.hpp"
 #include "duckdb/main/settings.hpp"
+#include "duckdb/function/cast/cast_function_set.hpp"
 #include "duckdb/common/type_visitor.hpp"
 #include "duckdb/storage/table/variant_column_data.hpp"
-#include "duckdb/planner/expression_iterator.hpp"
 
 namespace duckdb {
-
-ExpressionExecutorGlobalState::ExpressionExecutorGlobalState(ClientContext &context,
-                                                             const vector<unique_ptr<Expression>> &expressions) {
-	for (auto &expr : expressions) {
-		Prepare(context, *expr);
-	}
-}
-
-void ExpressionExecutorGlobalState::Prepare(ClientContext &context, const Expression &expr) {
-	ExpressionIterator::EnumerateChildren(expr, [&](const Expression &child) { Prepare(context, child); });
-	if (expr.GetExpressionClass() != ExpressionClass::BOUND_FUNCTION) {
-		return;
-	}
-	auto &function = expr.Cast<BoundFunctionExpression>();
-	if (function.Function().HasInitGlobalStateCallback()) {
-		auto state = function.Function().GetInitGlobalStateCallback()(context, function);
-		if (!state || !functions.emplace(&function, std::move(state)).second) {
-			throw InternalException("Invalid shared expression state preparation");
-		}
-	}
-}
-
-const FunctionGlobalState &ExpressionExecutorGlobalState::GetState(const BoundFunctionExpression &expr) const {
-	auto entry = functions.find(&expr);
-	if (entry == functions.end()) {
-		throw InternalException("Expression state was not prepared before execution");
-	}
-	return *entry->second;
-}
-
-static bool SupportsRowPositions(const Expression &expr, bool &has_global_state) {
-	bool children_supported = true;
-	bool subtree_has_global_state = false;
-	ExpressionIterator::EnumerateChildren(expr, [&](const Expression &child) {
-		children_supported &= SupportsRowPositions(child, subtree_has_global_state);
-	});
-	const bool is_function = expr.GetExpressionClass() == ExpressionClass::BOUND_FUNCTION;
-	if (is_function) {
-		subtree_has_global_state |= expr.Cast<BoundFunctionExpression>().Function().HasInitGlobalStateCallback();
-	}
-	has_global_state |= subtree_has_global_state;
-	if (!subtree_has_global_state) {
-		return true;
-	}
-	if (!children_supported || !is_function) {
-		return false;
-	}
-	auto &fun = expr.Cast<BoundFunctionExpression>().Function();
-	return !fun.HasBindLambdaCallback() &&
-	       (!fun.HasInitGlobalStateCallback() || fun.GetStability() == FunctionStability::VOLATILE);
-}
-
-bool ExpressionExecutor::CanInitializeGlobalState(const vector<unique_ptr<Expression>> &expressions) {
-	bool has_global_state = false;
-	for (auto &expr : expressions) {
-		if (!SupportsRowPositions(*expr, has_global_state)) {
-			return false;
-		}
-	}
-	return has_global_state;
-}
 
 ExpressionExecutor::ExpressionExecutor(ClientContext &context) : context(&context) {
 	debug_vector_verification = Settings::Get<DebugVerifyVectorSetting>(context);
@@ -156,25 +95,6 @@ void ExpressionExecutor::Execute(DataChunk *input, DataChunk &result) {
 	result.Verify(context);
 }
 
-void ExpressionExecutor::Execute(DataChunk &input, DataChunk &result, const ChunkMetadata &metadata) {
-	D_ASSERT(!input_metadata);
-	input_metadata = metadata;
-	try {
-		Execute(&input, result);
-	} catch (...) {
-		input_metadata = nullptr;
-		throw;
-	}
-	input_metadata = nullptr;
-}
-
-const ChunkMetadata &ExpressionExecutor::GetInputMetadata() const {
-	if (!input_metadata || !chunk) {
-		throw InternalException("Expression executed without its promised input metadata");
-	}
-	input_metadata->Verify(BatchMetadataInfo::RowPositions(), chunk->size());
-	return *input_metadata;
-}
 void ExpressionExecutor::ExecuteExpression(DataChunk &input, Vector &result) {
 	SetChunk(&input);
 	ExecuteExpression(result);

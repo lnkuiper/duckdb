@@ -99,7 +99,6 @@ BoundTableFunction::BoundTableFunction(shared_ptr<const TableFunction> function_
 	to_sql = function.to_sql;
 	table_scan_progress = function.table_scan_progress;
 	get_partition_data = function.get_partition_data;
-	source_metadata = function.source_metadata;
 	get_bind_info = function.get_bind_info;
 	get_table_entry = function.get_table_entry;
 	projection_expression_pushdown = function.projection_expression_pushdown;
@@ -117,6 +116,7 @@ BoundTableFunction::BoundTableFunction(shared_ptr<const TableFunction> function_
 	deserialize = function.deserialize;
 	verify_serialization = function.verify_serialization;
 	projection_pushdown = function.projection_pushdown;
+	supports_row_number = function.supports_row_number;
 	filter_pushdown = function.filter_pushdown;
 	filter_prune = function.filter_prune;
 	sampling_pushdown = function.sampling_pushdown;
@@ -172,8 +172,7 @@ bool BaseTableFunction::operator==(const BaseTableFunction &rhs) const {
 	       statistics == rhs.statistics && dependency == rhs.dependency && cardinality == rhs.cardinality &&
 	       pushdown_complex_filter == rhs.pushdown_complex_filter && pushdown_expression == rhs.pushdown_expression &&
 	       to_string == rhs.to_string && to_sql == rhs.to_sql && table_scan_progress == rhs.table_scan_progress &&
-	       get_partition_data == rhs.get_partition_data && source_metadata.Supports(rhs.source_metadata) &&
-	       rhs.source_metadata.Supports(source_metadata) && get_bind_info == rhs.get_bind_info &&
+	       get_partition_data == rhs.get_partition_data && get_bind_info == rhs.get_bind_info &&
 	       get_table_entry == rhs.get_table_entry &&
 	       projection_expression_pushdown == rhs.projection_expression_pushdown &&
 	       get_multi_file_reader == rhs.get_multi_file_reader && supports_pushdown_type == rhs.supports_pushdown_type &&

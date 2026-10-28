@@ -230,8 +230,8 @@ OperatorCachingMode PhysicalOperator::SelectOperatorCachingMode(ExecutionContext
 	} else if (!context.pipeline->GetSink()) {
 		return OperatorCachingMode::NONE;
 	} else {
-		auto partition_info = context.pipeline->GetMetadataPlan().sink_partition_info;
-		if (partition_info.RequiresPartitioning()) {
+		auto partition_info = context.pipeline->GetSink()->RequiredPartitionInfo();
+		if (partition_info.AnyRequired()) {
 			return OperatorCachingMode::PARTITIONED;
 		}
 	}
@@ -369,14 +369,9 @@ SelectExecutionMode(const DataChunk &chunk, const OperatorResultType child_resul
 	const bool needs_continuation_chunk = (state.can_cache_chunk == OperatorCachingMode::PARTITIONED &&
 	                                       child_result != OperatorResultType::HAVE_MORE_OUTPUT) ||
 	                                      (child_result == OperatorResultType::FINISHED);
-	const bool has_non_empty_cached_chunk = state.cached_chunk && state.cached_chunk->chunk.size() > 0;
+	const bool has_non_empty_cached_chunk = state.cached_chunk && state.cached_chunk->size() > 0;
 	const bool has_space_for_chunk_in_cache =
-	    !state.cached_chunk || (state.cached_chunk->chunk.size() + chunk.size() <= STANDARD_VECTOR_SIZE);
-
-	if (has_non_empty_cached_chunk && chunk.size() > 0 &&
-	    !state.cached_chunk->metadata.CanAppend(state.output_metadata, state.cached_chunk->chunk.size())) {
-		return CachingPhysicalOperatorExecuteMode::RETURN_CACHED_THEN_CHUNK_VIA_CONTINUATION;
-	}
+	    !state.cached_chunk || (state.cached_chunk->size() + chunk.size() <= STANDARD_VECTOR_SIZE);
 
 	if (has_non_empty_cached_chunk && needs_continuation_chunk) {
 		if (chunk.size() == 0) {
@@ -418,11 +413,11 @@ SelectExecutionMode(const DataChunk &chunk, const OperatorResultType child_resul
 		// We need first to return (*state.cached_chunk), then chunk on the continuation
 		// NOTE: Both are not empty
 		D_ASSERT(chunk.size() > 0);
-		D_ASSERT(state.cached_chunk->chunk.size() > 0);
+		D_ASSERT(state.cached_chunk->size() > 0);
 
 		if (chunk.size() <= CachingPhysicalOperator::CACHE_THRESHOLD) {
 			// We can consider appending
-			if (chunk.size() + state.cached_chunk->chunk.size() <= STANDARD_VECTOR_SIZE) {
+			if (chunk.size() + state.cached_chunk->size() <= STANDARD_VECTOR_SIZE) {
 				// Both fit together, append then return
 				return CachingPhysicalOperatorExecuteMode::RETURN_CACHED_PLUS_CHUNK;
 			}
@@ -492,18 +487,12 @@ static void FlattenDictColumn(CachingOperatorState &state, DataChunk &cache, idx
 
 //! Append source into the cache (created lazily). On the first append into an empty cache, detect
 //! accumulable dictionary columns; those concatenate their selection indices instead of flattening.
-static void AppendToCache(CachingOperatorState &state, DataChunk &source, const ChunkMetadata &metadata,
-                          ClientContext &client_context) {
+static void AppendToCache(CachingOperatorState &state, DataChunk &source, ClientContext &client_context) {
 	if (!state.cached_chunk) {
-		state.cached_chunk = make_uniq<OperatorChunk>();
-		state.cached_chunk->chunk.Initialize(Allocator::Get(client_context), source.GetTypes());
+		state.cached_chunk = make_uniq<DataChunk>();
+		state.cached_chunk->Initialize(Allocator::Get(client_context), source.GetTypes());
 	}
-	auto &cache = state.cached_chunk->chunk;
-	if (cache.size() == 0) {
-		state.cached_chunk->metadata = metadata;
-	} else {
-		D_ASSERT(state.cached_chunk->metadata.CanAppend(metadata, cache.size()));
-	}
+	auto &cache = *state.cached_chunk;
 	if (cache.size() == 0 && !state.dict_cache_active && ChunkHasAccumulableDictionary(source)) {
 		SeedDictCache(state, source);
 	}
@@ -569,19 +558,19 @@ static void RewrapDictColumns(CachingOperatorState &state, DataChunk &chunk, idx
 	}
 }
 
-//! Extract cached rows and their descriptor, restoring any accumulated dictionary columns.
-static void ExtractCache(CachingOperatorState &state, DataChunk &output) {
-	const idx_t count = state.cached_chunk->chunk.size();
-	state.cached_chunk->MoveTo(output, state.output_metadata);
-	if (state.dict_cache_active) {
-		RewrapDictColumns(state, output, count);
-		state.ResetDictCache();
+//! Move the cache into chunk (reconstructing dict columns) and re-initialize an empty cache for the next
+//! batch. With no dict columns this is the plain flat flush.
+static void FlushCacheToChunk(CachingOperatorState &state, DataChunk &chunk, ClientContext &client_context) {
+	if (!state.dict_cache_active) {
+		chunk.Move(*state.cached_chunk);
+		state.cached_chunk->Initialize(Allocator::Get(client_context), chunk.GetTypes());
+		return;
 	}
-}
-
-static void FlushCacheToChunk(CachingOperatorState &state, DataChunk &output, ClientContext &client_context) {
-	ExtractCache(state, output);
-	state.cached_chunk->chunk.Initialize(Allocator::Get(client_context), output.GetTypes());
+	const idx_t count = state.cached_chunk->size();
+	chunk.Move(*state.cached_chunk);
+	RewrapDictColumns(state, chunk, count);
+	state.cached_chunk->Initialize(Allocator::Get(client_context), chunk.GetTypes());
+	state.ResetDictCache();
 }
 
 OperatorResultType CachingPhysicalOperator::Execute(ExecutionContext &context, DataChunk &input, DataChunk &chunk,
@@ -589,8 +578,8 @@ OperatorResultType CachingPhysicalOperator::Execute(ExecutionContext &context, D
 	auto &state = state_p.Cast<CachingOperatorState>();
 
 	if (state.initialized && state.must_return_continuation_chunk) {
-		state.cached_chunk->MoveTo(chunk, state.output_metadata);
-		state.cached_chunk->chunk.Initialize(Allocator::Get(context.client), chunk.GetTypes());
+		chunk.Move(*state.cached_chunk);
+		state.cached_chunk->Initialize(Allocator::Get(context.client), chunk.GetTypes());
 		if (state.cached_result == OperatorResultType::BLOCKED && chunk.size() > 0) {
 			// In case of BLOCKED, first the chunk + HAVE_MORE_OUTPUT, then blocking
 			// This should currently be forbidden, so the assertion, but HAVE_MORE_OUTPUT is also a valid solution
@@ -621,14 +610,14 @@ OperatorResultType CachingPhysicalOperator::Execute(ExecutionContext &context, D
 	// full replacement, not an append -- so raw dict columns pass through verbatim.)
 	switch (execution_mode) {
 	case CachingPhysicalOperatorExecuteMode::RETURN_CACHED_APPEND_CHUNK: {
-		auto tmp = make_uniq<OperatorChunk>();
-		tmp->Move(chunk, state.output_metadata);
+		auto tmp = make_uniq<DataChunk>();
+		tmp->Move(chunk);
 		FlushCacheToChunk(state, chunk, context.client);
-		AppendToCache(state, tmp->chunk, tmp->metadata, context.client);
+		AppendToCache(state, *tmp, context.client);
 		break;
 	}
 	case CachingPhysicalOperatorExecuteMode::RETURN_CACHED_PLUS_CHUNK:
-		AppendToCache(state, chunk, state.output_metadata, context.client);
+		AppendToCache(state, chunk, context.client);
 		FlushCacheToChunk(state, chunk, context.client);
 		break;
 	case CachingPhysicalOperatorExecuteMode::RETURN_CACHED:
@@ -637,8 +626,8 @@ OperatorResultType CachingPhysicalOperator::Execute(ExecutionContext &context, D
 		break;
 	case CachingPhysicalOperatorExecuteMode::RETURN_CACHED_THEN_CHUNK_VIA_CONTINUATION: {
 		// Swap chunk and *state.cached_chunk
-		auto tmp = make_uniq<OperatorChunk>();
-		tmp->Move(chunk, state.output_metadata);
+		auto tmp = make_uniq<DataChunk>();
+		tmp->Move(chunk);
 		FlushCacheToChunk(state, chunk, context.client);
 		state.cached_chunk->Move(*tmp);
 
@@ -649,9 +638,8 @@ OperatorResultType CachingPhysicalOperator::Execute(ExecutionContext &context, D
 		return OperatorResultType::HAVE_MORE_OUTPUT;
 	}
 	case CachingPhysicalOperatorExecuteMode::APPEND_CHUNK: {
-		AppendToCache(state, chunk, state.output_metadata, context.client);
+		AppendToCache(state, chunk, context.client);
 		chunk.Reset();
-		state.output_metadata = ChunkMetadata();
 		break;
 	}
 	case CachingPhysicalOperatorExecuteMode::RETURN_CHUNK:
@@ -661,28 +649,21 @@ OperatorResultType CachingPhysicalOperator::Execute(ExecutionContext &context, D
 	return child_result;
 }
 
-OperatorFinalizeResultType CachingPhysicalOperator::FinalExecute(ExecutionContext &context, DataChunk &output,
+OperatorFinalizeResultType CachingPhysicalOperator::FinalExecute(ExecutionContext &context, DataChunk &chunk,
                                                                  GlobalOperatorState &gstate,
                                                                  OperatorState &state_p) const {
 	auto &state = state_p.Cast<CachingOperatorState>();
 	if (state.cached_chunk) {
-		ExtractCache(state, output);
+		const idx_t count = state.cached_chunk->size();
+		const bool dict_cache_active = state.dict_cache_active;
+		chunk.Move(*state.cached_chunk);
+		if (dict_cache_active) {
+			RewrapDictColumns(state, chunk, count);
+			state.ResetDictCache();
+		}
 		state.cached_chunk.reset();
 	}
 	return OperatorFinalizeResultType::FINISHED;
-}
-
-OperatorBatchResultType CachingPhysicalOperator::FlushBatch(ExecutionContext &context, DataChunk &output,
-                                                            OperatorBatchInput &input) const {
-	auto &state = input.local_state.Cast<CachingOperatorState>();
-	D_ASSERT(!state.must_return_continuation_chunk);
-	if (state.cached_chunk && state.cached_chunk->chunk.size() > 0) {
-		D_ASSERT(state.cached_chunk->metadata.batch.batch_index == input.batch.batch_index);
-		FlushCacheToChunk(state, output, context.client);
-	} else {
-		state.output_metadata.batch = input.batch;
-	}
-	return OperatorBatchResultType::FINISHED;
 }
 
 } // namespace duckdb

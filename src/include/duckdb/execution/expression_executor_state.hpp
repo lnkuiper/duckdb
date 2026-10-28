@@ -75,7 +75,6 @@ public:
 
 public:
 	unique_ptr<FunctionLocalState> local_state;
-	optional_ptr<const FunctionGlobalState> global_state;
 	//! Execution error of the state initialization, thrown on execution so that a surrounding TRY can handle it
 	ErrorData init_error;
 	//! The buffers of all-constant arguments, which can be shared with the input and have to get their size back

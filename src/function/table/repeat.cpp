@@ -29,7 +29,7 @@ static unique_ptr<FunctionData> RepeatBind(ClientContext &context, TableFunction
 
 static unique_ptr<GlobalTableFunctionState> RepeatInit(ClientContext &context, TableFunctionInitInput &input) {
 	auto &bind_data = input.bind_data->Cast<RepeatFunctionData>();
-	return make_uniq<GeneratedRowsGlobalState>(context, Hugeint::Convert(bind_data.target_count), input.metadata);
+	return make_uniq<GeneratedRowsGlobalState>(context, Hugeint::Convert(bind_data.target_count), input.column_ids);
 }
 
 static void RepeatFunction(ClientContext &context, TableFunctionInput &data_p, DataChunk &output) {
@@ -39,8 +39,14 @@ static void RepeatFunction(ClientContext &context, TableFunctionInput &data_p, D
 	if (!local_state.Next(global_state)) {
 		return;
 	}
-	data_p.metadata = local_state.GetMetadata(global_state);
-	output.data[0].Reference(bind_data.value, count_t(local_state.count));
+	for (idx_t col = 0; col < global_state.column_ids.size(); col++) {
+		if (global_state.column_ids[col] == COLUMN_IDENTIFIER_ROW_NUMBER) {
+			local_state.RowNumber(output.data[col]);
+		} else {
+			D_ASSERT(global_state.column_ids[col] == 0);
+			output.data[col].Reference(bind_data.value, count_t(local_state.count));
+		}
+	}
 	output.SetChildCardinality(local_state.count);
 }
 
@@ -58,8 +64,9 @@ void RepeatTableFunction::RegisterFunction(BuiltinFunctions &set) {
 	repeat.cardinality = RepeatCardinality;
 	repeat.table_scan_progress = GeneratedRowsGlobalState::Progress;
 	repeat.get_partition_data = GeneratedRowsLocalState::GetPartitionData;
-	repeat.source_metadata = BatchMetadataInfo::RowPositions();
-	repeat.source_metadata.Merge(BatchMetadataInfo::Completion());
+	repeat.get_virtual_columns = GeneratedRowsLocalState::GetVirtualColumns;
+	repeat.projection_pushdown = true;
+	repeat.supports_row_number = true;
 	set.AddFunction(repeat);
 }
 

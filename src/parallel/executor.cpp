@@ -3,7 +3,6 @@
 #include "duckdb/common/types/timestamp.hpp"
 #include "duckdb/common/time_point.hpp"
 #include "duckdb/execution/execution_context.hpp"
-#include "duckdb/execution/expression_executor.hpp"
 #include "duckdb/execution/operator/helper/physical_result_collector.hpp"
 #include "duckdb/execution/operator/set/physical_cte.hpp"
 #include "duckdb/execution/operator/set/physical_recursive_cte.hpp"
@@ -268,17 +267,6 @@ void Executor::InitializeInternal(PhysicalOperator &plan) {
 			rec_cte.recursive_meta_pipeline->Ready();
 		}
 
-		vector<shared_ptr<Pipeline>> metadata_pipelines;
-		root_pipeline->GetPipelines(metadata_pipelines, true);
-		for (auto &rec_cte_ref : recursive_ctes) {
-			rec_cte_ref.get().Cast<PhysicalRecursiveCTE>().recursive_meta_pipeline->GetPipelines(metadata_pipelines,
-			                                                                                     true);
-		}
-		for (auto &pipeline : metadata_pipelines) {
-			pipeline->PrepareMetadata();
-		}
-		PrepareExpressionStates(metadata_pipelines);
-
 		// set root pipelines, i.e., all pipelines that end in the final sink
 		root_pipeline->GetPipelines(root_pipelines, false);
 		root_pipeline_idx = 0;
@@ -292,48 +280,6 @@ void Executor::InitializeInternal(PhysicalOperator &plan) {
 		// finally, verify and schedule
 		VerifyPipelines();
 		ScheduleEvents(to_schedule);
-	}
-}
-
-optional_ptr<const ExpressionExecutorGlobalState> Executor::GetExpressionState(const PhysicalOperator &op) const {
-	auto entry = expression_states.find(op);
-	return entry == expression_states.end() ? nullptr : entry->second.get();
-}
-
-void Executor::PrepareExpressionStates(const vector<shared_ptr<Pipeline>> &all_pipelines) {
-	D_ASSERT(expression_states.empty());
-	if (!recursive_ctes.empty()) {
-		return;
-	}
-	optional_ptr<Pipeline> expression_pipeline;
-	vector<pair<const_reference<PhysicalOperator>, const_reference<vector<unique_ptr<Expression>>>>> groups;
-	reference_set_t<const PhysicalOperator> participating;
-	for (auto &pipeline : all_pipelines) {
-		auto &operators = pipeline->GetIntermediateOperators();
-		for (idx_t i = 0; i < operators.size(); i++) {
-			auto &op = operators[i].get();
-			auto expressions = op.GetGlobalExpressions();
-			if (!expressions) {
-				continue;
-			}
-			// An operator shared by dense and non-dense inputs cannot share positional state.
-			if (!participating.insert(op).second) {
-				return;
-			}
-			if (!pipeline->GetMetadataPlan().edges[i].row_positions) {
-				continue;
-			}
-			if (pipeline->IsExternalInput() || (expression_pipeline && expression_pipeline.get() != pipeline.get())) {
-				return;
-			}
-			expression_pipeline = *pipeline;
-			groups.emplace_back(op, *expressions);
-		}
-	}
-	// Assign shared states in a stable order before any worker-local initialization.
-	for (auto &group : groups) {
-		expression_states.emplace(group.first.get(),
-		                          make_uniq<ExpressionExecutorGlobalState>(context, group.second.get()));
 	}
 }
 
@@ -607,7 +553,6 @@ void Executor::Reset() {
 	pipelines.clear();
 	events.clear();
 	to_be_rescheduled_tasks.clear();
-	expression_states.clear();
 	execution_result = QueryResultState::NOT_READY;
 }
 

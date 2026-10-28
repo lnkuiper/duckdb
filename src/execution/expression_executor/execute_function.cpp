@@ -139,9 +139,6 @@ unique_ptr<ExpressionState> ExpressionExecutor::InitializeState(const BoundFunct
 	}
 
 	result->Finalize();
-	if (root.executor->global_state && expr.Function().HasInitGlobalStateCallback()) {
-		result->global_state = root.executor->global_state->GetState(expr);
-	}
 	if (expr.Function().HasInitStateCallback()) {
 		try {
 			result->local_state = expr.Function().GetInitStateCallback()(*result, expr, expr.BindInfo().get());

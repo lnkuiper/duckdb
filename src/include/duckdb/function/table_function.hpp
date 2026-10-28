@@ -164,8 +164,6 @@ struct TableFunctionInitInput {
 	optional_ptr<TableFilterSet> filters;
 	optional_ptr<SampleOptions> sample_options;
 	optional_ptr<const PhysicalOperator> op;
-	//! Immutable streaming metadata requested by the calling pipeline.
-	BatchMetadataInfo metadata;
 	//! (Optional) Set when a multi-file scan initializes this function to read one of its files
 	optional_ptr<const TableFunctionFileInitInput> multi_file_input;
 
@@ -203,8 +201,6 @@ public:
 	AsyncResultsExecutionMode results_execution_mode {AsyncResultsExecutionMode::SYNCHRONOUS};
 	//! Interrupt state of the calling task, so the function might park and wake-up by returning a taskless Blocked res
 	optional_ptr<const InterruptState> interrupt_state;
-	//! Descriptor of the returned output chunk.
-	ChunkMetadata metadata;
 };
 
 struct TableFunctionPartitionInput {
@@ -520,8 +516,6 @@ public:
 	table_function_progress_t table_scan_progress;
 	//! (Optional) returns the partition info of the current scan operator
 	table_function_get_partition_data_t get_partition_data;
-	//! Guaranteed streaming properties of this source.
-	BatchMetadataInfo source_metadata;
 	//! (Optional) returns extra bind info
 	table_function_get_bind_info_t get_bind_info;
 	//! (Optional) the table a bound call scans, e.g. for a scan of a catalog table
@@ -558,6 +552,8 @@ public:
 	//! Whether or not the table function supports projection pushdown. If not supported a projection will be added
 	//! that filters out unused columns.
 	bool projection_pushdown;
+	//! The virtual row-number column numbers this source's rows globally, starting at one.
+	bool supports_row_number = false;
 	//! Whether or not the table function supports filter pushdown. If not supported a filter will be added
 	//! that applies the table filter directly.
 	bool filter_pushdown;

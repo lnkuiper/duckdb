@@ -1,8 +1,6 @@
 #include "duckdb/execution/operator/projection/physical_projection.hpp"
 #include "duckdb/parallel/thread_context.hpp"
 #include "duckdb/execution/expression_executor.hpp"
-#include "duckdb/execution/executor.hpp"
-#include "duckdb/main/client_context.hpp"
 #include "duckdb/planner/expression/bound_function_expression.hpp"
 #include "duckdb/planner/expression_iterator.hpp"
 #include "duckdb/planner/expression/bound_reference_expression.hpp"
@@ -11,13 +9,8 @@ namespace duckdb {
 
 class ProjectionState : public OperatorState {
 public:
-	ProjectionState(ExecutionContext &context, const vector<unique_ptr<Expression>> &expressions,
-	                optional_ptr<const ExpressionExecutorGlobalState> global)
-	    : executor(context.client) {
-		executor.global_state = global;
-		for (auto &expression : expressions) {
-			executor.AddExpression(*expression);
-		}
+	explicit ProjectionState(ExecutionContext &context, const vector<unique_ptr<Expression>> &expressions)
+	    : executor(context.client, expressions) {
 	}
 
 	ExpressionExecutor executor;
@@ -28,7 +21,7 @@ public:
 	}
 
 	bool SupportsReuse() const override {
-		return !executor.global_state;
+		return true;
 	}
 };
 
@@ -57,24 +50,12 @@ void PhysicalProjection::InitializeOutputChunk(Allocator &allocator, DataChunk &
 OperatorResultType PhysicalProjection::Execute(ExecutionContext &context, DataChunk &input, DataChunk &chunk,
                                                GlobalOperatorState &gstate, OperatorState &state_p) const {
 	auto &state = state_p.Cast<ProjectionState>();
-	state.executor.Execute(input, chunk, state.input_metadata);
-	state.output_metadata = state.input_metadata;
+	state.executor.Execute(input, chunk);
 	return OperatorResultType::NEED_MORE_INPUT;
 }
 
 unique_ptr<OperatorState> PhysicalProjection::GetOperatorState(ExecutionContext &context) const {
-	return make_uniq<ProjectionState>(context, select_list, context.client.GetExecutor().GetExpressionState(*this));
-}
-
-optional_ptr<const vector<unique_ptr<Expression>>> PhysicalProjection::GetGlobalExpressions() const {
-	if (!ExpressionExecutor::CanInitializeGlobalState(select_list)) {
-		return nullptr;
-	}
-	return select_list;
-}
-
-BatchMetadataInfo PhysicalProjection::RequestedMetadata() const {
-	return GetGlobalExpressions() ? BatchMetadataInfo::RowPositions() : BatchMetadataInfo();
+	return make_uniq<ProjectionState>(context, select_list);
 }
 
 bool PhysicalProjection::ParallelOperator() const {

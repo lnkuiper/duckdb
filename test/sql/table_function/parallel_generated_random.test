@@ -1,5 +1,5 @@
 # name: test/sql/table_function/parallel_generated_random.test
-# description: Dense generated projections reproduce seeded data independently of worker scheduling
+# description: Generated projections reproduce seeded data through ordinary ordinal arguments
 # group: [table_function]
 
 require skip_reload
@@ -29,9 +29,47 @@ statement ok
 PREPARE populate_skipped_argument AS INSERT INTO generated
 SELECT i, (CASE WHEN i < 2048 THEN NULL::DOUBLE ELSE 0.5 END) * random(), random() FROM range(4097) t(i)
 
-# Compare each query with its own single-threaded baseline. Prepared execution
-# obtains fresh expression seeds, independently of the worker count.
-foreach population populate populate_chain populate_case_sibling populate_skipped_argument
+statement ok
+PREPARE populate_selected_case AS INSERT INTO generated
+SELECT i, CASE WHEN i%3=0 THEN random() WHEN i%2=0 THEN random() END, random() FROM range(4097) t(i)
+
+statement ok
+PREPARE populate_coalesce AS INSERT INTO generated
+SELECT i, COALESCE(CASE WHEN i%2=0 THEN 0.5 END, random()), random() FROM range(4097) t(i)
+
+statement ok
+PREPARE populate_conjunction AS INSERT INTO generated
+SELECT i, CASE WHEN i%2=0 AND random()<0.5 THEN random() END, random() FROM range(4097) t(i)
+
+statement ok
+PREPARE populate_lambda_argument AS INSERT INTO generated
+SELECT i, list_transform([random()], lambda x: x)[1], random() FROM range(4097) t(i)
+
+statement ok
+PREPARE populate_uuid AS INSERT INTO generated
+SELECT i, CASE WHEN uuid_extract_version(uuid()) = 4 THEN random() END, random() FROM range(4097) t(i)
+
+statement ok
+CREATE TABLE source AS SELECT i FROM range(4097) t(i)
+
+statement ok
+PREPARE populate_table AS INSERT INTO generated SELECT i, random(), random() FROM source
+
+statement ok
+PREPARE populate_filtered AS INSERT INTO generated
+SELECT i, random(), random() FROM range(-4097, 4097) t(i) WHERE i >= 0
+
+statement ok
+PREPARE populate_repeat AS INSERT INTO generated
+SELECT column0, random(), random() FROM repeat_row(42, 'unused', num_rows=4097)
+
+statement ok
+PREPARE populate_unused_ordinality AS INSERT INTO generated
+SELECT i, random(), random() FROM range(4097) WITH ORDINALITY t(i, n)
+
+# Compare two consecutive queries after one setseed with a single-threaded baseline.
+# Worker-local consumers such as UUID must not affect the next query's random seed.
+foreach population populate populate_chain populate_case_sibling populate_skipped_argument populate_selected_case populate_coalesce populate_conjunction populate_lambda_argument populate_uuid populate_table populate_filtered populate_repeat populate_unused_ordinality
 
 statement ok
 SET threads=1
@@ -44,6 +82,9 @@ DELETE FROM expected
 
 statement ok
 SELECT setseed(0.42)
+
+statement ok
+EXECUTE {population}
 
 statement ok
 EXECUTE {population}
@@ -65,10 +106,13 @@ SELECT setseed(0.42)
 statement ok
 EXECUTE {population}
 
+statement ok
+EXECUTE {population}
+
 query III
 SELECT count(*), count(*) FILTER (WHERE a = b), count(*) FILTER (WHERE a < 0 OR a >= 1 OR b < 0 OR b >= 1) FROM generated
 ----
-4097	0	0
+8194	0	0
 
 query I
 SELECT count(*) FROM ((TABLE generated EXCEPT ALL TABLE expected) UNION ALL (TABLE expected EXCEPT ALL TABLE generated))
@@ -87,17 +131,46 @@ SELECT setseed(-0.25)
 statement ok
 EXECUTE {population}
 
+statement ok
+EXECUTE {population}
+
 query I
-SELECT count(*) > 0 FROM generated JOIN expected USING (i) WHERE generated.a <> expected.a
+SELECT count(*) > 0 FROM (TABLE generated EXCEPT ALL TABLE expected)
 ----
 true
 
 endloop
 
+# Without reseeding, successive executions must generate different data.
+statement ok
+DELETE FROM generated
+
+statement ok
+EXECUTE populate
+
+statement ok
+CREATE TABLE previous_generation AS FROM generated
+
+statement ok
+DELETE FROM generated
+
+statement ok
+EXECUTE populate
+
+query I
+SELECT count(*) > 0 FROM (TABLE generated EXCEPT ALL TABLE previous_generation)
+----
+true
+
+statement error
+SELECT random(1)
+----
+No function matches
+
 statement ok
 PRAGMA disable_verify_parallelism
 
-# Selected random evaluation remains valid through the ordinary local RNG path.
+# Selected random evaluation emits one value for each selected row.
 query I
 SELECT count(r) FROM (SELECT CASE WHEN i % 2 = 0 THEN random() END r FROM range(4097) t(i))
 ----

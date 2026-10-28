@@ -82,6 +82,13 @@ optional_ptr<TableCatalogEntry> LogicalGet::GetTable() const {
 	return function.get_table_entry(bind_data.get());
 }
 
+bool LogicalGet::SupportsRowNumber() const {
+	return function.supports_row_number && children.empty() &&
+	       virtual_columns.find(COLUMN_IDENTIFIER_ROW_NUMBER) != virtual_columns.end() && !table_filters.HasFilters() &&
+	       !table_filters.HasMultiColumnFilters() && !dynamic_filters && !extra_info.sample_options &&
+	       !row_group_order_options && scan_partition_indices.empty();
+}
+
 InsertionOrderPreservingMap<string> LogicalGet::ParamsToString() const {
 	InsertionOrderPreservingMap<string> result;
 

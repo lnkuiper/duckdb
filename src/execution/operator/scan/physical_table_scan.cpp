@@ -33,8 +33,7 @@ PhysicalTableScan::PhysicalTableScan(PhysicalPlan &physical_plan, vector<Logical
 
 class TableScanGlobalSourceState : public GlobalSourceState {
 public:
-	TableScanGlobalSourceState(ClientContext &context, const PhysicalTableScan &op, BatchMetadataInfo metadata_p)
-	    : metadata(metadata_p) {
+	TableScanGlobalSourceState(ClientContext &context, const PhysicalTableScan &op) {
 		physical_table_scan_execution_strategy = Settings::Get<DebugPhysicalTableScanExecutionStrategySetting>(context);
 
 		if (op.dynamic_filters && op.dynamic_filters->HasFilters()) {
@@ -45,7 +44,6 @@ public:
 			auto filters = table_filters ? *table_filters : GetTableFilters(op);
 			TableFunctionInitInput input(op.bind_data.get(), op.column_ids, op.projection_ids, filters,
 			                             op.extra_info.sample_options, &op);
-			input.metadata = metadata;
 
 			global_state = op.function.init_global(context, input);
 			if (global_state) {
@@ -68,7 +66,6 @@ public:
 	}
 
 	idx_t max_threads = 0;
-	const BatchMetadataInfo metadata;
 	PhysicalTableScanExecutionStrategy physical_table_scan_execution_strategy;
 	//! Combined dynamic table filters - before global_state, which references them during teardown
 	unique_ptr<TableFilterSet> table_filters;
@@ -91,7 +88,6 @@ public:
 		if (op.function.init_local) {
 			TableFunctionInitInput input(op.bind_data.get(), op.column_ids, op.projection_ids,
 			                             gstate.GetTableFilters(op), op.extra_info.sample_options, &op);
-			input.metadata = gstate.metadata;
 			local_state = op.function.init_local(context, input, gstate.global_state.get());
 		}
 	}
@@ -105,12 +101,7 @@ unique_ptr<LocalSourceState> PhysicalTableScan::GetLocalSourceState(ExecutionCon
 }
 
 unique_ptr<GlobalSourceState> PhysicalTableScan::GetGlobalSourceState(ClientContext &context) const {
-	return GetGlobalSourceState(context, OperatorPartitionInfo::NoPartitionInfo());
-}
-
-unique_ptr<GlobalSourceState>
-PhysicalTableScan::GetGlobalSourceState(ClientContext &context, const OperatorPartitionInfo &partition_info) const {
-	return make_uniq<TableScanGlobalSourceState>(context, *this, partition_info.metadata);
+	return make_uniq<TableScanGlobalSourceState>(context, *this);
 }
 
 static void ValidateAsyncStrategyResult(const PhysicalTableScanExecutionStrategy &strategy,
@@ -189,7 +180,6 @@ SourceResultType PhysicalTableScan::GetDataInternal(ExecutionContext &context, D
 
 		// Actually call the function
 		function.function(context.client, data, chunk);
-		input.metadata = data.metadata;
 
 		const auto output_async_result = data.async_result.GetResultType();
 

@@ -44,7 +44,6 @@ public:
 	void SourceFinished(ClientContext &context, GlobalSourceState &gstate) const override;
 	bool SupportsPartitioning(const OperatorPartitionInfo &partition_info) const override;
 	OrderPreservationType SourceOrder() const override;
-	BatchMetadataInfo SourceMetadata() const override;
 
 	bool IsSource() const override {
 		return true;
@@ -86,7 +85,6 @@ public:
 
 public:
 	// Sink interface
-	BatchMetadataInfo RequestedMetadata() const override;
 	SinkResultType Sink(ExecutionContext &context, DataChunk &chunk, OperatorSinkInput &input) const override;
 
 	unique_ptr<GlobalSinkState> GetGlobalSinkState(ClientContext &context) const override;
@@ -94,7 +92,6 @@ public:
 
 	SinkCombineResultType Combine(ExecutionContext &context, OperatorSinkCombineInput &input) const override;
 	SinkNextBatchType NextBatch(ExecutionContext &context, OperatorSinkNextBatchInput &input) const override;
-	SinkNextBatchType CompleteBatch(ExecutionContext &context, OperatorSinkBatchInput &input) const override;
 	SinkNextBatchType UpdateMinBatchIndex(ExecutionContext &context, OperatorSinkNextBatchInput &input) const override;
 	SinkFinalizeType Finalize(Pipeline &pipeline, Event &event, ClientContext &context,
 	                          OperatorSinkFinalizeInput &input) const override;

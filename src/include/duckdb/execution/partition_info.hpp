@@ -11,7 +11,6 @@
 #include "duckdb/common/common.hpp"
 #include "duckdb/common/types/value.hpp"
 #include "duckdb/common/optional_idx.hpp"
-#include "duckdb/execution/batch_metadata.hpp"
 
 namespace duckdb {
 
@@ -52,8 +51,6 @@ struct OperatorPartitionInfo {
 	bool batch_index = false;
 	optional_idx preferred_batch_size;
 	vector<column_t> partition_columns;
-	//! Streaming metadata does not imply ordered batch scheduling.
-	BatchMetadataInfo metadata;
 
 	static OperatorPartitionInfo NoPartitionInfo() {
 		return OperatorPartitionInfo(false);
@@ -70,7 +67,7 @@ struct OperatorPartitionInfo {
 	bool RequiresBatchIndex() const {
 		return batch_index;
 	}
-	bool RequiresPartitioning() const {
+	bool AnyRequired() const {
 		return RequiresPartitionColumns() || RequiresBatchIndex();
 	}
 };

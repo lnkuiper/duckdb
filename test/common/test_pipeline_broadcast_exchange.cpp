@@ -16,179 +16,6 @@
 
 namespace duckdb {
 
-TEST_CASE("Buffered completion waits for the batch minimum after a producer's empty marker",
-          "[streaming_batch_metadata]") {
-	DuckDB db;
-	Connection con(db);
-	vector<LogicalType> types {LogicalType::BIGINT};
-	PipelineBroadcastExchange exchange(*con.context, types, PipelineBroadcastExchangeCompletionMode::RUN_TO_COMPLETION,
-	                                   OrderPreservationType::INSERTION_ORDER, true,
-	                                   PipelineBroadcastExchangeBufferMode::BUFFER_ALL);
-	auto consumer = exchange.RegisterConsumer();
-	exchange.SelectBufferedConsumer(consumer, PipelineBroadcastExchangeScanMode::BATCH);
-	exchange.Reset();
-	auto local = exchange.GetLocalState(*con.context, 0, true);
-	auto properties = BatchMetadataInfo::RowPositions();
-	properties.Merge(BatchMetadataInfo::Completion());
-	auto reader = exchange.GetScanState(properties);
-	SourcePartitionInfo partition;
-	partition.batch_index = 1;
-	partition.min_batch_index = 1;
-	auto signal = make_shared_ptr<InterruptDoneSignalState>();
-	InterruptState interrupt {weak_ptr<InterruptDoneSignalState>(signal)};
-	ChunkMetadata metadata;
-	metadata.batch.batch_index = 1;
-	metadata.batch.stream_id = 91;
-	metadata.batch.first_row_index = 0;
-	metadata.batch.row_count = 2;
-	metadata.offset_in_batch = 0;
-	DataChunk input;
-	input.Initialize(*con.context, types);
-	input.SetChildCardinality(1);
-	input.data[0].SetValue(0, Value::BIGINT(0));
-	REQUIRE(exchange.Push(input, *local, partition, interrupt, metadata) == SinkResultType::NEED_MORE_INPUT);
-	DataChunk output;
-	output.Initialize(*con.context, types);
-	ChunkMetadata observed;
-	optional_idx batch;
-	SourceBatchIndexState batch_state;
-	bool complete = false;
-	auto scan = [&] {
-		output.Reset();
-		return exchange.Scan(consumer, output, *reader, batch, batch_state, interrupt, observed, complete);
-	};
-	REQUIRE(scan() == SourceResultType::HAVE_MORE_OUTPUT);
-	REQUIRE(output.size() == 1);
-	REQUIRE_FALSE(complete);
-	input.Reset();
-	metadata.offset_in_batch.SetInvalid();
-	REQUIRE(exchange.Push(input, *local, partition, interrupt, metadata) == SinkResultType::NEED_MORE_INPUT);
-	REQUIRE(scan() == SourceResultType::HAVE_MORE_OUTPUT);
-	REQUIRE(output.size() == 0);
-	REQUIRE_FALSE(complete);
-	REQUIRE(scan() == SourceResultType::BLOCKED);
-	REQUIRE_FALSE(complete);
-	// Another contribution can still arrive before the global minimum advances.
-	input.SetChildCardinality(1);
-	input.data[0].SetValue(0, Value::BIGINT(1));
-	metadata.offset_in_batch = 1;
-	REQUIRE(exchange.Push(input, *local, partition, interrupt, metadata) == SinkResultType::NEED_MORE_INPUT);
-	REQUIRE(scan() == SourceResultType::HAVE_MORE_OUTPUT);
-	REQUIRE(output.GetValue(0, 0) == Value::BIGINT(1));
-	REQUIRE_FALSE(complete);
-	partition.batch_index = 2;
-	partition.min_batch_index = 2;
-	REQUIRE(exchange.NextBatch(*local, partition, interrupt) == SinkNextBatchType::READY);
-	REQUIRE(scan() == SourceResultType::HAVE_MORE_OUTPUT);
-	REQUIRE(output.size() == 0);
-	REQUIRE(complete);
-	REQUIRE(observed.batch.batch_index.GetIndex() == 0);
-	REQUIRE(observed.batch.stream_id.GetIndex() == 91);
-	REQUIRE(observed.batch.row_count.GetIndex() == 2);
-	REQUIRE(scan() == SourceResultType::BLOCKED);
-	REQUIRE_FALSE(complete);
-	REQUIRE_FALSE(observed.batch.batch_index.IsValid());
-	exchange.Cancel();
-}
-
-TEST_CASE("Empty batch completion records survive the broadcast spool", "[streaming_batch_metadata]") {
-	DuckDB db;
-	Connection con(db);
-	vector<LogicalType> types {LogicalType::BIGINT};
-	PipelineBroadcastExchange exchange(*con.context, types, PipelineBroadcastExchangeCompletionMode::RUN_TO_COMPLETION,
-	                                   OrderPreservationType::INSERTION_ORDER, true,
-	                                   PipelineBroadcastExchangeBufferMode::BUFFER_ALL);
-	auto consumer = exchange.RegisterConsumer();
-	exchange.SelectBufferedConsumer(consumer, PipelineBroadcastExchangeScanMode::BATCH);
-	exchange.Reset();
-	auto local = exchange.GetLocalState(*con.context, 0, true);
-	SourcePartitionInfo partition;
-	InterruptState interrupt;
-	DataChunk empty;
-	empty.InitializeEmpty(types);
-	empty.SetChildCardinality(0);
-	for (idx_t i = 0; i < 40; i++) {
-		partition.batch_index = i + 1;
-		partition.min_batch_index = i + 1;
-		ChunkMetadata metadata;
-		metadata.batch.batch_index = i + 1;
-		metadata.batch.stream_id = 92;
-		metadata.batch.row_count = 0;
-		metadata.batch.first_row_index = 0;
-		REQUIRE(exchange.Push(empty, *local, partition, interrupt, metadata) == SinkResultType::NEED_MORE_INPUT);
-	}
-	exchange.Finish();
-	auto reader = exchange.GetScanState(BatchMetadataInfo::Completion());
-	DataChunk output;
-	output.Initialize(*con.context, types);
-	ChunkMetadata metadata;
-	optional_idx batch;
-	SourceBatchIndexState batch_state;
-	bool complete;
-	idx_t completed = 0;
-	while (exchange.Scan(consumer, output, *reader, batch, batch_state, interrupt, metadata, complete) !=
-	       SourceResultType::FINISHED) {
-		REQUIRE(output.size() == 0);
-		if (complete) {
-			REQUIRE(metadata.batch.batch_index.GetIndex() == completed++);
-			REQUIRE(metadata.batch.stream_id.GetIndex() == 92);
-			REQUIRE(metadata.batch.row_count.GetIndex() == 0);
-		}
-	}
-	REQUIRE(completed == 40);
-}
-
-TEST_CASE("Staged broadcast chunks retain metadata independently of scheduling tags", "[streaming_batch_metadata]") {
-	DuckDB db;
-	Connection con(db);
-	vector<LogicalType> types {LogicalType::BIGINT};
-	PipelineBroadcastExchange exchange(*con.context, types, PipelineBroadcastExchangeCompletionMode::RUN_TO_COMPLETION,
-	                                   OrderPreservationType::INSERTION_ORDER, true,
-	                                   PipelineBroadcastExchangeBufferMode::BUFFER_ALL);
-	auto consumer = exchange.RegisterConsumer();
-	exchange.SelectBufferedConsumer(consumer, PipelineBroadcastExchangeScanMode::BATCH);
-	exchange.Reset();
-	const auto base = 2 * PipelineBuildState::BATCH_INCREMENT;
-	auto local = exchange.GetLocalState(*con.context, base);
-	InterruptState interrupt;
-	SourcePartitionInfo partition;
-	partition.min_batch_index = base + 1;
-	DataChunk chunk;
-	chunk.Initialize(*con.context, types);
-	// Later data is staged until the producer releases the earlier scheduling range.
-	for (idx_t batch : {idx_t(2), idx_t(1)}) {
-		partition.batch_index = base + batch;
-		chunk.SetChildCardinality(1);
-		chunk.data[0].SetValue(0, Value::BIGINT(NumericCast<int64_t>(batch * 10)));
-		ChunkMetadata metadata;
-		metadata.batch.batch_index = base + batch;
-		metadata.batch.stream_id = 77;
-		metadata.batch.first_row_index = batch * 10;
-		metadata.batch.row_count = 3;
-		metadata.offset_in_batch = 0;
-		REQUIRE(exchange.Push(chunk, *local, partition, interrupt, metadata) == SinkResultType::NEED_MORE_INPUT);
-	}
-	partition.min_batch_index = base + 3;
-	partition.batch_index = base + 3;
-	REQUIRE(exchange.NextBatch(*local, partition, interrupt) == SinkNextBatchType::READY);
-	exchange.Finish();
-	auto reader = exchange.GetScanState();
-	for (idx_t expected = 1; expected <= 2; expected++) {
-		chunk.Reset();
-		ChunkMetadata metadata;
-		optional_idx batch;
-		SourceBatchIndexState batch_state;
-		REQUIRE(exchange.Scan(consumer, chunk, *reader, batch, batch_state, interrupt, metadata) ==
-		        SourceResultType::HAVE_MORE_OUTPUT);
-		REQUIRE(chunk.GetValue(0, 0) == Value::BIGINT(NumericCast<int64_t>(expected * 10)));
-		REQUIRE(metadata.batch.batch_index.GetIndex() == expected - 1);
-		REQUIRE(metadata.batch.stream_id.GetIndex() == 77);
-		REQUIRE(metadata.batch.first_row_index.GetIndex() == expected * 10);
-		REQUIRE(metadata.batch.row_count.GetIndex() == 3);
-		REQUIRE(metadata.offset_in_batch.GetIndex() == 0);
-	}
-}
-
 #ifndef DUCKDB_NO_THREADS
 namespace {
 class ManualPipelineEvent : public PipelineEvent {
@@ -305,7 +132,6 @@ TEST_CASE("A completed LIMIT worker does not unregister another broadcast reader
 	build_state.SetPipelineSource(*pipeline, source);
 	build_state.SetPipelineSink(*pipeline, &limit, 0);
 	pipeline->Ready();
-	pipeline->PrepareMetadata();
 	pipeline->Reset();
 	auto event = make_shared_ptr<ManualPipelineEvent>(pipeline);
 	auto first = make_shared_ptr<PipelineTask>(*pipeline, event);
@@ -381,14 +207,8 @@ TEST_CASE("Broadcast spool reads survive local completion and are discarded on c
 	for (idx_t i = 0; i < chunk_count; i++) {
 		partition.batch_index = i + 1;
 		partition.min_batch_index = i + 1;
-		ChunkMetadata metadata;
-		metadata.batch.batch_index = i + 1;
-		metadata.batch.stream_id = 42;
-		metadata.batch.first_row_index = i * input->size();
-		metadata.batch.row_count = input->size();
-		metadata.offset_in_batch = 0;
 		REQUIRE(exchange.NextBatch(*local, partition, interrupt) == SinkNextBatchType::READY);
-		REQUIRE(exchange.Push(*input, *local, partition, interrupt, metadata) == SinkResultType::NEED_MORE_INPUT);
+		REQUIRE(exchange.Push(*input, *local, partition, interrupt) == SinkResultType::NEED_MORE_INPUT);
 	}
 	REQUIRE(BufferManager::GetBufferManager(*con.context).GetUsedSwap() > 0);
 	exchange.Finish();
@@ -399,14 +219,13 @@ TEST_CASE("Broadcast spool reads survive local completion and are discarded on c
 	output.Initialize(*con.context, types);
 	atomic<bool> stopped {false};
 	string error;
-	ChunkMetadata output_metadata;
 	gate.Arm();
 	std::thread task([&] {
 		try {
 			optional_idx batch;
 			SourceBatchIndexState batch_state;
 			do {
-				if (exchange.Scan(consumer, output, *reader, batch, batch_state, interrupt, output_metadata) ==
+				if (exchange.Scan(consumer, output, *reader, batch, batch_state, interrupt) ==
 				    SourceResultType::FINISHED) {
 					break;
 				}
@@ -429,13 +248,8 @@ TEST_CASE("Broadcast spool reads survive local completion and are discarded on c
 	REQUIRE(error.empty());
 	if (cancel) {
 		REQUIRE(output.size() == 0);
-		REQUIRE_FALSE(output_metadata.batch.batch_index.IsValid());
 	} else {
 		REQUIRE(output.size() == input->size());
-		output_metadata.Verify(BatchMetadataInfo::RowPositions(), output.size());
-		REQUIRE(output_metadata.batch.stream_id.GetIndex() == 42);
-		REQUIRE(output_metadata.batch.first_row_index.GetIndex() ==
-		        output_metadata.batch.batch_index.GetIndex() * input->size());
 		REQUIRE(output.GetValue(0, 0) == input->GetValue(0, 0));
 		REQUIRE(output.GetValue(0, output.size() - 1) == input->GetValue(0, input->size() - 1));
 		exchange.FinishScan(consumer, *reader);
@@ -473,13 +287,7 @@ TEST_CASE("Completed broadcast spools support concurrent spilling scans", "[broa
 		SourcePartitionInfo partition;
 		InterruptState interrupt;
 		for (idx_t i = 0; i < chunk_count; i++) {
-			ChunkMetadata metadata;
-			metadata.batch.batch_index = i + 1;
-			metadata.batch.stream_id = epoch + 100;
-			metadata.batch.first_row_index = i * input->size();
-			metadata.batch.row_count = input->size();
-			metadata.offset_in_batch = 0;
-			REQUIRE(exchange.Push(*input, *local, partition, interrupt, metadata) == SinkResultType::NEED_MORE_INPUT);
+			REQUIRE(exchange.Push(*input, *local, partition, interrupt) == SinkResultType::NEED_MORE_INPUT);
 		}
 		REQUIRE(BufferManager::GetBufferManager(*con.context).GetUsedSwap() > 0);
 		exchange.Finish();
@@ -501,17 +309,8 @@ TEST_CASE("Completed broadcast spools support concurrent spilling scans", "[broa
 					auto &output = *outputs[i];
 					optional_idx batch;
 					SourceBatchIndexState batch_state;
-					ChunkMetadata metadata;
-					while (exchange.Scan(i, output, *states[i], batch, batch_state, interrupt, metadata) !=
+					while (exchange.Scan(i, output, *states[i], batch, batch_state, interrupt) !=
 					       SourceResultType::FINISHED) {
-						metadata.Verify(BatchMetadataInfo::RowPositions(), output.size());
-						if (metadata.batch.stream_id.GetIndex() != epoch + 100 ||
-						    metadata.batch.first_row_index.GetIndex() != counts[i] ||
-						    metadata.batch.batch_index.GetIndex() != counts[i] / input->size() ||
-						    metadata.batch.row_count.GetIndex() != input->size() ||
-						    metadata.offset_in_batch.GetIndex() != 0) {
-							throw InternalException("Incorrect broadcast spool metadata");
-						}
 						for (idx_t row = 0; row < output.size(); row++) {
 							auto input_row = counts[i]++ % input->size();
 							for (idx_t col = 0; col < types.size(); col++) {

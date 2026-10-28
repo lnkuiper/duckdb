@@ -18,7 +18,6 @@
 #include "duckdb/common/set.hpp"
 #include "duckdb/common/types/data_chunk.hpp"
 #include "duckdb/execution/partition_info.hpp"
-#include "duckdb/execution/operator_chunk.hpp"
 #include "duckdb/execution/progress_data.hpp"
 #include "duckdb/parallel/interrupt.hpp"
 
@@ -56,16 +55,14 @@ struct PipelineBroadcastExchangeConsumerSummary {
 class PipelineBroadcastExchangeLocalState {
 public:
 	PipelineBroadcastExchangeLocalState(ClientContext &context, const PipelineBroadcastExchange &exchange,
-	                                    idx_t producer_base_batch_index, bool completion);
+	                                    idx_t producer_base_batch_index);
 	~PipelineBroadcastExchangeLocalState();
 
 private:
 	friend class PipelineBroadcastExchange;
-	SinkResultType Push(DataChunk &chunk, const ChunkMetadata &metadata, const SourcePartitionInfo &partition_info,
+	SinkResultType Push(DataChunk &chunk, const SourcePartitionInfo &partition_info,
 	                    const InterruptState &interrupt_state);
 	SinkNextBatchType NextBatch(const SourcePartitionInfo &partition_info, const InterruptState &interrupt_state);
-	SinkNextBatchType CompleteBatch(const BatchMetadata &batch, const SourcePartitionInfo &partition_info,
-	                                const InterruptState &interrupt_state);
 	SinkNextBatchType UpdateMinBatchIndex(const SourcePartitionInfo &partition_info,
 	                                      const InterruptState &interrupt_state);
 	SinkCombineResultType Finish(const SourcePartitionInfo &partition_info, const InterruptState &interrupt_state);
@@ -74,17 +71,15 @@ private:
 	void ResetPush();
 	OperatorPartitionData GetSourcePartitionData(const SourcePartitionInfo &partition_info) const;
 	optional_idx GetSourceMinBatchIndex(const SourcePartitionInfo &partition_info) const;
-	ChunkMetadata GetSourceMetadata(const ChunkMetadata &metadata) const;
 
 	vector<unique_ptr<PipelineExecutor>> direct_executors;
-	vector<unique_ptr<OperatorChunk>> direct_input_chunks;
+	vector<unique_ptr<DataChunk>> direct_input_chunks;
 	idx_t direct_idx = 0;
 	idx_t direct_next_batch_idx = 0;
-	idx_t direct_complete_batch_idx = 0;
 	idx_t direct_min_batch_idx = 0;
 	idx_t direct_finalize_idx = 0;
 	idx_t producer_base_batch_index;
-	bool tracks_batches;
+	bool supports_batch_index;
 	PipelineBroadcastExchangeLocalMode mode = PipelineBroadcastExchangeLocalMode::BUFFERED;
 	PipelineBroadcastExchangeDirectPushState direct_push_state = PipelineBroadcastExchangeDirectPushState::NOT_STARTED;
 };
@@ -117,9 +112,9 @@ public:
 		return source_order;
 	}
 
-	unique_ptr<PipelineBroadcastExchangeLocalState>
-	GetLocalState(ClientContext &context, idx_t producer_base_batch_index, bool completion = false) const;
-	shared_ptr<PipelineBroadcastExchangeScanState> GetScanState(BatchMetadataInfo metadata = BatchMetadataInfo()) const;
+	unique_ptr<PipelineBroadcastExchangeLocalState> GetLocalState(ClientContext &context,
+	                                                              idx_t producer_base_batch_index) const;
+	shared_ptr<PipelineBroadcastExchangeScanState> GetScanState() const;
 
 	void SetProducerPipelines(const vector<shared_ptr<Pipeline>> &pipelines);
 	idx_t RegisterConsumer();
@@ -127,22 +122,16 @@ public:
 	void SelectDirectConsumer(Pipeline &pipeline, idx_t consumer_idx);
 	bool TryRegisterDirectConsumer(Pipeline &pipeline, idx_t consumer_idx);
 	vector<reference<Pipeline>> GetProducerPipelines() const;
-	void SelectBufferedConsumer(idx_t consumer_idx, PipelineBroadcastExchangeScanMode scan_mode,
-	                            optional_ptr<Pipeline> pipeline = nullptr);
-	BatchMetadataInfo SourceMetadata(idx_t consumer_idx) const;
-	BatchMetadataInfo RequestedMetadata();
+	void SelectBufferedConsumer(idx_t consumer_idx, PipelineBroadcastExchangeScanMode scan_mode);
 	void SelectMaterializedConsumer(idx_t consumer_idx);
 	void ResetConsumerRegistrations();
 	void Reset();
 	void SetLogOperator(const PhysicalOperator &op);
 
 	SinkResultType Push(DataChunk &chunk, PipelineBroadcastExchangeLocalState &lstate,
-	                    const SourcePartitionInfo &partition_info, const InterruptState &interrupt_state,
-	                    const ChunkMetadata &metadata = ChunkMetadata());
+	                    const SourcePartitionInfo &partition_info, const InterruptState &interrupt_state);
 	SinkNextBatchType NextBatch(PipelineBroadcastExchangeLocalState &lstate, const SourcePartitionInfo &partition_info,
 	                            const InterruptState &interrupt_state);
-	SinkNextBatchType CompleteBatch(PipelineBroadcastExchangeLocalState &lstate, const BatchMetadata &batch,
-	                                const SourcePartitionInfo &partition_info, const InterruptState &interrupt_state);
 	SinkNextBatchType UpdateMinBatchIndex(PipelineBroadcastExchangeLocalState &lstate,
 	                                      const SourcePartitionInfo &partition_info,
 	                                      const InterruptState &interrupt_state);
@@ -154,8 +143,7 @@ public:
 
 	SourceResultType Scan(idx_t consumer_idx, DataChunk &chunk, PipelineBroadcastExchangeScanState &scan_state,
 	                      optional_idx &batch_index, SourceBatchIndexState &batch_index_state,
-	                      const InterruptState &interrupt_state, optional_ptr<ChunkMetadata> metadata = nullptr,
-	                      optional_ptr<bool> batch_complete = nullptr);
+	                      const InterruptState &interrupt_state);
 	//! Stop new batch claims while allowing already assigned readers to finish.
 	void FinishScan(idx_t consumer_idx, PipelineBroadcastExchangeScanState &scan_state);
 	void UnregisterConsumer(idx_t consumer_idx);
@@ -215,8 +203,6 @@ private:
 		idx_t rows_read = 0;
 		PipelineBroadcastExchangeConsumerMode mode = PipelineBroadcastExchangeConsumerMode::UNRESOLVED;
 		PipelineBroadcastExchangeScanMode scan_mode = PipelineBroadcastExchangeScanMode::CHUNK;
-		optional_ptr<Pipeline> pipeline;
-		BatchMetadataInfo metadata;
 		ConsumerLifecycle lifecycle = ConsumerLifecycle::ACTIVE;
 		//! Stop new claims while already assigned batches and in-flight reads drain.
 		bool exhausted = false;
@@ -229,7 +215,7 @@ public:
 	~PipelineBroadcastExchange();
 
 private:
-	BufferedPushState Append(DataChunk &chunk, const ChunkMetadata &metadata, idx_t batch_index, idx_t min_batch_index,
+	BufferedPushState Append(DataChunk &chunk, idx_t batch_index, idx_t min_batch_index,
 	                         const InterruptState &interrupt_state);
 	BufferedPushState FlushReadyBatches(idx_t min_batch_index, const InterruptState &interrupt_state);
 	SinkResultType CompletePush(DataChunk &chunk, PipelineBroadcastExchangeLocalState &lstate,
@@ -257,15 +243,13 @@ private:
 	SourceResultType ReserveScanLocked(idx_t consumer_idx, const InterruptState &interrupt_state,
 	                                   PipelineBroadcastExchangeScanState &scan_state,
 	                                   shared_ptr<DataChunk> &next_chunk, optional_idx &batch_index,
-	                                   ChunkMetadata &metadata, SourceBatchIndexState &batch_index_state,
-	                                   bool &batch_complete, SpoolReadReservation &spool_read,
+	                                   SourceBatchIndexState &batch_index_state, SpoolReadReservation &spool_read,
 	                                   vector<InterruptState> &readers, vector<InterruptState> &writers,
 	                                   vector<ExchangeLogEntry> &log_entries) DUCKDB_REQUIRES(lock);
 	SourceResultType ReserveBatchScanLocked(idx_t consumer_idx, const InterruptState &interrupt_state,
 	                                        PipelineBroadcastExchangeScanState &scan_state,
 	                                        shared_ptr<DataChunk> &next_chunk, optional_idx &batch_index,
-	                                        ChunkMetadata &metadata, SourceBatchIndexState &batch_index_state,
-	                                        bool &batch_complete, SpoolReadReservation &spool_read,
+	                                        SourceBatchIndexState &batch_index_state, SpoolReadReservation &spool_read,
 	                                        vector<InterruptState> &readers, vector<InterruptState> &writers,
 	                                        vector<ExchangeLogEntry> &log_entries) DUCKDB_REQUIRES(lock);
 	void CompleteSpoolReadLocked(idx_t consumer_idx, const SpoolReadReservation &spool_read, DataChunk &chunk,

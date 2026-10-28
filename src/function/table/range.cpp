@@ -84,7 +84,7 @@ static unique_ptr<GlobalTableFunctionState> RangeFunctionGlobalInit(ClientContex
 		return nullptr;
 	}
 	auto &bind_data = input.bind_data->Cast<RangeFunctionBindData>();
-	return make_uniq<GeneratedRowsGlobalState>(context, bind_data.row_count, input.metadata);
+	return make_uniq<GeneratedRowsGlobalState>(context, bind_data.row_count, input.column_ids);
 }
 
 static void RangeSourceFunction(ClientContext &, TableFunctionInput &input, DataChunk &output) {
@@ -95,9 +95,15 @@ static void RangeSourceFunction(ClientContext &, TableFunctionInput &input, Data
 		return;
 	}
 	auto start = bind_data.start + bind_data.increment * local_state.offset;
-	input.metadata = local_state.GetMetadata(global_state);
-	output.data[0].Sequence(Hugeint::Cast<int64_t>(start), Hugeint::Cast<int64_t>(bind_data.increment),
-	                        local_state.count);
+	for (idx_t col = 0; col < global_state.column_ids.size(); col++) {
+		if (global_state.column_ids[col] == COLUMN_IDENTIFIER_ROW_NUMBER) {
+			local_state.RowNumber(output.data[col]);
+		} else {
+			D_ASSERT(global_state.column_ids[col] == 0);
+			output.data[col].Sequence(Hugeint::Cast<int64_t>(start), Hugeint::Cast<int64_t>(bind_data.increment),
+			                          local_state.count);
+		}
+	}
 }
 
 struct RangeFunctionLocalState : public LocalTableFunctionState {
@@ -483,8 +489,9 @@ void RangeTableFunction::RegisterFunction(BuiltinFunctions &set) {
 	                             RangeFunctionLocalInit);
 	range_function.table_scan_progress = GeneratedRowsGlobalState::Progress;
 	range_function.get_partition_data = GeneratedRowsLocalState::GetPartitionData;
-	range_function.source_metadata = BatchMetadataInfo::RowPositions();
-	range_function.source_metadata.Merge(BatchMetadataInfo::Completion());
+	range_function.get_virtual_columns = GeneratedRowsLocalState::GetVirtualColumns;
+	range_function.projection_pushdown = true;
+	range_function.supports_row_number = true;
 	range_function.in_out_function = RangeFunction<false>;
 	range_function.cardinality = RangeCardinality;
 	range_function.is_repeatable = RangeIsRepeatable;

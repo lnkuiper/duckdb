@@ -107,19 +107,6 @@ struct PipelineProgress {
 	ProgressData pipeline;
 };
 
-//! Streaming edges are frozen after input-mode resolution, before state initialization.
-struct PipelineMetadataPlan {
-	//! Legacy partition descriptors are refreshed before each pipeline execution.
-	OperatorPartitionInfo sink_partition_info;
-	OperatorPartitionInfo source_partition_info;
-	//! Source input, each operator's output, and finally the sink input.
-	vector<BatchMetadataInfo> edges;
-
-	bool TracksBatches() const {
-		return sink_partition_info.RequiresPartitioning() || (!edges.empty() && edges[0].completion);
-	}
-};
-
 //! The Pipeline class represents an execution pipeline starting at a
 class Pipeline : public enable_shared_from_this<Pipeline> {
 	friend class Executor;
@@ -155,16 +142,6 @@ public:
 	}
 
 	void Ready();
-	//! Resolve capabilities upstream and requests downstream after all pipelines are ready.
-	BatchMetadataInfo GetAvailableMetadata();
-	void PrepareMetadata();
-	const PipelineMetadataPlan &GetMetadataPlan() const {
-		D_ASSERT(metadata_prepared);
-		return metadata_plan;
-	}
-	idx_t GetStreamId() const {
-		return stream_id;
-	}
 	void Reset();
 	void ResetSink();
 	void ResetSinkForReschedule(idx_t scheduled_workers, bool single_producer);
@@ -241,12 +218,6 @@ private:
 private:
 	//! Whether or not the pipeline has been readied
 	bool ready;
-	const idx_t stream_id;
-	PipelineMetadataPlan metadata_plan;
-	vector<BatchMetadataInfo> metadata_capabilities;
-	bool preparing_capabilities = false;
-	bool preparing_metadata = false;
-	bool metadata_prepared = false;
 	//! Whether or not the pipeline has been initialized
 	atomic<bool> initialized;
 	//! The source of this pipeline

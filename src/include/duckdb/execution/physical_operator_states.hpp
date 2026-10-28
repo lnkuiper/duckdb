@@ -28,10 +28,6 @@ class InterruptState;
 // LCOV_EXCL_START
 class OperatorState {
 public:
-	//! Metadata for the current input and output, refreshed by the executor for each invocation.
-	ChunkMetadata input_metadata;
-	ChunkMetadata output_metadata;
-
 	virtual ~OperatorState() {
 	}
 
@@ -207,7 +203,6 @@ struct OperatorSinkInput {
 	GlobalSinkState &global_state;
 	LocalSinkState &local_state;
 	InterruptState &interrupt_state;
-	optional_ptr<const ChunkMetadata> metadata;
 };
 
 struct OperatorSourceInput {
@@ -215,9 +210,6 @@ struct OperatorSourceInput {
 	LocalSourceState &local_state;
 	InterruptState &interrupt_state;
 	SourceBatchIndexState batch_index_state = SourceBatchIndexState::UNCHANGED;
-	ChunkMetadata metadata;
-	//! The descriptor completes a batch without supplying any rows.
-	bool batch_complete = false;
 };
 
 struct OperatorSinkCombineInput {
@@ -234,20 +226,6 @@ struct OperatorSinkFinalizeInput {
 struct OperatorFinalizeInput {
 	GlobalOperatorState &global_state;
 	InterruptState &interrupt_state;
-};
-
-struct OperatorBatchInput {
-	GlobalOperatorState &global_state;
-	OperatorState &local_state;
-	InterruptState &interrupt_state;
-	const BatchMetadata &batch;
-};
-
-struct OperatorSinkBatchInput {
-	GlobalSinkState &global_state;
-	LocalSinkState &local_state;
-	InterruptState &interrupt_state;
-	const BatchMetadata &batch;
 };
 
 struct OperatorSinkNextBatchInput {

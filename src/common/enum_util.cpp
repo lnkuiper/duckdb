@@ -4499,25 +4499,6 @@ OnEntryNotFound EnumUtil::FromString<OnEntryNotFound>(const char *value) {
 	return static_cast<OnEntryNotFound>(StringUtil::StringToEnum(GetOnEntryNotFoundValues(), 2, "OnEntryNotFound", value));
 }
 
-const StringUtil::EnumStringLiteral *GetOperatorBatchResultTypeValues() {
-	static constexpr StringUtil::EnumStringLiteral values[] {
-		{ static_cast<uint32_t>(OperatorBatchResultType::HAVE_MORE_OUTPUT), "HAVE_MORE_OUTPUT" },
-		{ static_cast<uint32_t>(OperatorBatchResultType::FINISHED), "FINISHED" },
-		{ static_cast<uint32_t>(OperatorBatchResultType::BLOCKED), "BLOCKED" }
-	};
-	return values;
-}
-
-template<>
-const char* EnumUtil::ToChars<OperatorBatchResultType>(OperatorBatchResultType value) {
-	return StringUtil::EnumToString(GetOperatorBatchResultTypeValues(), 3, "OperatorBatchResultType", static_cast<uint32_t>(value));
-}
-
-template<>
-OperatorBatchResultType EnumUtil::FromString<OperatorBatchResultType>(const char *value) {
-	return static_cast<OperatorBatchResultType>(StringUtil::StringToEnum(GetOperatorBatchResultTypeValues(), 3, "OperatorBatchResultType", value));
-}
-
 const StringUtil::EnumStringLiteral *GetOperatorCachingModeValues() {
 	static constexpr StringUtil::EnumStringLiteral values[] {
 		{ static_cast<uint32_t>(OperatorCachingMode::NONE), "NONE" },

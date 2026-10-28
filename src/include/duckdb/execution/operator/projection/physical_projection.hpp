@@ -15,7 +15,6 @@ namespace duckdb {
 
 class PhysicalProjection : public PhysicalOperator {
 public:
-	BatchMetadataInfo RequestedMetadata() const override;
 	static constexpr const PhysicalOperatorType TYPE = PhysicalOperatorType::PROJECTION;
 
 public:
@@ -25,12 +24,8 @@ public:
 	vector<unique_ptr<Expression>> select_list;
 
 public:
-	BatchMetadataInfo OutputMetadata(const BatchMetadataInfo &input) const override {
-		return input;
-	}
 	void InitializeOutputChunk(Allocator &allocator, DataChunk &chunk) const override;
 	unique_ptr<OperatorState> GetOperatorState(ExecutionContext &context) const override;
-	optional_ptr<const vector<unique_ptr<Expression>>> GetGlobalExpressions() const override;
 	OperatorResultType Execute(ExecutionContext &context, DataChunk &input, DataChunk &chunk,
 	                           GlobalOperatorState &gstate, OperatorState &state) const override;
 

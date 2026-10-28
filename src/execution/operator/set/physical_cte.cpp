@@ -17,9 +17,8 @@ enum class CTECombineState : uint8_t { PENDING, COMBINED };
 
 class CTEConsumerGlobalSourceState : public GlobalSourceState {
 public:
-	CTEConsumerGlobalSourceState(shared_ptr<PipelineBroadcastExchange> exchange_p, idx_t consumer_idx_p,
-	                             BatchMetadataInfo metadata_p)
-	    : exchange(std::move(exchange_p)), consumer_idx(consumer_idx_p), metadata(metadata_p) {
+	CTEConsumerGlobalSourceState(shared_ptr<PipelineBroadcastExchange> exchange_p, idx_t consumer_idx_p)
+	    : exchange(std::move(exchange_p)), consumer_idx(consumer_idx_p) {
 		auto scan_mode = exchange->GetConsumerScanMode(consumer_idx);
 		max_threads = exchange->PreservesOrder() && scan_mode != PipelineBroadcastExchangeScanMode::BATCH
 		                  ? 1
@@ -43,7 +42,6 @@ public:
 
 	shared_ptr<PipelineBroadcastExchange> exchange;
 	idx_t consumer_idx;
-	BatchMetadataInfo metadata;
 	idx_t max_threads;
 	atomic<bool> unregistered {false};
 	//! The exchange total grows while the producer outruns its estimate - keeps the scan progress monotonic
@@ -74,13 +72,12 @@ unique_ptr<GlobalSourceState> PhysicalCTEConsumerSource::GetGlobalSourceState(Cl
 unique_ptr<GlobalSourceState>
 PhysicalCTEConsumerSource::GetGlobalSourceState(ClientContext &context,
                                                 const OperatorPartitionInfo &partition_info) const {
-	return make_uniq<CTEConsumerGlobalSourceState>(exchange, consumer_idx, partition_info.metadata);
+	return make_uniq<CTEConsumerGlobalSourceState>(exchange, consumer_idx);
 }
 
 unique_ptr<LocalSourceState> PhysicalCTEConsumerSource::GetLocalSourceState(ExecutionContext &context,
                                                                             GlobalSourceState &gstate) const {
-	return make_uniq<CTEConsumerLocalSourceState>(
-	    exchange->GetScanState(gstate.Cast<CTEConsumerGlobalSourceState>().metadata));
+	return make_uniq<CTEConsumerLocalSourceState>(exchange->GetScanState());
 }
 
 SourceResultType PhysicalCTEConsumerSource::GetDataInternal(ExecutionContext &context, DataChunk &chunk,
@@ -88,7 +85,7 @@ SourceResultType PhysicalCTEConsumerSource::GetDataInternal(ExecutionContext &co
 	auto &gstate = input.global_state.Cast<CTEConsumerGlobalSourceState>();
 	auto &lstate = input.local_state.Cast<CTEConsumerLocalSourceState>();
 	return gstate.exchange->Scan(gstate.consumer_idx, chunk, *lstate.scan_state, lstate.exchange_batch_index,
-	                             input.batch_index_state, input.interrupt_state, input.metadata, input.batch_complete);
+	                             input.batch_index_state, input.interrupt_state);
 }
 
 OperatorPartitionData PhysicalCTEConsumerSource::GetPartitionData(ExecutionContext &context, DataChunk &chunk,
@@ -107,14 +104,6 @@ bool PhysicalCTEConsumerSource::SupportsPartitioning(const OperatorPartitionInfo
 
 OrderPreservationType PhysicalCTEConsumerSource::SourceOrder() const {
 	return exchange->SourceOrder();
-}
-
-BatchMetadataInfo PhysicalCTEConsumerSource::SourceMetadata() const {
-	return exchange->SourceMetadata(consumer_idx);
-}
-
-BatchMetadataInfo PhysicalCTE::RequestedMetadata() const {
-	return exchange ? exchange->RequestedMetadata() : BatchMetadataInfo();
 }
 
 bool PhysicalCTEConsumerSource::ParallelSource() const {
@@ -257,8 +246,7 @@ public:
 		if (execution_mode != CTEExecutionMode::MATERIALIZED) {
 			D_ASSERT(op.exchange);
 			D_ASSERT(context.pipeline);
-			exchange_state = op.exchange->GetLocalState(context.client, context.pipeline->GetBaseBatchIndex(),
-			                                            context.pipeline->GetMetadataPlan().edges.back().completion);
+			exchange_state = op.exchange->GetLocalState(context.client, context.pipeline->GetBaseBatchIndex());
 		}
 	}
 
@@ -302,8 +290,7 @@ SinkResultType PhysicalCTE::Sink(ExecutionContext &context, DataChunk &chunk, Op
 	if (lstate.execution_mode != CTEExecutionMode::MATERIALIZED) {
 		D_ASSERT(gstate.exchange);
 		D_ASSERT(lstate.exchange_state);
-		result = gstate.exchange->Push(chunk, *lstate.exchange_state, lstate.partition_info, input.interrupt_state,
-		                               input.metadata ? *input.metadata : ChunkMetadata());
+		result = gstate.exchange->Push(chunk, *lstate.exchange_state, lstate.partition_info, input.interrupt_state);
 		if (result == SinkResultType::BLOCKED) {
 			if (lstate.sink_execution_state != CTESinkExecutionState::BLOCKED) {
 				DUCKDB_LOG(context.client, PhysicalOperatorLogType, *this, "PhysicalCTE", "ExchangeBlocked",
@@ -338,14 +325,6 @@ SinkNextBatchType PhysicalCTE::NextBatch(ExecutionContext &context, OperatorSink
 	D_ASSERT(gstate.exchange);
 	D_ASSERT(lstate.exchange_state);
 	return gstate.exchange->NextBatch(*lstate.exchange_state, lstate.partition_info, input.interrupt_state);
-}
-
-SinkNextBatchType PhysicalCTE::CompleteBatch(ExecutionContext &, OperatorSinkBatchInput &input) const {
-	auto &local = input.local_state.Cast<CTELocalState>();
-	if (local.execution_mode == CTEExecutionMode::MATERIALIZED) {
-		return SinkNextBatchType::READY;
-	}
-	return exchange->CompleteBatch(*local.exchange_state, input.batch, local.partition_info, input.interrupt_state);
 }
 
 SinkNextBatchType PhysicalCTE::UpdateMinBatchIndex(ExecutionContext &, OperatorSinkNextBatchInput &input) const {
@@ -526,7 +505,7 @@ void PhysicalCTE::RegisterBufferedConsumer(Pipeline &pipeline, idx_t consumer_id
 			scan_mode = PipelineBroadcastExchangeScanMode::BATCH;
 		}
 	}
-	exchange->SelectBufferedConsumer(consumer_idx, scan_mode, pipeline);
+	exchange->SelectBufferedConsumer(consumer_idx, scan_mode);
 	RegisterBatchPreference(pipeline);
 }
 

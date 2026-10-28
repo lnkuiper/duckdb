@@ -31,9 +31,6 @@ enum class OperatorResultType : uint8_t { NEED_MORE_INPUT, HAVE_MORE_OUTPUT, FIN
 //! HAVE_MORE_OUTPUT means the operator contains more results.
 enum class OperatorFinalizeResultType : uint8_t { HAVE_MORE_OUTPUT, FINISHED };
 
-//! Flushes one input batch without ending the operator's input stream.
-enum class OperatorBatchResultType : uint8_t { HAVE_MORE_OUTPUT, FINISHED, BLOCKED };
-
 //! OperatorFinalResultType is used for the final call
 enum class OperatorFinalResultType : uint8_t { FINISHED, BLOCKED };
 

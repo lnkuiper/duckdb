@@ -1,0 +1,66 @@
+# name: test/sql/ordinality/parallel_generated_ordinality.test
+# description: Generated scans provide row numbers without a serial window
+# group: [ordinality]
+
+statement ok
+SET threads=4
+
+statement ok
+PRAGMA verify_parallelism
+
+query III
+SELECT count(*), min(ordinality), count(*) FILTER (WHERE ordinality <> i+1)
+FROM range(4097) WITH ORDINALITY t(i, ordinality)
+----
+4097	1	0
+
+query III
+SELECT count(*), max(n), count(*) FILTER (WHERE i <> 8192-2*(n-1))
+FROM (SELECT i, row_number() OVER () n FROM generate_series(8192, 0, -2) t(i))
+----
+4097	4097	0
+
+# Only the virtual column is required; none of the source's data columns are read.
+query III
+SELECT count(*), min(ordinality), max(ordinality)
+FROM repeat_row('unused', 42, num_rows=4097) WITH ORDINALITY
+----
+4097	1	4097
+
+query III
+SELECT count(*), min(ordinality), max(ordinality)
+FROM repeat(NULL, 4097) WITH ORDINALITY
+----
+4097	1	4097
+
+query I
+SELECT count(*) FROM range(0) WITH ORDINALITY
+----
+0
+
+# Numbering happens before an outer filter, even across batch boundaries.
+query II
+SELECT i, n FROM range(4097) WITH ORDINALITY t(i, n) WHERE i >= 4095 ORDER BY i
+----
+4095	4096
+4096	4097
+
+statement ok
+CREATE TABLE numbered AS SELECT i FROM range(4097) t(i)
+
+statement ok
+DELETE FROM numbered WHERE i%5=0
+
+# Native row numbers count visible rows, including transaction-local storage.
+query III
+SELECT count(*), max(n), count(*) FILTER (WHERE n <> i-i//5)
+FROM (SELECT i, row_number() OVER () n FROM numbered)
+----
+3277	3277	0
+
+# A window above a filtered scan must number the survivors densely.
+query III
+SELECT count(*), min(n), max(n)
+FROM (SELECT i, row_number() OVER () n FROM numbered WHERE i < 10)
+----
+8	1	8
