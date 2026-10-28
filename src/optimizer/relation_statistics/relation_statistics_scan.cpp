@@ -206,6 +206,7 @@ RelationStats RelationStatisticsHelper::ExtractDelimGetStats(LogicalDelimGet &de
 		result.columns.emplace_back(binding, DistinctCount(1, DistinctCountSource::CARDINALITY),
 		                            Identifier("column" + to_string(binding.column_index)));
 	}
+	result.CapCurrentDomainsToCardinality();
 	result.Verify(delim_get.GetColumnBindings());
 	return result;
 }

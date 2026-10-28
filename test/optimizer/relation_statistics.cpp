@@ -15,6 +15,7 @@
 #include "duckdb/planner/operator/logical_aggregate.hpp"
 #include "duckdb/planner/operator/logical_comparison_join.hpp"
 #include "duckdb/planner/operator/logical_cteref.hpp"
+#include "duckdb/planner/operator/logical_delim_get.hpp"
 #include "duckdb/planner/operator/logical_distinct.hpp"
 #include "duckdb/planner/operator/logical_dummy_scan.hpp"
 #include "duckdb/planner/operator/logical_projection.hpp"
@@ -347,6 +348,22 @@ TEST_CASE("Relation statistics extraction is cached by operator", "[optimizer][r
 	auto second = extractor.Extract(*plan);
 	REQUIRE(second == first);
 	REQUIRE(extractor.ExtractedOperatorCount() == 2);
+}
+
+TEST_CASE("Empty delimiter scans have empty current domains", "[optimizer][relation_statistics]") {
+	DuckDB db;
+	Connection connection(db);
+	LogicalDelimGet delim_get(TableIndex(10), {LogicalType::INTEGER});
+	delim_get.has_estimated_cardinality = true;
+	delim_get.estimated_cardinality = 0;
+	RelationStatsExtractor extractor(*connection.context);
+
+	auto stats = extractor.Extract(delim_get);
+	REQUIRE(stats);
+	REQUIRE(stats->cardinality == 0);
+	REQUIRE(stats->columns.size() == 1);
+	REQUIRE(stats->columns[0].current_domain.distinct_count == 0);
+	REQUIRE(stats->columns[0].current_domain.source == DistinctCountSource::CARDINALITY);
 }
 
 TEST_CASE("Delim SEMI and ANTI joins use domain coverage", "[optimizer][relation_statistics]") {
