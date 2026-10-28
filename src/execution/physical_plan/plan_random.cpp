@@ -26,7 +26,8 @@ public:
 		Visit(*op.children[0]);
 		// Aggregate inputs are extracted into a projection during physical planning.
 		if ((op.type != LogicalOperatorType::LOGICAL_PROJECTION &&
-		     op.type != LogicalOperatorType::LOGICAL_AGGREGATE_AND_GROUP_BY) ||
+		     op.type != LogicalOperatorType::LOGICAL_AGGREGATE_AND_GROUP_BY &&
+		     op.type != LogicalOperatorType::LOGICAL_FILTER) ||
 		    !SupportsOrdinality(*op.children[0])) {
 			return;
 		}
@@ -36,9 +37,18 @@ public:
 		if (!needs_ordinality) {
 			return;
 		}
+		auto column_count = op.GetColumnBindings().size();
 		auto column = AddOrdinality(*op.children[0]);
 		LogicalOperatorVisitor::EnumerateExpressions(
 		    op, [&](unique_ptr<Expression> *expr) { BindRandom(**expr, column.binding); });
+		if (op.type == LogicalOperatorType::LOGICAL_FILTER && op.GetColumnBindings().size() != column_count) {
+			// Keep the helper column out of the filter's output.
+			auto &projection_map = op.Cast<LogicalFilter>().projection_map;
+			D_ASSERT(projection_map.empty());
+			for (idx_t i = 0; i < column_count; i++) {
+				projection_map.emplace_back(i);
+			}
+		}
 	}
 
 private:

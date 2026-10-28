@@ -175,3 +175,49 @@ query I
 SELECT count(r) FROM (SELECT CASE WHEN i % 2 = 0 THEN random() END r FROM range(4097) t(i))
 ----
 2049
+
+# A random predicate must choose the same rows without exposing its hidden input column.
+statement ok
+PRAGMA verify_parallelism
+
+statement ok
+SET threads=1
+
+statement ok
+SELECT setseed(0.42)
+
+statement ok
+CREATE TABLE filtered_expected AS SELECT * FROM range(65537) t(i) WHERE random() < 0.5
+
+query I nosort filtered_count
+SELECT count(*) FROM filtered_expected
+
+foreach threads 1 4 8
+
+statement ok
+SET threads={threads}
+
+statement ok
+SELECT setseed(0.42)
+
+statement ok
+CREATE OR REPLACE TABLE filtered_actual AS SELECT * FROM range(65537) t(i) WHERE random() < 0.5
+
+query I
+SELECT count(*) FROM ((TABLE filtered_actual EXCEPT ALL TABLE filtered_expected) UNION ALL (TABLE filtered_expected EXCEPT ALL TABLE filtered_actual))
+----
+0
+
+query I
+SELECT count(*) FROM pragma_table_info('filtered_actual')
+----
+1
+
+# An aggregate may prune all ordinary scan columns.
+statement ok
+SELECT setseed(0.42)
+
+query I nosort filtered_count
+SELECT count(*) FROM range(65537) WHERE random() < 0.5
+
+endloop
