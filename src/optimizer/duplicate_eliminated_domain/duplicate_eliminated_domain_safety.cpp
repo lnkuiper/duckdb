@@ -198,16 +198,17 @@ static bool TableFiltersAreSafe(ClientContext &context, const LogicalGet &get) {
 	return true;
 }
 
-static bool IsSupportedScan(const LogicalGet &get) {
+static bool IsSupportedScan(ClientContext &context, const LogicalGet &get) {
 	if (get.HasTableInOutInput() || !get.function.get_bind_info) {
 		return false;
 	}
-	auto bind_info = get.function.get_bind_info(get.bind_data.get());
+	TableFunctionGetBindInfoInput input(context, get.bind_data.get());
+	auto bind_info = get.function.get_bind_info(input);
 	return bind_info.type == ScanType::TABLE || bind_info.type == ScanType::PARQUET;
 }
 
 static bool ScanIsSafe(ClientContext &context, const LogicalGet &get) {
-	return IsSupportedScan(get) && TableFiltersAreSafe(context, get);
+	return IsSupportedScan(context, get) && TableFiltersAreSafe(context, get);
 }
 
 static bool CanPreparePayloadInternal(ClientContext &context, const LogicalOperator &op) {

@@ -50,6 +50,8 @@ const char* EnumUtil::ToChars<JSONRecordType>(JSONRecordType value) {
 		return "RECORDS";
 	case JSONRecordType::VALUES:
 		return "VALUES";
+	case JSONRecordType::FEATURES:
+		return "FEATURES";
 	default:
 		throw NotImplementedException(StringUtil::Format("Enum value of type JSONRecordType: '%d' not implemented", value));
 	}
@@ -65,6 +67,9 @@ JSONRecordType EnumUtil::FromString<JSONRecordType>(const char *value) {
 	}
     if (StringUtil::Equals(value, "VALUES")) {
 		return JSONRecordType::VALUES;
+	}
+    if (StringUtil::Equals(value, "FEATURES")) {
+		return JSONRecordType::FEATURES;
 	}
    throw NotImplementedException(StringUtil::Format("Enum value of type JSONRecordType: '%s' not implemented", value));
 }
@@ -100,6 +105,29 @@ JSONFormat EnumUtil::FromString<JSONFormat>(const char *value) {
 		return JSONFormat::ARRAY;
 	}
    throw NotImplementedException(StringUtil::Format("Enum value of type JSONFormat: '%s' not implemented", value));
+}
+
+template<>
+const char* EnumUtil::ToChars<JSONKeyMatch>(JSONKeyMatch value) {
+	switch(value) {
+	case JSONKeyMatch::EXACT:
+		return "EXACT";
+	case JSONKeyMatch::CASE_INSENSITIVE:
+		return "CASE_INSENSITIVE";
+	default:
+		throw NotImplementedException(StringUtil::Format("Enum value of type JSONKeyMatch: '%d' not implemented", value));
+	}
+}
+
+template<>
+JSONKeyMatch EnumUtil::FromString<JSONKeyMatch>(const char *value) {
+    if (StringUtil::Equals(value, "EXACT")) {
+		return JSONKeyMatch::EXACT;
+	}
+    if (StringUtil::Equals(value, "CASE_INSENSITIVE")) {
+		return JSONKeyMatch::CASE_INSENSITIVE;
+	}
+   throw NotImplementedException(StringUtil::Format("Enum value of type JSONKeyMatch: '%s' not implemented", value));
 }
 
 } // namespace duckdb

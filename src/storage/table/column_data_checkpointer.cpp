@@ -65,8 +65,8 @@ static void CreateIntermediateVector(vector<reference<ColumnCheckpointState>> &s
 	}
 	chunk.Initialize(Allocator::DefaultAllocator(), types);
 	if (type.id() == LogicalTypeId::VALIDITY) {
-		auto data = FlatVector::GetData<bool>(chunk.data[0]);
-		memset((void *)data, 0, sizeof(bool) * STANDARD_VECTOR_SIZE);
+		auto data = FlatVector::GetDataMutable<bool>(chunk.data[0]);
+		memset(data, 0, sizeof(bool) * STANDARD_VECTOR_SIZE);
 	}
 }
 
@@ -190,32 +190,25 @@ vector<CheckpointAnalyzeResult> ColumnDataCheckpointer::DetectBestCompressionMet
 	}
 
 	InitAnalyze();
+	// scan over all the segments and run the analyze step
+	ScanSegments([&](Vector &scan_vector) {
+		for (idx_t i = 0; i < checkpoint_states.size(); i++) {
+			auto &functions = compression_functions[i];
+			auto &states = analyze_states[i];
+			for (idx_t j = 0; j < functions.size(); j++) {
+				auto &state = states[j];
+				auto &func = functions[j];
 
-	// If the compression type was explicitly specified at column definition time,
-	// the decision is already made — skip the entire analyze scan.
-	const bool skip_scan = (compression_type != CompressionType::COMPRESSION_AUTO);
-
-	if (!skip_scan) {
-		// scan over all the segments and run the analyze step
-		ScanSegments([&](Vector &scan_vector) {
-			for (idx_t i = 0; i < checkpoint_states.size(); i++) {
-				auto &functions = compression_functions[i];
-				auto &states = analyze_states[i];
-				for (idx_t j = 0; j < functions.size(); j++) {
-					auto &state = states[j];
-					auto &func = functions[j];
-
-					if (!state) {
-						continue;
-					}
-					if (!func->analyze(*state, scan_vector)) {
-						state = nullptr;
-						func = nullptr;
-					}
+				if (!state) {
+					continue;
+				}
+				if (!func->analyze(*state, scan_vector)) {
+					state = nullptr;
+					func = nullptr;
 				}
 			}
-		});
-	}
+		}
+	});
 
 	vector<CheckpointAnalyzeResult> result;
 	result.resize(checkpoint_states.size());

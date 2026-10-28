@@ -15,8 +15,8 @@ set(JSON_EXTENSION_FILES
     json_common.cpp
     json_enums.cpp
     json_functions.cpp
-    json_multi_file_info.cpp
     json_scan.cpp
+    json_schema_inference.cpp
     json_serializer.cpp
     json_deserializer.cpp
     serialize_json.cpp
@@ -32,6 +32,7 @@ set(JSON_EXTENSION_FILES
     json_functions/json_structure.cpp
     json_functions/json_transform.cpp
     json_functions/json_create.cpp
+    json_functions/json_geojson.cpp
     json_functions/json_type.cpp
     json_functions/json_valid.cpp
     json_functions/json_value.cpp
@@ -43,11 +44,9 @@ set(JSON_EXTENSION_FILES
     json_functions/json_modify.cpp
     json_functions/json_strip_nulls.cpp
     json_functions/read_json.cpp
-    json_functions/read_json_objects.cpp)
+    json_functions/read_single_json_file.cpp)
 
-build_static_extension(json ${JSON_EXTENSION_FILES})
-set(PARAMETERS "-warnings")
-build_loadable_extension(json ${PARAMETERS} ${JSON_EXTENSION_FILES})
+build_extension_library(json ${JSON_EXTENSION_FILES})
 target_link_libraries(json_loadable_extension duckdb_yyjson)
 
 install(

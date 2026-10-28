@@ -33,6 +33,9 @@ public:
 	string file_path;
 	bool use_tmp_file;
 	CopyFunctionReturnType return_type;
+	//! The names and types of the copied query, for RETURN_COLUMN_TYPES
+	vector<Identifier> query_names;
+	vector<LogicalType> query_types;
 	bool write_empty_file;
 
 	//! Fine-grained control over writes
@@ -57,6 +60,7 @@ public:
 	unique_ptr<LocalSinkState> GetLocalSinkState(ExecutionContext &context) const override;
 	unique_ptr<GlobalSinkState> GetGlobalSinkState(ClientContext &context) const override;
 	SinkNextBatchType NextBatch(ExecutionContext &context, OperatorSinkNextBatchInput &input) const override;
+	SinkNextBatchType UpdateMinBatchIndex(ExecutionContext &context, OperatorSinkNextBatchInput &input) const override;
 
 	OperatorPartitionInfo RequiredPartitionInfo() const override;
 

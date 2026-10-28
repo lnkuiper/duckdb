@@ -25,15 +25,19 @@ OptimisticDataWriter::OptimisticDataWriter(DataTable &table, OptimisticDataWrite
 OptimisticDataWriter::~OptimisticDataWriter() {
 }
 
+bool OptimisticDataWriter::CanWriteToDisk() const {
+	auto &attached = table.GetAttached();
+	auto &storage_manager = StorageManager::Get(attached);
+	return !table.IsTemporary() && !storage_manager.InMemory() && !attached.IsReadOnly();
+}
+
 bool OptimisticDataWriter::PrepareWrite() {
 	// check if optimistic writing is enabled
 	if (!Settings::Get<EnableOptimisticWriteSetting>(context)) {
 		return false;
 	}
 	// check if we should pre-emptively write the table to disk
-	auto &attached = table.GetAttached();
-	auto &storage_manager = StorageManager::Get(attached);
-	if (table.IsTemporary() || storage_manager.InMemory() || attached.IsReadOnly()) {
+	if (!CanWriteToDisk()) {
 		return false;
 	}
 	// we should! write the second-to-last row group to disk
@@ -88,11 +92,8 @@ void OptimisticDataWriter::WriteNewRowGroup(OptimisticWriteCollection &row_group
 		// we don't need to flush based on the amount of row groups - but we still might need to flush based on the
 		// amount of
 		auto &config = DBConfig::GetConfig(context);
-		auto memory_limit = config.options.write_buffer_row_group_memory_limit;
-		if (!memory_limit.IsValid()) {
-			memory_limit = config.options.maximum_memory / 5 / (config.options.maximum_threads + 1);
-		}
-		if (row_groups.unflushed_data_size >= memory_limit.GetIndex()) {
+		auto memory_limit = config.GetWriteBufferMemoryLimit();
+		if (row_groups.unflushed_data_size >= memory_limit) {
 			// we exhausted our memory available for buffering - flush
 			need_to_flush = true;
 		}
@@ -117,13 +118,24 @@ void OptimisticWriteCollection::FinalizeFlush() {
 	unflushed_data_size = 0;
 }
 
+void OptimisticWriteCollection::ResetCollectionAccounting() {
+	prev_allocated_size = 0;
+	unflushed_data_size = 0;
+	unflushed_row_groups.clear();
+	flushed_row_groups.clear();
+}
+
 void OptimisticDataWriter::WriteUnflushedRowGroups(OptimisticWriteCollection &row_groups) {
+	auto total_row_groups = row_groups.collection->GetRowGroupCount();
+	if (row_groups.flushed_row_groups.size() == total_row_groups && row_groups.partial_block_managers.empty()) {
+		// everything is flushed already and there is nothing to merge - a repeated call ends up here
+		return;
+	}
 	// we finished writing a complete row group
 	if (!PrepareWrite()) {
 		return;
 	}
 	// add any incomplete row groups to the set of unflushed row groups
-	auto total_row_groups = row_groups.collection->GetRowGroupCount();
 	for (idx_t i = 0; i < total_row_groups; i++) {
 		// check if this row group was flushed
 		auto entry = row_groups.flushed_row_groups.find(i);

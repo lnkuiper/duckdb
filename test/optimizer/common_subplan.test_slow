@@ -476,7 +476,7 @@ RESET disabled_optimizers
 # TPCH Q2 with delimiter joins rewritten to CTEs should still expose the
 # repeated supplier/nation/region subtree to common subplan elimination.
 statement ok
-SET disabled_optimizers='duplicate_eliminated_domain';
+SET disabled_optimizers = 'aggregate_reuse,duplicate_eliminated_domain';
 
 query II
 explain

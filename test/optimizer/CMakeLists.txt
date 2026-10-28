@@ -1,15 +1,23 @@
 add_library_unity(
   test_optimizer
   OBJECT
+  aggregate_rewrite.cpp
+  bound_function_identity.cpp
   build_probe_side_optimizer.cpp
   column_binding_rewrite.cpp
   common_subplan_nonserializable.cpp
+  expression_type_serialization.cpp
   duplicate_eliminated_domain_candidate.cpp
   duplicate_eliminated_domain_properties.cpp
   filter_pushdown_alias.cpp
+  function_invocation_serialization.cpp
   join_order_conflict_detector.cpp
+  join_order_enumeration.cpp
+  logical_plan_verification.cpp
   projection_pullup.cpp
   relation_statistics.cpp
+  remove_unused_columns.cpp
+  unchecked_cast.cpp
   union_alls.cpp)
 
 set(UNITTEST_OBJECT_FILES

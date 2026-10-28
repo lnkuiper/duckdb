@@ -72,11 +72,20 @@ class PhysicalOperator;
 enum class GeoParquetVersion : uint8_t;
 
 struct PreparedParquetLayout {
-	vector<duckdb_parquet::SchemaElement> schema;
+	explicit PreparedParquetLayout(ArenaAllocator &arena) : schema(arena) {
+	}
+
+	duckdb_parquet::SchemaElementList schema;
 	ShreddingType shredding_types;
 };
 
 struct PreparedRowGroup {
+	explicit PreparedRowGroup(Allocator &allocator)
+	    : arena(make_uniq<ArenaAllocator>(allocator)), row_group(*arena), layout(*arena) {
+	}
+
+	//! Backs the Thrift metadata of this row group - must outlive it
+	unique_ptr<ArenaAllocator> arena;
 	duckdb_parquet::RowGroup row_group;
 	vector<unique_ptr<ColumnWriterState>> states;
 	PreparedParquetLayout layout;
@@ -151,6 +160,8 @@ public:
 struct ParquetWriterOptions {
 	//! The file path to use for the written parquet file
 	string file_name;
+	//! The flags to use when opening the written parquet file
+	FileOpenFlags open_flags = FileFlags::FILE_FLAGS_WRITE | FileFlags::FILE_FLAGS_FILE_CREATE_NEW;
 	//! Types of the columns
 	vector<LogicalType> sql_types;
 	//! Names of the columns
@@ -167,6 +178,8 @@ struct ParquetWriterOptions {
 	optional_idx dictionary_size_limit;
 	//! The maximum bytes of string-data to put into the dictionary, per column/field
 	idx_t string_dictionary_page_size_limit;
+	//! The maximum uncompressed size of a data page
+	idx_t data_page_size_limit;
 	//! Whether to use bloom filters or not
 	bool enable_bloom_filters;
 	//! Maximum ratio of false-positives to allow in the written bloom filter
@@ -231,6 +244,9 @@ public:
 	idx_t StringDictionaryPageSizeLimit() const {
 		return options.string_dictionary_page_size_limit;
 	}
+	idx_t DataPageSizeLimit() const {
+		return options.data_page_size_limit;
+	}
 	bool EnableBloomFilters() const {
 		return options.enable_bloom_filters;
 	}
@@ -276,6 +292,7 @@ public:
 	void SetWrittenStatistics(CopyFunctionFileStatistics &written_stats);
 	void FlushColumnStats(idx_t col_idx, duckdb_parquet::ColumnChunk &chunk,
 	                      optional_ptr<ColumnWriterStatistics> writer_stats);
+	void FlushNestedColumnStats(idx_t schema_idx, idx_t null_count, idx_t num_values);
 	void InitializePreprocessing(unique_ptr<ParquetWriteTransformData> &transform_data);
 	void InitializeSchemaElements();
 
@@ -286,7 +303,7 @@ private:
 	void InitializeSchemaFromPreparedRowGroup(const PreparedRowGroup &prepared);
 	void InitializeColumnWriters();
 	idx_t InitializeColumnWriterSchemaIndices();
-	PreparedParquetLayout ExportPreparedLayout() const;
+	PreparedParquetLayout ExportPreparedLayout(ArenaAllocator &arena) const;
 
 	void VerifyPreparedRowGroup(const PreparedRowGroup &prepared) const;
 #ifdef DEBUG
@@ -300,6 +317,8 @@ private:
 
 	unique_ptr<AsyncFileWriter> writer;
 	std::shared_ptr<duckdb_apache::thrift::protocol::TProtocol> protocol;
+	//! Backs the Thrift metadata of the file - must outlive it
+	ArenaAllocator metadata_arena;
 	duckdb_parquet::FileMetaData file_meta_data;
 	std::mutex lock;
 

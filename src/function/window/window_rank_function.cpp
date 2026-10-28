@@ -20,12 +20,15 @@ public:
 		if (!executor.arg_order_idx.empty()) {
 			use_framing = true;
 
-			//	If the argument order is a prefix of the partition ordering
+			//	If the argument order is the entire partition ordering
 			//	(and the optimizer is enabled), then we can just use the partition ordering.
+			//	A prefix is not sufficient because peer boundaries use all of the ordering keys.
 			auto &wexpr = executor.wexpr;
 			auto &arg_orders = executor.wexpr.ArgOrders();
+			auto &orders = wexpr.OrderBy();
 			const auto optimize = Settings::Get<EnableOptimizerSetting>(client);
-			if (!optimize || BoundWindowExpression::GetSharedOrders(wexpr.OrderBy(), arg_orders) != arg_orders.size()) {
+			const auto shared = BoundWindowExpression::GetSharedOrders(orders, arg_orders);
+			if (!optimize || shared != arg_orders.size() || arg_orders.size() != orders.size()) {
 				token_tree = make_uniq<WindowTokenTree>(client, arg_orders, executor.arg_order_idx, payload_count);
 			}
 		}
@@ -84,7 +87,7 @@ void WindowPeerLocalState::Finalizer(ExecutionContext &context, CollectionPtr co
 	if (local_tree) {
 		auto &local_tokens = local_tree->Cast<WindowMergeSortTreeLocalState>();
 		local_tokens.Finalize(context, sink.interrupt_state);
-		local_tokens.window_tree.Build();
+		local_tokens.window_tree.Build(context.client);
 	}
 }
 
@@ -132,7 +135,7 @@ struct WindowPeerExecutor : public WindowExecutor {
 		return true;
 	}
 	static void StreamData(ExecutionContext &context, DataChunk &input, DataChunk &delayed, idx_t delayed_capacity,
-	                       Vector &result, LocalSourceState &state) {
+	                       Vector &result, WindowExecutorStreamingState &state) {
 		state.Cast<WindowPeerStreamingState>().Evaluate(result);
 	}
 };
@@ -163,8 +166,8 @@ struct WindowRankExecutor : public WindowPeerExecutor {
 	                    idx_t row_idx, OperatorSinkInput &sink);
 
 	//! Streaming APIs
-	static unique_ptr<LocalSourceState> GetStreamingState(ClientContext &client, DataChunk &input,
-	                                                      const BoundWindowExpression &wexpr) {
+	static unique_ptr<WindowExecutorStreamingState> GetStreamingState(ClientContext &client, DataChunk &input,
+	                                                                  const BoundWindowExpression &wexpr) {
 		return make_uniq<WindowPeerStreamingState>(Value((int64_t)1));
 	}
 };
@@ -193,6 +196,7 @@ WindowFunction RankFun::GetFunction() {
 	                   WindowRankExecutor::GetBounds, WindowRankExecutor::GetSharing, WindowRankExecutor::GetGlobal,
 	                   WindowRankExecutor::GetLocal, WindowRankLocalState::Sinker, WindowRankLocalState::Finalizer,
 	                   WindowRankExecutor::GetData);
+	fun.SetIsRanking(true);
 	fun.SetCanStreamCallback(WindowRankExecutor::CanStream);
 	fun.SetStreamingStateCallback(WindowRankExecutor::GetStreamingState);
 	fun.SetStreamingDataCallback(WindowRankExecutor::StreamData);
@@ -254,8 +258,8 @@ struct WindowDenseRankExecutor : public WindowPeerExecutor {
 	                    idx_t row_idx, OperatorSinkInput &sink);
 
 	//! Streaming APIs
-	static unique_ptr<LocalSourceState> GetStreamingState(ClientContext &client, DataChunk &input,
-	                                                      const BoundWindowExpression &wexpr) {
+	static unique_ptr<WindowExecutorStreamingState> GetStreamingState(ClientContext &client, DataChunk &input,
+	                                                                  const BoundWindowExpression &wexpr) {
 		return make_uniq<WindowPeerStreamingState>(Value((int64_t)1));
 	}
 };
@@ -277,6 +281,7 @@ WindowFunction DenseRankFun::GetFunction() {
 	                   WindowDenseRankExecutor::GetBounds, nullptr, WindowDenseRankExecutor::GetGlobal,
 	                   WindowDenseRankExecutor::GetLocal, nullptr, nullptr, WindowDenseRankExecutor::GetData);
 	fun.SetCanOrderBy(false);
+	fun.SetIsRanking(true);
 	fun.SetCanStreamCallback(WindowDenseRankExecutor::CanStream);
 	fun.SetStreamingStateCallback(WindowDenseRankExecutor::GetStreamingState);
 	fun.SetStreamingDataCallback(WindowDenseRankExecutor::StreamData);
@@ -365,8 +370,8 @@ struct WindowPercentRankExecutor : public WindowPeerExecutor {
 	                    idx_t row_idx, OperatorSinkInput &sink);
 
 	//! Streaming APIs
-	static unique_ptr<LocalSourceState> GetStreamingState(ClientContext &client, DataChunk &input,
-	                                                      const BoundWindowExpression &wexpr) {
+	static unique_ptr<WindowExecutorStreamingState> GetStreamingState(ClientContext &client, DataChunk &input,
+	                                                                  const BoundWindowExpression &wexpr) {
 		return make_uniq<WindowPeerStreamingState>(Value((double)0));
 	}
 };
@@ -396,6 +401,7 @@ WindowFunction PercentRankFun::GetFunction() {
 	                   WindowPercentRankExecutor::GetGlobal, WindowPercentRankExecutor::GetLocal,
 	                   WindowPercentRankLocalState::Sinker, WindowPercentRankLocalState::Finalizer,
 	                   WindowPercentRankExecutor::GetData);
+	fun.SetIsRanking(true);
 	fun.SetCanStreamCallback(WindowPercentRankExecutor::CanStream);
 	fun.SetStreamingStateCallback(WindowPercentRankExecutor::GetStreamingState);
 	fun.SetStreamingDataCallback(WindowPercentRankExecutor::StreamData);
@@ -495,6 +501,7 @@ WindowFunction CumeDistFun::GetFunction() {
 	    Name, {}, LogicalType::DOUBLE, ExpressionType::WINDOW_CUME_DIST, nullptr, WindowCumeDistExecutor::GetBounds,
 	    WindowCumeDistExecutor::GetSharing, WindowCumeDistExecutor::GetGlobal, WindowCumeDistExecutor::GetLocal,
 	    WindowCumeDistLocalState::Sinker, WindowCumeDistLocalState::Finalizer, WindowCumeDistExecutor::GetData);
+	fun.SetIsRanking(true);
 	//	Not streamable?
 	return fun;
 }

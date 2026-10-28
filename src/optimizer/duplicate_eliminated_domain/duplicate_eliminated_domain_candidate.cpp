@@ -463,7 +463,7 @@ static optional_idx TryEstimateDomainCardinality(RelationStatsExtractor &stats_e
 		if (key_idx >= stats->columns.size()) {
 			return {};
 		}
-		auto distinct_count = stats->columns[key_idx].distinct_count;
+		auto distinct_count = stats->columns[key_idx].current_domain;
 		if (require_reliable_payload_stats && distinct_count.source == DistinctCountSource::CARDINALITY) {
 			return {};
 		}
@@ -513,7 +513,7 @@ static bool FindPayloadKeyIndices(LogicalOperator &op, const vector<unique_ptr<E
 			if (!equivalence.FindMatch(key_binding, bindings[binding_idx], match)) {
 				continue;
 			}
-			auto distinct_rank = DistinctCountRank(stats.columns[binding_idx].distinct_count.source);
+			auto distinct_rank = DistinctCountRank(stats.columns[binding_idx].current_domain.source);
 			auto match_rank = MatchRank(match);
 			if (!best.IsValid() || distinct_rank < best_distinct_rank ||
 			    (distinct_rank == best_distinct_rank && match_rank < best_match_rank)) {

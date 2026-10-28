@@ -33,6 +33,7 @@ class StandardBufferManager : public BufferManager {
 	friend class BufferHandle;
 	friend class BlockHandle;
 	friend class BlockManager;
+	friend struct BufferAllocatorData;
 
 public:
 	StandardBufferManager(DatabaseInstance &db, string temp_directory);
@@ -75,6 +76,8 @@ public:
 	BufferHandle Pin(const QueryContext &context, shared_ptr<BlockHandle> &handle) final;
 
 	void Prefetch(QueryContext context, vector<shared_ptr<BlockHandle>> &handles) final;
+	vector<unique_ptr<AsyncTask>> CreatePrefetchTasks(QueryContext context,
+	                                                  vector<shared_ptr<BlockHandle>> &handles) final;
 	void Unpin(shared_ptr<BlockHandle> &handle) final;
 
 	//! Set a new memory limit to the buffer manager, throws an exception if the new limit is too low and not enough
@@ -96,7 +99,7 @@ public:
 
 	void SetTemporaryDirectory(const string &new_dir) final;
 
-	DUCKDB_API Allocator &GetBufferAllocator() final;
+	DUCKDB_API BufferAllocator &GetBufferAllocator() final;
 
 	const DatabaseInstance &GetDatabase() const override {
 		return db;
@@ -118,7 +121,7 @@ protected:
 	//! Helper
 	template <typename... ARGS>
 	TempBufferPoolReservation EvictBlocksOrThrow(QueryContext context, MemoryTag tag, idx_t memory_delta,
-	                                             unique_ptr<FileBuffer> *buffer, ARGS...);
+	                                             unique_ptr<FileBuffer> *buffer, const ARGS &...);
 
 	//! Register an in-memory buffer of arbitrary size, as long as it is >= BLOCK_SIZE. can_destroy signifies whether or
 	//! not the buffer can be destroyed instead of evicted,
@@ -157,11 +160,6 @@ protected:
 
 	const char *InMemoryWarning();
 
-	static data_ptr_t BufferAllocatorAllocate(PrivateAllocatorData *private_data, idx_t size);
-	static void BufferAllocatorFree(PrivateAllocatorData *private_data, data_ptr_t pointer, idx_t size);
-	static data_ptr_t BufferAllocatorRealloc(PrivateAllocatorData *private_data, data_ptr_t pointer, idx_t old_size,
-	                                         idx_t size);
-
 	//! When the BlockHandle reaches 0 readers, this creates a new FileBuffer for this BlockHandle and
 	//! overwrites the data within with garbage. Any readers that do not hold the pin will notice
 	void VerifyZeroReaders(BlockLock &l, shared_ptr<BlockHandle> &handle);
@@ -172,7 +170,7 @@ protected:
 		vector<shared_ptr<BlockHandle>> handles;
 	};
 	//! Computes the contiguous runs of blocks that still need to be loaded, without performing any I/O
-	vector<PrefetchRun> RegisterPrefetch(vector<shared_ptr<BlockHandle>> &handles);
+	static vector<PrefetchRun> RegisterPrefetch(vector<shared_ptr<BlockHandle>> &handles);
 	//! Synchronously executes every run in the plan through BatchRead
 	void ExecutePrefetch(QueryContext context, vector<PrefetchRun> &plan);
 	void BatchRead(QueryContext context, PrefetchRun &run);
@@ -185,7 +183,9 @@ protected:
 	struct TemporaryFileData {
 		//! The directory name where temporary files are stored
 		string path;
-		//! Lock for creating the temp handle (marked mutable so 'GetMaxSwap' can be const)
+		//! Publishes successful temporary-directory initialization
+		atomic<bool> initialized {false};
+		//! Protects configuration and handle creation (mutable so 'GetMaxSwap' can be const)
 		mutable mutex lock;
 		//! Size of temp file on disk
 		atomic<idx_t> size_on_disk = {0};
@@ -205,7 +205,7 @@ protected:
 	//! The temporary id used for managed buffers
 	atomic<block_id_t> temporary_id;
 	//! Allocator associated with the buffer manager, that passes all allocations through this buffer manager
-	Allocator buffer_allocator;
+	BufferAllocator buffer_allocator;
 	//! Block manager for temp data
 	unique_ptr<BlockManager> temp_block_manager;
 	//! Temporary evicted memory data per tag

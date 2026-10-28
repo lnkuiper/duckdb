@@ -26,6 +26,8 @@ enum class JSONRecordType : uint8_t {
 	RECORDS = 1,
 	//! Any other JSON type, e.g., ARRAY
 	VALUES = 2,
+	//! GeoJSON Features, unnested into a geometry column plus one column per property
+	FEATURES = 3,
 };
 
 enum class JSONFormat : uint8_t {
@@ -37,6 +39,13 @@ enum class JSONFormat : uint8_t {
 	NEWLINE_DELIMITED = 2,
 	//! File is one big array of units
 	ARRAY = 3,
+};
+
+enum class JSONKeyMatch : uint8_t {
+	//! Object keys match names byte for byte
+	EXACT = 0,
+	//! Object keys match names ignoring ASCII case
+	CASE_INSENSITIVE = 1,
 };
 
 template<>
@@ -56,5 +65,11 @@ const char* EnumUtil::ToChars<JSONFormat>(JSONFormat value);
 
 template<>
 JSONFormat EnumUtil::FromString<JSONFormat>(const char *value);
+
+template<>
+const char* EnumUtil::ToChars<JSONKeyMatch>(JSONKeyMatch value);
+
+template<>
+JSONKeyMatch EnumUtil::FromString<JSONKeyMatch>(const char *value);
 
 } // namespace duckdb

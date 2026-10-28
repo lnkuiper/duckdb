@@ -81,6 +81,13 @@ public:
 	bool ParallelOperator() const override {
 		return true;
 	}
+	PipelineExternalInputSupport GetExternalInputSupport() const override {
+		return PipelineExternalInputSupport::SUPPORTED;
+	}
+	PipelineExternalInputCost GetExternalInputCost() const override {
+		return PipelineExternalInputCost::SERIALIZED_FANOUT;
+	}
+	void InitializeOutputChunk(Allocator &allocator, DataChunk &chunk) const override;
 
 protected:
 	// CachingOperator Interface
