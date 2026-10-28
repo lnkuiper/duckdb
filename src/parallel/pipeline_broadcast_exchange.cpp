@@ -1496,9 +1496,6 @@ SourceResultType PipelineBroadcastExchange::ReserveScanLocked(
 		return ReserveBatchScanLocked(consumer_idx, interrupt_state, scan_state, next_chunk, batch_index,
 		                              batch_index_state, spool_read, readers, writers, log_entries);
 	}
-	if (consumer.exhausted) {
-		return SourceResultType::FINISHED;
-	}
 	if (consumer.position < buffer->NextPosition()) {
 		auto position = consumer.position++;
 		buffer->ReserveRead(position, scan_state.spool_reader, next_chunk, batch_index, spool_read);
@@ -1578,9 +1575,6 @@ SourceResultType PipelineBroadcastExchange::ReserveBatchScanLocked(
 			auto completed_batch_index = batch_range.batch_index;
 			consumer.active_batch_positions.erase(position_entry);
 			scan_state.batch_sequence = optional_idx();
-			if (consumer.exhausted) {
-				return SourceResultType::FINISHED;
-			}
 			if (!has_next_batch) {
 				if (producer_state == ProducerState::ACTIVE) {
 					auto successor_batch_index = completed_batch_index + 1;
@@ -1619,9 +1613,6 @@ SourceResultType PipelineBroadcastExchange::ReserveBatchScanLocked(
 			continue;
 		}
 
-		if (consumer.exhausted) {
-			return SourceResultType::FINISHED;
-		}
 		if (consumer.next_batch_sequence < buffer->NextBatchSequence()) {
 			auto batch_sequence = consumer.next_batch_sequence++;
 			auto &batch_range = buffer->GetBatchRange(batch_sequence);
@@ -1714,33 +1705,6 @@ void PipelineBroadcastExchange::CompleteSpoolReadLocked(idx_t consumer_idx, cons
 	WakeReadersLocked(readers, ReaderWakeMode::DATA_AVAILABLE);
 }
 
-void PipelineBroadcastExchange::FinishScan(idx_t consumer_idx, PipelineBroadcastExchangeScanState &scan_state) {
-	vector<InterruptState> readers;
-	vector<InterruptState> writers;
-	vector<ExchangeLogEntry> log_entries;
-	{
-		annotated_lock_guard<annotated_mutex> guard(lock);
-		auto &consumer = consumers[consumer_idx];
-		if (consumer.lifecycle != ConsumerLifecycle::ACTIVE) {
-			return;
-		}
-		if (scan_state.batch_sequence.IsValid()) {
-			consumer.active_batch_positions.erase(scan_state.batch_sequence.GetIndex());
-			scan_state.batch_sequence = optional_idx();
-		}
-		consumer.exhausted = true;
-		if (consumer.active_batch_positions.empty() && consumer.in_flight_reads.empty()) {
-			DeactivateConsumerLocked(consumer, buffer->NextPosition());
-		}
-		RetireChunksLocked();
-		WakeReadersLocked(readers);
-		WakeWritersLocked(writers, log_entries, WriterWakeMode::FORCE);
-	}
-	CallbackAll(readers);
-	CallbackAll(writers);
-	LogTransitions(log_entries);
-}
-
 void PipelineBroadcastExchange::UnregisterConsumer(idx_t consumer_idx) {
 	vector<InterruptState> readers;
 	vector<InterruptState> writers;
@@ -1752,6 +1716,9 @@ void PipelineBroadcastExchange::UnregisterConsumer(idx_t consumer_idx) {
 		}
 		auto &consumer = consumers[consumer_idx];
 		if (consumer.lifecycle != ConsumerLifecycle::ACTIVE) {
+			return;
+		}
+		if (consumer.exhausted) {
 			return;
 		}
 		consumer.lifecycle = ConsumerLifecycle::INACTIVE;
@@ -1913,13 +1880,11 @@ void PipelineBroadcastExchange::RetireChunksLocked() {
 		if (consumer.lifecycle == ConsumerLifecycle::ACTIVE) {
 			found_reader = true;
 			if (consumer.scan_mode == PipelineBroadcastExchangeScanMode::BATCH) {
-				if (!consumer.exhausted) {
-					D_ASSERT(consumer.next_batch_sequence >= buffer->BaseBatchSequence());
-					min_batch_sequence = MinValue(min_batch_sequence, consumer.next_batch_sequence);
-					if (consumer.next_batch_sequence < buffer->NextBatchSequence()) {
-						auto &next_batch = buffer->GetBatchRange(consumer.next_batch_sequence);
-						min_position = MinValue(min_position, next_batch.begin_position);
-					}
+				D_ASSERT(consumer.next_batch_sequence >= buffer->BaseBatchSequence());
+				min_batch_sequence = MinValue(min_batch_sequence, consumer.next_batch_sequence);
+				if (consumer.next_batch_sequence < buffer->NextBatchSequence()) {
+					auto &next_batch = buffer->GetBatchRange(consumer.next_batch_sequence);
+					min_position = MinValue(min_position, next_batch.begin_position);
 				}
 				for (auto &batch_position : consumer.active_batch_positions) {
 					min_batch_sequence = MinValue(min_batch_sequence, batch_position.first);

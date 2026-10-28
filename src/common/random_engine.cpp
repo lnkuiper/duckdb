@@ -2,9 +2,6 @@
 #include "duckdb/common/numeric_utils.hpp"
 #include "pcg_random.hpp"
 
-#include <chrono>
-#include <cmath>
-
 #ifdef __linux__
 #include <sys/syscall.h>
 #include <unistd.h>

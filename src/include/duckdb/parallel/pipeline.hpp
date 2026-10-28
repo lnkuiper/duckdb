@@ -154,8 +154,6 @@ public:
 	void PrepareExternalInput();
 	void ClearSource();
 	void Schedule(shared_ptr<Event> &event);
-	//! Finish the source after all executors for this pipeline have completed.
-	void FinishSource();
 	void PrepareFinalize();
 
 	//! Compute the maximum number of threads for parallel execution of this pipeline

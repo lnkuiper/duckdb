@@ -12,6 +12,8 @@
 #include "duckdb/common/limits.hpp"
 #include "duckdb/common/mutex.hpp"
 
+#include <random>
+
 namespace duckdb {
 class ClientContext;
 struct RandomState;

@@ -323,10 +323,6 @@ public:
 		}
 		SetTasks(std::move(tasks));
 	}
-
-	void FinishEvent() override {
-		pipeline->FinishSource();
-	}
 };
 
 //! Inline finish event for the single-thread recursive fast path.
@@ -895,7 +891,6 @@ static void ExecuteRecursiveInlinePlan(RecursiveCTEState &state, Executor &execu
 			const auto execute_start =
 			    COLLECT_METRICS ? std::chrono::steady_clock::now() : std::chrono::steady_clock::time_point();
 			ExecuteRecursivePipelineInline(*executors[0]);
-			pipeline.FinishSource();
 			if constexpr (COLLECT_METRICS) {
 				const auto execute_end = std::chrono::steady_clock::now();
 				state.GetEpochMetrics().RecordPipelineExecution(

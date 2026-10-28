@@ -191,10 +191,6 @@ public:
 
 	//! Returns the current progress percentage, or a negative value if progress bars are not supported
 	virtual ProgressData GetProgress(ClientContext &context, GlobalSourceState &gstate) const;
-	//! Called once when a local executor stops reading this source.
-	virtual void LocalSourceFinished(ExecutionContext &context, GlobalSourceState &gstate,
-	                                 LocalSourceState &lstate) const;
-	//! Called when all source workers have finished, or when query execution is cancelled.
 	virtual void SourceFinished(ClientContext &context, GlobalSourceState &gstate) const;
 
 	//! Returns the current progress percentage, or a negative value if progress bars are not supported

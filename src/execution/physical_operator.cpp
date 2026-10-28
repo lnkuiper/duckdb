@@ -166,9 +166,6 @@ ProgressData PhysicalOperator::GetProgress(ClientContext &context, GlobalSourceS
 	return res;
 }
 
-void PhysicalOperator::LocalSourceFinished(ExecutionContext &, GlobalSourceState &, LocalSourceState &) const {
-}
-
 void PhysicalOperator::SourceFinished(ClientContext &context, GlobalSourceState &gstate) const {
 }
 // LCOV_EXCL_STOP
