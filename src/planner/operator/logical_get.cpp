@@ -83,7 +83,11 @@ optional_ptr<TableCatalogEntry> LogicalGet::GetTable() const {
 }
 
 bool LogicalGet::SupportsRowNumber() const {
-	return function.supports_row_number && children.empty() &&
+	const auto &name = function.GetName();
+	const bool is_generator =
+	    function.GetCatalogName() == SYSTEM_CATALOG && function.GetSchemaName() == Identifier::DefaultSchema() &&
+	    (name == "range" || name == "generate_series" || name == "repeat" || name == "repeat_row");
+	return (GetTable() || is_generator) && children.empty() &&
 	       virtual_columns.find(COLUMN_IDENTIFIER_ROW_NUMBER) != virtual_columns.end() && !table_filters.HasFilters() &&
 	       !table_filters.HasMultiColumnFilters() && !dynamic_filters && !extra_info.sample_options &&
 	       !row_group_order_options && scan_partition_indices.empty();

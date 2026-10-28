@@ -66,7 +66,6 @@ void RepeatTableFunction::RegisterFunction(BuiltinFunctions &set) {
 	repeat.get_partition_data = GeneratedRowsLocalState::GetPartitionData;
 	repeat.get_virtual_columns = GeneratedRowsLocalState::GetVirtualColumns;
 	repeat.projection_pushdown = true;
-	repeat.supports_row_number = true;
 	set.AddFunction(repeat);
 }
 

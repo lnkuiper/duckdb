@@ -72,7 +72,6 @@ void RepeatRowTableFunction::RegisterFunction(BuiltinFunctions &set) {
 	repeat_row.get_partition_data = GeneratedRowsLocalState::GetPartitionData;
 	repeat_row.get_virtual_columns = GeneratedRowsLocalState::GetVirtualColumns;
 	repeat_row.projection_pushdown = true;
-	repeat_row.supports_row_number = true;
 	set.AddFunction(repeat_row);
 }
 

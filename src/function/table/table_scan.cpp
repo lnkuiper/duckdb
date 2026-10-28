@@ -1274,7 +1274,6 @@ TableFunction TableScanFunction::GetFunction() {
 	scan_function.get_partition_stats = TableScanGetPartitionStats;
 	scan_function.get_table_entry = TableScanGetTableEntry;
 	scan_function.projection_pushdown = true;
-	scan_function.supports_row_number = true;
 	scan_function.filter_pushdown = true;
 	scan_function.filter_prune = true;
 	scan_function.sampling_pushdown = true;

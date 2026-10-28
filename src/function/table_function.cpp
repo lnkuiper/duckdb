@@ -116,7 +116,6 @@ BoundTableFunction::BoundTableFunction(shared_ptr<const TableFunction> function_
 	deserialize = function.deserialize;
 	verify_serialization = function.verify_serialization;
 	projection_pushdown = function.projection_pushdown;
-	supports_row_number = function.supports_row_number;
 	filter_pushdown = function.filter_pushdown;
 	filter_prune = function.filter_prune;
 	sampling_pushdown = function.sampling_pushdown;

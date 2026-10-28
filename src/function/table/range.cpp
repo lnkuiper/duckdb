@@ -491,7 +491,6 @@ void RangeTableFunction::RegisterFunction(BuiltinFunctions &set) {
 	range_function.get_partition_data = GeneratedRowsLocalState::GetPartitionData;
 	range_function.get_virtual_columns = GeneratedRowsLocalState::GetVirtualColumns;
 	range_function.projection_pushdown = true;
-	range_function.supports_row_number = true;
 	range_function.in_out_function = RangeFunction<false>;
 	range_function.cardinality = RangeCardinality;
 	range_function.is_repeatable = RangeIsRepeatable;
