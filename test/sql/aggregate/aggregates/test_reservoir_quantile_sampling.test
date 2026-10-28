@@ -30,11 +30,11 @@ statement ok
 SET threads=2
 
 query I
-SELECT reservoir_quantile(x, 0.5, 1000) BETWEEN 45000 AND 80000 FROM range(124928) t(x)
+SELECT reservoir_quantile(x, 0.5, 1000) BETWEEN 45000 AND 74000 FROM range(124928) t(x)
 ----
 true
 
 query I
-SELECT reservoir_quantile(x, 0.5, 8192) BETWEEN 45000 AND 80000 FROM range(124928) t(x)
+SELECT reservoir_quantile(x, 0.5, 8192) BETWEEN 45000 AND 74000 FROM range(124928) t(x)
 ----
 true

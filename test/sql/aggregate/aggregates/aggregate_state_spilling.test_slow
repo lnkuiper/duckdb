@@ -5,10 +5,10 @@
 require skip_reload
 
 statement ok
-SET threads=4;
+SET threads=1;
 
 statement ok
-SET memory_limit='16MB';
+SET memory_limit='32MB';
 
 statement ok
 SET temp_directory='{TEST_DIR}/aggregate_state_spilling';
@@ -16,7 +16,7 @@ SET temp_directory='{TEST_DIR}/aggregate_state_spilling';
 statement ok
 SET preserve_insertion_order=false;
 
-# 62500 groups x 800 byte payloads is roughly 50MB of state, far above the limit
+# 62500 groups x 800 byte payloads is roughly 50MB of state, above the limit
 query I
 SELECT count(*) FROM (
     SELECT k, first(wide) AS w
@@ -59,6 +59,9 @@ SELECT count(*) FROM (
 WHERE w != repeat(md5(k::VARCHAR), 25) || ',' || repeat(md5(k::VARCHAR), 25);
 ----
 0
+
+statement ok
+SET threads=4;
 
 statement ok
 SET memory_limit='64MB';

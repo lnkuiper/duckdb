@@ -122,6 +122,7 @@ TEST_CASE("Source SQL callbacks preserve centrally applied scan modifiers",
 		sql = "SELECT * FROM export_wrapped_range(3)";
 	}
 	SECTION("ordinality window fusion") {
+		REQUIRE_NO_FAIL(connection.Query("SET disabled_optimizers='window_rewriter'"));
 		sql = "SELECT * FROM export_wrapped_range(3) WITH ORDINALITY";
 		ordinal = true;
 	}
@@ -984,6 +985,7 @@ TEST_CASE("Window ordinality fusion respects replacement boundaries",
           "[sql_export][logical_plan_sql_export][plan_view_regression]") {
 	DuckDB db(nullptr);
 	Connection connection(db);
+	REQUIRE_NO_FAIL(connection.Query("SET disabled_optimizers='window_rewriter'"));
 	connection.BeginTransaction();
 	auto plan = OptimizeLogicalPlanExportQuery(connection, "SELECT * FROM range(3) WITH ORDINALITY");
 	auto window = FindLogicalPlanExportOperator(*plan, LogicalOperatorType::LOGICAL_WINDOW);

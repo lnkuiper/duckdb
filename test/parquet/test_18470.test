@@ -6,12 +6,10 @@ require parquet
 
 require notwindows
 
-set seed 0.42
-
 statement ok
 COPY (
     SELECT
-        (random() * 65535)::UINT16 as column1,
+        generate_series::UINT16 as column1,
         'text_value_' || row_number() OVER () as column2
     FROM generate_series(1, 100)
 ) TO '{TEST_DIR}/20250101.parquet' (FORMAT PARQUET);
@@ -19,7 +17,7 @@ COPY (
 statement ok
 COPY (
     SELECT
-        (random() * 65535)::UINT64 as column1,
+        (generate_series + 100)::UINT64 as column1,
         'text_value_' || row_number() OVER () as column2
     FROM generate_series(1, 100)
 ) TO '{TEST_DIR}/20250102.parquet' (FORMAT PARQUET);
@@ -31,4 +29,4 @@ WHERE filename >= '{TEST_DIR}/20250101.parquet'
 AND column1 = 72
 LIMIT 10;
 ----
-true	72	text_value_66
+true	72	text_value_72

@@ -326,6 +326,8 @@ TEST_CASE("Join filter pushdown keeps the definition of min() and max()", "[opti
 TEST_CASE("Planner-introduced row_number keeps its definition", "[optimizer][function_identity]") {
 	DuckDB db(nullptr);
 	Connection con(db);
+	// Keep the window whose bound function identity this test inspects.
+	REQUIRE_NO_FAIL(con.Query("SET disabled_optimizers='window_rewriter'"));
 	REQUIRE_NO_FAIL(con.Query("CREATE TABLE t AS SELECT i::INTEGER AS v, (i % 5)::INTEGER AS g FROM range(50) x(i)"));
 
 	con.BeginTransaction();

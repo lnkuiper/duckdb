@@ -94,7 +94,7 @@ TEST_CASE("A retained random executor refreshes its seed and row position for ea
 		}
 		next_query();
 		input.data[0].Sequence(1, 1, 17);
-		input.SetCardinality(17);
+		input.CheckCardinality(17);
 		output.Reset();
 		executor.Execute(input, output);
 		duckdb::vector<double> values;
