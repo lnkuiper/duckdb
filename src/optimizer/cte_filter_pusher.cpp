@@ -56,7 +56,6 @@ unique_ptr<LogicalOperator> CTEFilterPusher::Optimize(unique_ptr<LogicalOperator
 void CTEFilterPusher::ClearDependencies(LogicalOperator &op) {
 	if (op.type == LogicalOperatorType::LOGICAL_MATERIALIZED_CTE) {
 		op.Cast<LogicalMaterializedCTE>().filter_dependency.reset();
-		op.Cast<LogicalMaterializedCTE>().filter_pushdown.reset();
 	}
 	for (auto &child : op.children) {
 		ClearDependencies(*child);

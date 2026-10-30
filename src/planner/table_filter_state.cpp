@@ -68,9 +68,14 @@ public:
 
 	idx_t FilterSelection(SelectionVector &sel, Vector &vector, idx_t scan_count,
 	                      idx_t &approved_tuple_count) override {
-		D_ASSERT(scan_count <= STANDARD_VECTOR_SIZE);
 		if (approved_tuple_count == 0) {
 			return 0;
+		}
+		if (approved_tuple_count > input_sel.Capacity()) {
+			input_sel.Initialize(approved_tuple_count);
+			child_input.Initialize(approved_tuple_count);
+			result_sel.Initialize(approved_tuple_count);
+			merge_sel.Initialize(approved_tuple_count);
 		}
 		const auto has_selection = sel.IsSet();
 		if (has_selection) {
@@ -526,7 +531,7 @@ private:
 		sel.Initialize(result_sel);
 	}
 
-	shared_ptr<const PrefixRangeFilter> filter;
+	optional_ptr<PrefixRangeFilter> filter;
 	bool filters_null_values;
 	SelectionVector local_sel;
 	SelectionVector result_sel;

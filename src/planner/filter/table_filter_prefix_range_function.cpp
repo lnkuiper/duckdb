@@ -673,11 +673,10 @@ bool PrefixRangeFilter::SupportedType(const LogicalType &type) {
 	}
 }
 
-PrefixRangeFunctionData::PrefixRangeFunctionData(shared_ptr<const PrefixRangeFilter> filter_p,
-                                                 bool filters_null_values_p, const string &key_column_name_p,
-                                                 const LogicalType &key_type_p, float selectivity_threshold_p,
-                                                 idx_t n_vectors_to_check_p)
-    : filter(std::move(filter_p)), filters_null_values(filters_null_values_p), key_column_name(key_column_name_p),
+PrefixRangeFunctionData::PrefixRangeFunctionData(optional_ptr<PrefixRangeFilter> filter_p, bool filters_null_values_p,
+                                                 const string &key_column_name_p, const LogicalType &key_type_p,
+                                                 float selectivity_threshold_p, idx_t n_vectors_to_check_p)
+    : filter(filter_p), filters_null_values(filters_null_values_p), key_column_name(key_column_name_p),
       key_type(key_type_p), selectivity_threshold(selectivity_threshold_p), n_vectors_to_check(n_vectors_to_check_p) {
 }
 

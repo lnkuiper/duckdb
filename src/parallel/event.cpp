@@ -11,11 +11,32 @@ Event::Event(Executor &executor_p)
       finished(false) {
 }
 
-void Event::CompleteDependency() {
+OptionalEventDependency::OptionalEventDependency(const shared_ptr<Event> &dependent_p) : dependent(dependent_p) {
+}
+
+void OptionalEventDependency::Complete() {
+	if (completed.exchange(true)) {
+		return;
+	}
+	auto parent = dependent.lock();
+	if (parent) {
+		parent->CompleteDependency(PipelineDependencyType::OPTIONAL_DEPENDENCY);
+	}
+}
+
+void Event::CompleteDependency(PipelineDependencyType type) {
+	if (type == PipelineDependencyType::REQUIRED && optional_dependencies &&
+	    ++finished_required_dependencies == total_required_dependencies) {
+		auto &release =
+		    CanSkipOptionalDependencies() ? optional_dependencies->prerequisites : optional_dependencies->dependents;
+		// Keep this required dependency outstanding while releasing edges that can reenter scheduling.
+		for (auto &dependency : release) {
+			dependency->Complete();
+		}
+	}
 	idx_t current_finished = ++finished_dependencies;
 	D_ASSERT(current_finished <= total_dependencies);
 	if (current_finished == total_dependencies) {
-		// all dependencies have been completed: schedule the event
 		D_ASSERT(total_tasks == 0);
 		Schedule();
 		if (total_tasks == 0 && AutoFinishWithoutTasks()) {
@@ -24,13 +45,23 @@ void Event::CompleteDependency() {
 	}
 }
 
+void Event::SetOptionalDependencies(unique_ptr<OptionalEventDependencies> dependencies) {
+	D_ASSERT(total_required_dependencies > 0);
+	D_ASSERT(!optional_dependencies);
+	optional_dependencies = std::move(dependencies);
+}
+
 void Event::Finish() {
 	D_ASSERT(!finished);
 	FinishEvent();
 	finished = true;
 	// finished processing the pipeline, now we can schedule pipelines that depend on this pipeline
 	for (auto &parent_entry : parents) {
-		auto parent = parent_entry.lock();
+		if (parent_entry.optional_dependency) {
+			parent_entry.optional_dependency->Complete();
+			continue;
+		}
+		auto parent = parent_entry.event.lock();
 		if (!parent) { // LCOV_EXCL_START
 			continue;
 		} // LCOV_EXCL_STOP
@@ -40,16 +71,24 @@ void Event::Finish() {
 	FinalizeFinish();
 }
 
-void Event::AddDependency(Event &event) {
+shared_ptr<OptionalEventDependency> Event::AddDependency(Event &event, PipelineDependencyType type) {
 	total_dependencies++;
-	event.parents.push_back(weak_ptr<Event>(shared_from_this()));
+	shared_ptr<OptionalEventDependency> optional_dependency;
+	if (type == PipelineDependencyType::OPTIONAL_DEPENDENCY) {
+		optional_dependency = make_shared_ptr<OptionalEventDependency>(shared_from_this());
+	} else {
+		total_required_dependencies++;
+	}
+	event.parents.push_back({weak_ptr<Event>(shared_from_this()), optional_dependency});
 #ifdef DEBUG
-	event.parents_raw.push_back(*this);
+	if (type == PipelineDependencyType::REQUIRED) {
+		event.parents_raw.push_back(*this);
+	}
 #endif
+	return optional_dependency;
 }
 
 const vector<reference<Event>> &Event::GetParentsVerification() const {
-	D_ASSERT(parents.size() == parents_raw.size());
 	return parents_raw;
 }
 

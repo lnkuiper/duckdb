@@ -1,5 +1,4 @@
 #include "duckdb/execution/operator/set/physical_cte.hpp"
-#include "duckdb/planner/table_filter_set.hpp"
 
 #include "duckdb/common/atomic.hpp"
 #include "duckdb/common/enum_util.hpp"
@@ -375,9 +374,6 @@ SinkFinalizeType PhysicalCTE::Finalize(Pipeline &pipeline, Event &event, ClientC
 //===--------------------------------------------------------------------===//
 void PhysicalCTE::BuildPipelines(Pipeline &current, MetaPipeline &meta_pipeline) {
 	D_ASSERT(children.size() == 2);
-	for (auto &group : filter_groups) {
-		group->Reset();
-	}
 	pipeline_selection_state = CTEPipelineSelectionState::UNRESOLVED;
 	preferred_batch_size = optional_idx();
 	conflicting_batch_sizes = false;
@@ -448,7 +444,6 @@ void PhysicalCTE::BuildPipelines(Pipeline &current, MetaPipeline &meta_pipeline)
 	if (has_unresolved_consumers) {
 		state.AddCTEPipelineSelection(*this, current, child_meta_pipeline.GetBasePipeline(), dependency_added);
 	}
-	UpdateFilterGroups();
 }
 
 bool PhysicalCTE::TryRegisterDirectConsumer(Pipeline &pipeline, idx_t consumer_idx) {
@@ -478,22 +473,6 @@ vector<reference<Pipeline>> PhysicalCTE::GetProducerPipelines() const {
 void PhysicalCTE::SetPipelineSelectionResolved() {
 	D_ASSERT(pipeline_selection_state == CTEPipelineSelectionState::UNRESOLVED);
 	pipeline_selection_state = CTEPipelineSelectionState::RESOLVED;
-	UpdateFilterGroups();
-}
-
-void PhysicalCTE::UpdateFilterGroups() {
-	if (filter_groups.empty()) {
-		return;
-	}
-	auto enabled = pipeline_selection_state == CTEPipelineSelectionState::RESOLVED &&
-	               GetExecutionMode() == CTEExecutionMode::MATERIALIZED;
-	if (enabled && exchange) {
-		auto summary = exchange->GetConsumerSummary();
-		enabled = summary.unresolved == 0 && summary.materialized == cte_scans.size();
-	}
-	for (auto &group : filter_groups) {
-		group->SetActive(enabled);
-	}
 }
 
 bool PhysicalCTE::ShouldUseBufferedConsumer(Pipeline &pipeline) const {

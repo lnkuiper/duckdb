@@ -1,5 +1,4 @@
 #include "duckdb/common/types/column/column_data_collection.hpp"
-#include "duckdb/common/unordered_set.hpp"
 #include "duckdb/execution/operator/scan/physical_column_data_scan.hpp"
 #include "duckdb/execution/operator/set/physical_cte.hpp"
 #include "duckdb/execution/physical_plan_generator.hpp"
@@ -33,9 +32,6 @@ PhysicalOperator &PhysicalPlanGenerator::CreatePlan(LogicalMaterializedCTE &op) 
 	// Add the ColumnDataCollection to the context of this PhysicalPlanGenerator
 	recursive_cte_tables[op.table_index] = working_table;
 	materialized_ctes[op.table_index] = vector<const_reference<PhysicalOperator>>();
-	if (op.filter_pushdown) {
-		materialized_cte_filter_consumers[op.table_index] = {};
-	}
 
 	// Create the plan for the left side. This is the materialization.
 	auto &left = CreatePlan(*op.children[0]);
@@ -67,24 +63,6 @@ PhysicalOperator &PhysicalPlanGenerator::CreatePlan(LogicalMaterializedCTE &op) 
 	cast_cte.preserve_order = preserve_cte_order;
 	cast_cte.use_batch_index = use_batch_index;
 	cast_cte.parallel = !preserve_cte_order || use_batch_index;
-	if (op.filter_pushdown) {
-		auto &info = *op.filter_pushdown;
-		auto &consumers = materialized_cte_filter_consumers.at(op.table_index);
-		bool valid = consumers.size() == info.consumers.size() && consumers.size() == cast_cte.cte_scans.size();
-		unordered_set<TableIndex> seen;
-		for (auto &consumer : consumers) {
-			auto entry = info.consumers.find(consumer.first);
-			valid &=
-			    entry != info.consumers.end() && entry->second == consumer.second && seen.insert(consumer.first).second;
-		}
-		if (valid) {
-			for (auto &target : info.targets) {
-				target.scan_filters->AddGroup(target.group);
-				cast_cte.filter_groups.push_back(target.group);
-			}
-		}
-		materialized_cte_filter_consumers.erase(op.table_index);
-	}
 	return cte;
 }
 

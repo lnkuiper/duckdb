@@ -339,9 +339,6 @@ PhysicalRangeJoin::PhysicalRangeJoin(PhysicalPlan &physical_plan, LogicalCompari
                                      unique_ptr<JoinFilterPushdownInfo> pushdown_info)
     : PhysicalComparisonJoin(physical_plan, op, type, std::move(cond), join_type, estimated_cardinality) {
 	filter_pushdown = std::move(pushdown_info);
-	if (filter_pushdown) {
-		filter_pushdown->RegisterProducer(*this);
-	}
 	// Reorder the conditions so that selective ranges are at the front.
 	if (conditions.size() > 1) {
 		//	Do an indirect sort so we can remap any positional references to the conditions.

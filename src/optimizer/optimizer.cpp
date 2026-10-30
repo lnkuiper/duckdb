@@ -501,12 +501,6 @@ void Optimizer::RunBuiltInOptimizers() {
 		partitioned_execution.Optimize(plan);
 	});
 
-	// perform join filter pushdown after the dust has settled
-	RunOptimizer(OptimizerType::JOIN_FILTER_PUSHDOWN, [&]() {
-		JoinFilterPushdownOptimizer join_filter_pushdown(*this);
-		join_filter_pushdown.Optimize(*plan);
-	});
-
 	// Rewrite ROW_NUMBER() OVER() window functions to use the row_number virtual column
 	RunOptimizer(OptimizerType::ROW_NUMBER_REWRITER, [&]() {
 		RowNumberRewriter window_rewriter;
@@ -523,6 +517,11 @@ void Optimizer::RunBuiltInOptimizers() {
 	RunOptimizer(OptimizerType::SCALAR_FN_PUSHDOWN, [&] {
 		ScalarFnPushdown fn_pushdown(context);
 		plan = fn_pushdown.Optimize(std::move(plan));
+	});
+
+	RunOptimizer(OptimizerType::JOIN_FILTER_PUSHDOWN, [&]() {
+		JoinFilterPushdownOptimizer join_filter_pushdown(*this);
+		join_filter_pushdown.VisitOperator(*plan);
 	});
 }
 
@@ -569,11 +568,16 @@ unique_ptr<LogicalOperator> Optimizer::Optimize(unique_ptr<LogicalOperator> plan
 		RunOptimizer(OptimizerType::EXTENSION, [&]() {
 			OptimizerExtensionInput input {GetContext(), *this, optimizer_extension.optimizer_info.get()};
 			if (optimizer_extension.optimize_function) {
-				CTEFilterPusher::ClearDependencies(*plan);
 				optimizer_extension.optimize_function(input, plan);
 			}
 		});
 	}
+
+	// Collect complete CTE consumer groups after extensions have finished rewriting the plan.
+	RunOptimizer(OptimizerType::JOIN_FILTER_PUSHDOWN, [&]() {
+		JoinFilterPushdownOptimizer join_filter_pushdown(*this);
+		join_filter_pushdown.OptimizeCTEFilters(*plan);
+	});
 
 	Planner::VerifyPlan(context, plan);
 

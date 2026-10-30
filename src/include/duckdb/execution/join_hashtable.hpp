@@ -570,7 +570,7 @@ private:
 	//! Whether finalize should build the bloom filter from the materialized build side
 	bool should_build_bloom_filter = false;
 
-	shared_ptr<PrefixRangeFilter> prefix_range_filter;
+	unique_ptr<PrefixRangeFilter> prefix_range_filter;
 	bool should_build_prefix_range_filter = false;
 
 	//! Copying not allowed
@@ -686,7 +686,7 @@ public:
 		should_build_prefix_range_filter = true;
 	}
 
-	shared_ptr<const PrefixRangeFilter> GetPrefixRangeFilter() {
+	optional_ptr<PrefixRangeFilter> GetPrefixRangeFilter() {
 		return prefix_range_filter;
 	}
 

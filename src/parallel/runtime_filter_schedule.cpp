@@ -63,7 +63,7 @@ static vector<bool> CollectJoinBuildStages(const PipelineSchedule &schedule) {
 		}
 		build_stages[stage_idx] = true;
 		for (auto dependency : schedule.stages[stage_idx].dependencies) {
-			pending.push_back(dependency);
+			pending.push_back(dependency.index);
 		}
 	}
 	return build_stages;
@@ -96,20 +96,22 @@ void ScheduleRuntimeFilters(PipelineSchedule &schedule) {
 		auto &stage = schedule.stages[stage_idx];
 		auto &pipeline = *stage.pipeline;
 		auto source = pipeline.GetSource();
-		if (stage.type != PipelineScheduleStageType::EXECUTE || join_build_stages[stage_idx] || !source ||
+		if (stage.type != PipelineScheduleStageType::EXECUTE || !source ||
 		    source->type != PhysicalOperatorType::TABLE_SCAN || pipeline.HasSourceState() ||
 		    pipeline.IsExternalInput()) {
 			continue;
 		}
 		auto &scan = source->Cast<PhysicalTableScan>();
 		if (!scan.dynamic_filters ||
-		    scan.function.global_initialization == TableFunctionInitialization::INITIALIZE_ON_SCHEDULE ||
-		    (scan.table_filters && (scan.table_filters->HasFilters() || scan.table_filters->HasMultiColumnFilters()))) {
+		    scan.function.global_initialization == TableFunctionInitialization::INITIALIZE_ON_SCHEDULE) {
 			continue;
 		}
-		sources[*scan.dynamic_filters].push_back(stage_idx);
-		for (auto &filters : scan.dynamic_filters->GetActiveGroupFilters()) {
-			sources[*filters].push_back(stage_idx);
+		if (!join_build_stages[stage_idx] && (!scan.table_filters || (!scan.table_filters->HasFilters() &&
+		                                                              !scan.table_filters->HasMultiColumnFilters()))) {
+			sources[*scan.dynamic_filters].push_back(stage_idx);
+		}
+		for (auto &filters : scan.dynamic_filters->GetDisjunctionFilters()) {
+			sources[filters.get()].push_back(stage_idx);
 		}
 	}
 
@@ -127,7 +129,9 @@ void ScheduleRuntimeFilters(PipelineSchedule &schedule) {
 				continue;
 			}
 			for (auto execution : source->second) {
-				schedule.TryAddDependency(execution, publication[0]);
+				if (!schedule.TryAddDependency(execution, publication[0])) {
+					schedule.TryAddOptionalDependency(execution, publication[0]);
+				}
 			}
 		}
 	}

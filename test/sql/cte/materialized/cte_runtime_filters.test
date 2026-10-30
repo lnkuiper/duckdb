@@ -166,7 +166,7 @@ CREATE TABLE first_pair AS SELECT 1::BIGINT a,2::BIGINT b;
 statement ok
 CREATE TABLE second_pair AS SELECT 3::BIGINT a,4::BIGINT b;
 
-# Conjunctions remain paired with their own consumer, across different scan columns.
+# Independent column filters retain rows needed by the original join conjunctions.
 query II rowsort
 WITH p AS MATERIALIZED (SELECT b AS y,a AS x FROM pairs)
 SELECT p.x,p.y FROM p JOIN first_pair f ON p.x=f.a AND p.y=f.b

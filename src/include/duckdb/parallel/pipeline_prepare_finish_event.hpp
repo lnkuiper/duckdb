@@ -20,6 +20,7 @@ public:
 public:
 	void Schedule() override;
 	void FinishEvent() override;
+	bool CanSkipOptionalDependencies() override;
 };
 
 } // namespace duckdb

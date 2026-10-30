@@ -227,10 +227,6 @@ PhysicalOperator &PhysicalPlanGenerator::CreatePlan(LogicalCTERef &op) {
 			cast_chunk_scan.cte_source = source;
 		}
 		materialized_cte->second.push_back(cast_chunk_scan);
-		auto filter_consumers = materialized_cte_filter_consumers.find(op.cte_index);
-		if (filter_consumers != materialized_cte_filter_consumers.end()) {
-			filter_consumers->second.emplace_back(op.table_index, op.chunk_types);
-		}
 		return chunk_scan;
 	}
 

@@ -90,4 +90,29 @@ SELECT currval('cte_effect_seq');
 20
 
 statement ok
+CREATE TABLE miss_a AS SELECT 100::BIGINT k;
+
+statement ok
+CREATE TABLE miss_b AS SELECT 101::BIGINT k;
+
+statement ok
+CREATE SEQUENCE sibling_effect_seq;
+
+# Emptying the CTE must not suppress volatile expressions on a sibling probe input.
+query I
+WITH p AS MATERIALIZED (SELECT k FROM sequence_probe)
+SELECT count(n) FROM (
+    SELECT v.n FROM (SELECT i k,nextval('sibling_effect_seq') n FROM range(10) t(i)) v
+    JOIN p ON v.k=p.k JOIN miss_a ON p.k=miss_a.k
+    UNION ALL SELECT p.k FROM p JOIN miss_b ON p.k=miss_b.k
+) matches;
+----
+0
+
+query I
+SELECT currval('sibling_effect_seq');
+----
+10
+
+statement ok
 RESET disabled_optimizers;

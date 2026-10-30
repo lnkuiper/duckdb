@@ -58,9 +58,6 @@ PhysicalHashJoin::PhysicalHashJoin(PhysicalPlan &physical_plan, LogicalOperator 
       delim_types(std::move(delim_types)) {
 	D_ASSERT(join_type != JoinType::MARK || !predicate);
 	filter_pushdown = std::move(pushdown_info_p);
-	if (filter_pushdown) {
-		filter_pushdown->RegisterProducer(*this);
-	}
 
 	children.push_back(left);
 	children.push_back(right);
@@ -298,7 +295,7 @@ unique_ptr<JoinFilterGlobalState> JoinFilterPushdownInfo::GetGlobalState(ClientC
 	// clear any previously set filters
 	// we can have previous filters for this operator in case of e.g. recursive CTEs
 	for (auto &info : probe_info) {
-		info.dynamic_filters->InitializeProducer(op);
+		info.dynamic_filters->ClearFilters(op);
 	}
 	auto result = make_uniq<JoinFilterGlobalState>();
 	result->global_aggregate_state =
@@ -1050,6 +1047,17 @@ static idx_t GetBuildSpaceRequirement(ClientContext &context, const JoinHashTabl
 	return GetPartitioningSpaceRequirement(context, layout->GetTypes(), ht.GetRadixBits(), num_threads);
 }
 
+bool PhysicalHashJoin::CanFinalizeIndependently(ClientContext &context, GlobalSinkState &global_state) const {
+	if (Settings::Get<DebugForceExternalSetting>(context)) {
+		return false;
+	}
+	auto &state = global_state.Cast<HashJoinGlobalSinkState>();
+	idx_t max_partition_size;
+	idx_t max_partition_count;
+	const auto size = state.hash_table->GetTotalSize(state.local_hash_tables, max_partition_size, max_partition_count);
+	return size <= state.temporary_memory_state->GetMinimumReservation();
+}
+
 void PhysicalHashJoin::PrepareFinalize(ClientContext &context, GlobalSinkState &global_state) const {
 	auto &gstate = global_state.Cast<HashJoinGlobalSinkState>();
 	// If no Sink chunk ever arrived, the layout was never published. Fall back to a default layout
@@ -1649,12 +1657,6 @@ bool JoinFilterPushdownInfo::TryRegisterPrefixRangeFilter(const JoinFilterPushdo
 
 	DeferRuntimeFilter(DeferredRuntimeFilterType::PREFIX_RANGE, op, info, column, filter_col_idx, gstate);
 	return true;
-}
-
-void JoinFilterPushdownInfo::RegisterProducer(const PhysicalOperator &op) const {
-	for (auto &target : probe_info) {
-		target.dynamic_filters->RegisterProducer(op);
-	}
 }
 
 unique_ptr<DataChunk> JoinFilterPushdownInfo::FinalizeMinMax(JoinFilterGlobalState &gstate) const {

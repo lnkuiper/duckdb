@@ -8,7 +8,7 @@
 
 #pragma once
 
-#include "duckdb/common/shared_ptr.hpp"
+#include "duckdb/common/optional_ptr.hpp"
 #include "duckdb/common/serializer/deserializer.hpp"
 #include "duckdb/common/serializer/serializer.hpp"
 #include "duckdb/planner/table_filter.hpp"
@@ -20,7 +20,7 @@ class PrefixRangeFilter;
 //! DEPRECATED - only preserved for backwards-compatible expression conversion
 class LegacyPrefixRangeTableFilter final : public TableFilter {
 private:
-	shared_ptr<const PrefixRangeFilter> filter;
+	optional_ptr<PrefixRangeFilter> filter;
 
 	string key_column_name;
 	LogicalType key_type;
@@ -29,7 +29,7 @@ public:
 	static constexpr auto TYPE = TableFilterType::LEGACY_PREFIX_RANGE_FILTER;
 
 public:
-	explicit LegacyPrefixRangeTableFilter(shared_ptr<const PrefixRangeFilter> filter_p, const string &key_column_name_p,
+	explicit LegacyPrefixRangeTableFilter(optional_ptr<PrefixRangeFilter> filter_p, const string &key_column_name_p,
 	                                      const LogicalType &key_type_p);
 
 private:

@@ -21,8 +21,6 @@ namespace duckdb {
 class DataChunk;
 class DynamicTableFilterSet;
 class LogicalGet;
-class LogicalCTERef;
-class LogicalOperator;
 class JoinHashTable;
 class PhysicalOperator;
 class PhysicalComparisonJoin;
@@ -84,15 +82,11 @@ struct JoinFilterPushdownFilter {
 };
 
 struct PushdownFilterTarget {
-	PushdownFilterTarget(LogicalOperator &op, vector<JoinFilterPushdownColumn> columns_p)
-	    : op(op), columns(std::move(columns_p)) {
+	PushdownFilterTarget(LogicalGet &get, vector<JoinFilterPushdownColumn> columns_p)
+	    : get(get), columns(std::move(columns_p)) {
 	}
 
-	LogicalGet &GetScan() const;
-	LogicalCTERef &GetCTEReference() const;
-	bool IsCTEReference() const;
-
-	LogicalOperator &op;
+	LogicalGet &get;
 	vector<JoinFilterPushdownColumn> columns;
 };
 
@@ -112,7 +106,6 @@ struct JoinFilterPushdownInfo {
 	bool build_side_has_filter;
 
 public:
-	void RegisterProducer(const PhysicalOperator &op) const;
 	unique_ptr<JoinFilterGlobalState> GetGlobalState(ClientContext &context, const PhysicalOperator &op) const;
 	unique_ptr<JoinFilterLocalState> GetLocalState(JoinFilterGlobalState &gstate) const;
 

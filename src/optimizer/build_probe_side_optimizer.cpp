@@ -124,7 +124,7 @@ static idx_t MaxDynamicFilterTargetCardinality(LogicalOperator &op, const Expres
 	// filter can avoid at that point, even if later filters reduce the cardinality at the join.
 	idx_t result = 0;
 	for (auto &target : targets) {
-		auto &get = target.GetScan();
+		auto &get = target.get;
 		result = MaxValue(result, get.has_estimated_cardinality ? get.estimated_cardinality : idx_t(0));
 	}
 	return result;

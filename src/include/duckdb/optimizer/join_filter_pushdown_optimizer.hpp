@@ -10,15 +10,14 @@
 
 #include "duckdb/planner/logical_operator_visitor.hpp"
 #include "duckdb/planner/column_binding_map.hpp"
-#include "duckdb/common/unordered_set.hpp"
+#include "duckdb/common/reference_map.hpp"
+#include "duckdb/execution/operator/join/join_filter_pushdown.hpp"
 
 namespace duckdb {
 class Optimizer;
-struct JoinFilterPushdownColumn;
-struct PushdownFilterTarget;
+class LogicalCTERef;
 
 enum class EqualityPropagation { DISABLED, ENABLED };
-enum class CTEFilterTargetMode : uint8_t { IGNORE, INCLUDE };
 
 //! The JoinFilterPushdownOptimizer links comparison joins to data sources to enable dynamic execution-time filter
 //! pushdown
@@ -28,26 +27,25 @@ public:
 
 public:
 	void VisitOperator(LogicalOperator &op) override;
-	void Optimize(LogicalOperator &op);
-	//! Bind CTE filter destinations against the final logical plan, before column references are resolved.
-	static void FinalizeCTEFilters(LogicalOperator &op);
+	void OptimizeCTEFilters(LogicalOperator &op);
 	//! Find scan targets independently for each column, allowing both NULL-retaining and NULL-rejecting filters.
 	//! Equality propagation can return multiple equivalent columns per scan; single-column callers leave it disabled.
 	static void GetPushdownFilterTargets(LogicalOperator &op, vector<JoinFilterPushdownColumn> columns,
 	                                     vector<PushdownFilterTarget> &targets,
-	                                     EqualityPropagation equality_propagation = EqualityPropagation::DISABLED,
-	                                     CTEFilterTargetMode cte_targets = CTEFilterTargetMode::IGNORE);
+	                                     EqualityPropagation equality_propagation = EqualityPropagation::DISABLED);
 
 	static bool IsFiltering(const unique_ptr<LogicalOperator> &op);
 
 private:
+	void CollectCTEFilters(LogicalOperator &op);
+	void GenerateCTEFilters(LogicalMaterializedCTE &cte);
 	void GenerateJoinFilters(LogicalComparisonJoin &join);
-	static bool GetJoinFilterColumn(const LogicalComparisonJoin &join, idx_t condition_idx,
-	                                JoinFilterPushdownColumn &column);
-	static bool ComputeAggregatesForPerfectHash(const LogicalComparisonJoin &join, idx_t filter_count);
+	static bool CanGenerateJoinFilters(const LogicalComparisonJoin &join);
+	static void GetCTEFilterTargets(LogicalOperator &op, vector<JoinFilterPushdownColumn> columns,
+	                                reference_map_t<LogicalCTERef, vector<JoinFilterPushdownColumn>> &targets);
 
 private:
 	Optimizer &optimizer;
-	unordered_set<TableIndex> eligible_ctes;
+	reference_map_t<LogicalComparisonJoin, vector<JoinFilterPushdownFilter>> cte_filters;
 };
 } // namespace duckdb

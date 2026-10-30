@@ -27,17 +27,13 @@
 
 namespace duckdb {
 
-LogicalGet &PushdownFilterTarget::GetScan() const {
-	return op.Cast<LogicalGet>();
-}
+struct FilterTarget {
+	FilterTarget(LogicalOperator &op, vector<JoinFilterPushdownColumn> columns) : op(op), columns(std::move(columns)) {
+	}
 
-LogicalCTERef &PushdownFilterTarget::GetCTEReference() const {
-	return op.Cast<LogicalCTERef>();
-}
-
-bool PushdownFilterTarget::IsCTEReference() const {
-	return op.type == LogicalOperatorType::LOGICAL_CTE_REF;
-}
+	LogicalOperator &op;
+	vector<JoinFilterPushdownColumn> columns;
+};
 
 JoinFilterPushdownOptimizer::JoinFilterPushdownOptimizer(Optimizer &optimizer) : optimizer(optimizer) {
 }
@@ -253,7 +249,7 @@ static void CollectJoinFilterEqualities(const LogicalComparisonJoin &join, filte
 }
 
 static void FindScanFilterTargets(LogicalGet &get, vector<JoinFilterPushdownColumn> columns,
-                                  vector<PushdownFilterTarget> &targets) {
+                                  vector<FilterTarget> &targets) {
 	if (!get.function.filter_pushdown || get.ordinality_idx.IsValid() || get.extra_info.sample_options) {
 		return;
 	}
@@ -303,12 +299,12 @@ static bool OperatorHasVolatileExpressions(const LogicalOperator &op) {
 
 class FilterTargetContext {
 public:
-	FilterTargetContext(EqualityPropagation equality_propagation, CTEFilterTargetMode cte_targets)
-	    : equality_propagation(equality_propagation), cte_targets(cte_targets) {
+	explicit FilterTargetContext(EqualityPropagation equality_propagation)
+	    : equality_propagation(equality_propagation) {
 	}
 
 	EqualityPropagation equality_propagation;
-	CTEFilterTargetMode cte_targets;
+	bool include_cte_references = false;
 
 public:
 	const filter_equality_graph_t &GetEqualities(const LogicalOperator &op) {
@@ -378,11 +374,11 @@ private:
 enum class FilterColumnExpansion { REQUIRED, COMPLETE };
 
 static void FindFilterTargets(LogicalOperator &op, vector<JoinFilterPushdownColumn> columns,
-                              vector<PushdownFilterTarget> &targets, FilterTargetContext &context,
+                              vector<FilterTarget> &targets, FilterTargetContext &context,
                               FilterColumnExpansion expansion = FilterColumnExpansion::REQUIRED);
 
 static void FindSetOperationFilterTargets(LogicalSetOperation &setop, const vector<JoinFilterPushdownColumn> &columns,
-                                          vector<PushdownFilterTarget> &targets, FilterTargetContext &context) {
+                                          vector<FilterTarget> &targets, FilterTargetContext &context) {
 	for (auto &child : setop.children) {
 		vector<JoinFilterPushdownColumn> child_columns;
 		const auto child_bindings = child->GetColumnBindings();
@@ -469,7 +465,7 @@ static vector<JoinFilterPushdownColumn> ExpandEquivalentFilterColumns(const filt
 }
 
 static void FindJoinFilterTargets(LogicalOperator &op, vector<JoinFilterPushdownColumn> columns,
-                                  vector<PushdownFilterTarget> &targets, FilterTargetContext &context,
+                                  vector<FilterTarget> &targets, FilterTargetContext &context,
                                   FilterColumnExpansion expansion) {
 	if (OperatorHasVolatileExpressions(op)) {
 		return;
@@ -489,7 +485,7 @@ static void FindJoinFilterTargets(LogicalOperator &op, vector<JoinFilterPushdown
 	if (!inner) {
 		return;
 	}
-	vector<PushdownFilterTarget> right_targets;
+	vector<FilterTarget> right_targets;
 	FindFilterTargets(*op.children[1], std::move(columns), right_targets, context, child_expansion);
 	// An empty build can skip the probe input, including expressions outside the filtered branch.
 	if (!right_targets.empty() && context.CanSkipSubtree(*op.children[0])) {
@@ -500,7 +496,7 @@ static void FindJoinFilterTargets(LogicalOperator &op, vector<JoinFilterPushdown
 }
 
 static void FindWindowFilterTargets(LogicalWindow &window, vector<JoinFilterPushdownColumn> columns,
-                                    vector<PushdownFilterTarget> &targets, FilterTargetContext &context) {
+                                    vector<FilterTarget> &targets, FilterTargetContext &context) {
 	vector<JoinFilterPushdownColumn> partition_columns;
 	for (auto &filter : columns) {
 		bool shared_partition = filter.probe_column_index.table_index != window.window_index;
@@ -523,7 +519,7 @@ static void FindWindowFilterTargets(LogicalWindow &window, vector<JoinFilterPush
 }
 
 static void FindFilterTargets(LogicalOperator &op, vector<JoinFilterPushdownColumn> columns,
-                              vector<PushdownFilterTarget> &targets, FilterTargetContext &context,
+                              vector<FilterTarget> &targets, FilterTargetContext &context,
                               FilterColumnExpansion expansion) {
 	if (columns.empty() || OperatorHasVolatileExpressions(op)) {
 		return;
@@ -533,7 +529,7 @@ static void FindFilterTargets(LogicalOperator &op, vector<JoinFilterPushdownColu
 		FindScanFilterTargets(op.Cast<LogicalGet>(), std::move(columns), targets);
 		break;
 	case LogicalOperatorType::LOGICAL_CTE_REF: {
-		if (context.cte_targets != CTEFilterTargetMode::INCLUDE) {
+		if (!context.include_cte_references) {
 			break;
 		}
 		auto &ref = op.Cast<LogicalCTERef>();
@@ -624,10 +620,31 @@ static void FindFilterTargets(LogicalOperator &op, vector<JoinFilterPushdownColu
 void JoinFilterPushdownOptimizer::GetPushdownFilterTargets(LogicalOperator &op,
                                                            vector<JoinFilterPushdownColumn> columns,
                                                            vector<PushdownFilterTarget> &targets,
-                                                           EqualityPropagation equality_propagation,
-                                                           CTEFilterTargetMode cte_targets) {
-	FilterTargetContext context(equality_propagation, cte_targets);
-	FindFilterTargets(op, std::move(columns), targets, context);
+                                                           EqualityPropagation equality_propagation) {
+	FilterTargetContext context(equality_propagation);
+	vector<FilterTarget> result;
+	FindFilterTargets(op, std::move(columns), result, context);
+	for (auto &target : result) {
+		targets.emplace_back(target.op.Cast<LogicalGet>(), std::move(target.columns));
+	}
+}
+
+void JoinFilterPushdownOptimizer::GetCTEFilterTargets(
+    LogicalOperator &op, vector<JoinFilterPushdownColumn> columns,
+    reference_map_t<LogicalCTERef, vector<JoinFilterPushdownColumn>> &targets) {
+	FilterTargetContext context(EqualityPropagation::DISABLED);
+	context.include_cte_references = true;
+	vector<FilterTarget> result;
+	FindFilterTargets(op, std::move(columns), result, context);
+	for (auto &target : result) {
+		if (target.op.type != LogicalOperatorType::LOGICAL_CTE_REF) {
+			continue;
+		}
+		auto &cte_columns = targets[target.op.Cast<LogicalCTERef>()];
+		for (auto &column : target.columns) {
+			cte_columns.push_back(std::move(column));
+		}
+	}
 }
 
 bool JoinFilterPushdownOptimizer::IsFiltering(const unique_ptr<LogicalOperator> &op) {
@@ -678,17 +695,12 @@ static void SimplifyJoinFilterCastChain(ClientContext &context, JoinFilterPushdo
 	}
 }
 
-bool JoinFilterPushdownOptimizer::GetJoinFilterColumn(const LogicalComparisonJoin &join, idx_t condition_idx,
-                                                      JoinFilterPushdownColumn &column) {
-	if (condition_idx >= join.conditions.size() || !join.conditions[condition_idx].IsComparison()) {
+bool JoinFilterPushdownOptimizer::CanGenerateJoinFilters(const LogicalComparisonJoin &join) {
+	if (!JoinFilterPushdownUtil::JoinTypeIsSupported(join.join_type)) {
 		return false;
 	}
-	auto &condition = join.conditions[condition_idx];
-	if (!JoinFilterPushdownUtil::PushdownJoinFilterExpression(condition.GetLHS(), column)) {
-		return false;
-	}
-	for (auto &other : join.conditions) {
-		auto &expression = other.IsComparison() ? other.GetLHS() : other.GetJoinExpression();
+	for (auto &condition : join.conditions) {
+		auto &expression = condition.IsComparison() ? condition.GetLHS() : condition.GetJoinExpression();
 		if (expression.IsVolatile()) {
 			return false;
 		}
@@ -696,16 +708,8 @@ bool JoinFilterPushdownOptimizer::GetJoinFilterColumn(const LogicalComparisonJoi
 	return true;
 }
 
-bool JoinFilterPushdownOptimizer::ComputeAggregatesForPerfectHash(const LogicalComparisonJoin &join,
-                                                                  idx_t filter_count) {
-	return join.join_type == JoinType::INNER && join.conditions.size() == 1 && filter_count == 1 &&
-	       join.conditions[0].IsComparison() &&
-	       join.conditions[0].GetComparisonType() == ExpressionType::COMPARE_EQUAL &&
-	       TypeIsIntegral(join.conditions[0].GetRHS().GetReturnType().InternalType());
-}
-
 void JoinFilterPushdownOptimizer::GenerateJoinFilters(LogicalComparisonJoin &join) {
-	if (!JoinFilterPushdownUtil::JoinTypeIsSupported(join.join_type)) {
+	if (!CanGenerateJoinFilters(join)) {
 		return;
 	}
 	// re-order conditions here - otherwise this will happen later on and invalidate the indexes we generate
@@ -731,7 +735,7 @@ void JoinFilterPushdownOptimizer::GenerateJoinFilters(LogicalComparisonJoin &joi
 		}
 
 		JoinFilterPushdownColumn pushdown_col;
-		if (!GetJoinFilterColumn(join, cond_idx, pushdown_col)) {
+		if (!JoinFilterPushdownUtil::PushdownJoinFilterExpression(cond.GetLHS(), pushdown_col)) {
 			continue;
 		}
 
@@ -745,19 +749,13 @@ void JoinFilterPushdownOptimizer::GenerateJoinFilters(LogicalComparisonJoin &joi
 	}
 	// recurse the query tree to find the LogicalGets in which we can push the filter info
 	vector<PushdownFilterTarget> pushdown_filter_targets;
-	GetPushdownFilterTargets(*join.children[0], pushdown_columns, pushdown_filter_targets, EqualityPropagation::ENABLED,
-	                         CTEFilterTargetMode::INCLUDE);
-	bool has_cte_target = false;
+	GetPushdownFilterTargets(*join.children[0], pushdown_columns, pushdown_filter_targets,
+	                         EqualityPropagation::ENABLED);
 	for (auto &target : pushdown_filter_targets) {
 		vector<JoinFilterPushdownColumn> get_columns;
 		for (auto &column : target.columns) {
 			const auto comparison =
 			    join.conditions[pushdown_info->join_condition[column.join_filter_idx]].GetComparisonType();
-			if (target.IsCTEReference()) {
-				has_cte_target |= comparison == ExpressionType::COMPARE_EQUAL &&
-				                  eligible_ctes.count(target.GetCTEReference().cte_index) != 0;
-				continue;
-			}
 			if (comparison == ExpressionType::COMPARE_NOT_DISTINCT_FROM &&
 			    column.mode != JoinFilterPushdownMode::RECONSTRUCT_EXPRESSION) {
 				continue;
@@ -768,7 +766,7 @@ void JoinFilterPushdownOptimizer::GenerateJoinFilters(LogicalComparisonJoin &joi
 		if (get_columns.empty()) {
 			continue;
 		}
-		auto &get = target.GetScan();
+		auto &get = target.get;
 		// pushdown info can be applied to this LogicalGet - push the dynamic table filter set
 		if (!get.dynamic_filters) {
 			get.dynamic_filters = make_shared_ptr<DynamicTableFilterSet>();
@@ -783,11 +781,29 @@ void JoinFilterPushdownOptimizer::GenerateJoinFilters(LogicalComparisonJoin &joi
 		pushdown_info->probe_info.push_back(std::move(get_filter));
 	}
 
+	auto cte_entry = cte_filters.find(join);
+	if (cte_entry != cte_filters.end()) {
+		for (auto &filter : cte_entry->second) {
+			for (auto &column : filter.columns) {
+				auto condition_idx = column.join_filter_idx;
+				auto entry = std::find(pushdown_info->join_condition.begin(), pushdown_info->join_condition.end(),
+				                       condition_idx);
+				D_ASSERT(entry != pushdown_info->join_condition.end());
+				column.join_filter_idx = NumericCast<idx_t>(entry - pushdown_info->join_condition.begin());
+				SimplifyJoinFilterCastChain(optimizer.GetContext(), column, ExpressionType::COMPARE_EQUAL);
+			}
+			pushdown_info->probe_info.push_back(std::move(filter));
+		}
+	}
+
 	// Even if we cannot find any table sources in which we can push down filters,
 	// we still initialize the aggregate states so that we have the possibility of doing a perfect hash join
 	// TODO: Can ExpressionType::COMPARE_NOT_DISTINCT_FROM be used with perfect hash joins?
-	const auto compute_aggregates_anyway = ComputeAggregatesForPerfectHash(join, pushdown_info->join_condition.size());
-	if (pushdown_info->probe_info.empty() && !compute_aggregates_anyway && !has_cte_target) {
+	const auto compute_aggregates_anyway =
+	    join.join_type == JoinType::INNER && join.conditions.size() == 1 && pushdown_info->join_condition.size() == 1 &&
+	    join.conditions[0].IsComparison() && join.conditions[0].GetComparisonType() == ExpressionType::COMPARE_EQUAL &&
+	    TypeIsIntegral(join.conditions[0].GetRHS().GetReturnType().InternalType());
+	if (pushdown_info->probe_info.empty() && !compute_aggregates_anyway) {
 		// no table sources found in which we can push down filters
 		return;
 	}
@@ -810,7 +826,7 @@ void JoinFilterPushdownOptimizer::GenerateJoinFilters(LogicalComparisonJoin &joi
 			pushdown_info->min_max_aggregates.push_back(std::move(aggr_expr));
 		}
 	}
-	if (!pushdown_info->probe_info.empty() || has_cte_target) {
+	if (!pushdown_info->probe_info.empty()) {
 		const idx_t child_idx = join.children[1]->type == LogicalOperatorType::LOGICAL_DELIM_GET ? 0 : 1;
 		pushdown_info->build_side_has_filter = IsFiltering(join.children[child_idx]);
 	}

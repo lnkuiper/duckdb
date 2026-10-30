@@ -1,0 +1,144 @@
+# name: test/sql/cte/materialized/cte_runtime_filter_optional_dependencies.test
+# description: Small CTE filter producers bypass sibling waits and large producers release filter waits
+# group: [materialized]
+
+statement ok
+SET max_execution_time=10000;
+
+statement ok
+SET disabled_optimizers='cte_filter_pusher';
+
+statement ok
+CREATE TABLE facts AS SELECT i%10000 AS k,i AS v FROM range(200000) t(i);
+
+statement ok
+CREATE TABLE dates AS SELECT i AS k,i//10 AS g FROM range(10000) t(i);
+
+statement ok
+CREATE TABLE b AS SELECT i AS g FROM range(100,300) t(i);
+
+statement ok
+CREATE TABLE c AS SELECT i AS g FROM range(500,700) t(i);
+
+statement ok
+PREPARE consumers AS
+WITH p AS MATERIALIZED (SELECT d.g,sum(f.v) v FROM facts f JOIN dates d USING(k) GROUP BY d.g)
+SELECT sum(x.v),sum(y.v)
+FROM (SELECT p.* FROM p JOIN b USING(g)) x
+JOIN (SELECT p.* FROM p JOIN c USING(g)) y ON x.g=y.g-400;
+
+foreach threads 1 4
+
+statement ok
+SET threads={threads};
+
+query II
+EXECUTE consumers;
+----
+3879980000	4039980000
+
+# The complete OR reaches the dimension scan inside the CTE definition.
+query II
+EXPLAIN (ANALYZE, FORMAT JSON)
+WITH p AS MATERIALIZED (SELECT d.g,sum(f.v) v FROM facts f JOIN dates d USING(k) GROUP BY d.g)
+SELECT sum(x.v),sum(y.v)
+FROM (SELECT p.* FROM p JOIN b USING(g)) x
+JOIN (SELECT p.* FROM p JOIN c USING(g)) y ON x.g=y.g-400;
+----
+analyzed_plan	<REGEX>:(?s).*"Table": "[^"]*[.]dates"[^}]*"Dynamic Filters": "[^"]* OR [^"]*"[^}]*},\s*"intermediate_rows": 4000,.*
+
+# Both UNION inputs must finish before the producer decides whether to bypass.
+query II
+WITH p AS MATERIALIZED (SELECT d.g,sum(f.v) v FROM facts f JOIN dates d USING(k) GROUP BY d.g)
+SELECT sum(x.v),sum(y.v)
+FROM (SELECT p.* FROM p JOIN (FROM b UNION ALL FROM b) t USING(g)) x
+JOIN (SELECT p.* FROM p JOIN c USING(g)) y ON x.g=y.g-400;
+----
+7759960000	8079960000
+
+# Non-scan inputs retain conservative scheduling, even when estimated as one row.
+query II
+WITH p AS MATERIALIZED (SELECT d.g,sum(f.v) v FROM facts f JOIN dates d USING(k) GROUP BY d.g)
+SELECT sum(x.v),sum(y.v)
+FROM (SELECT p.* FROM p JOIN (SELECT 100+unnest(range(500000))%200 AS g) t USING(g)) x
+JOIN (SELECT p.* FROM p JOIN c USING(g)) y ON x.g=y.g-400;
+----
+9699950000000	10099950000000
+
+endloop
+
+statement ok
+SET debug_force_external=true;
+
+query II
+EXECUTE consumers;
+----
+3879980000	4039980000
+
+statement ok
+RESET debug_force_external;
+
+statement ok
+DELETE FROM b;
+
+query II
+EXECUTE consumers;
+----
+NULL	NULL
+
+statement ok
+INSERT INTO b SELECT i FROM range(120,140) t(i);
+
+query II
+EXECUTE consumers;
+----
+385198000	401198000
+
+# Keep the native table on the build side as its actual size grows.
+statement ok
+SET memory_limit='128MB';
+
+statement ok
+SET disabled_optimizers='cte_filter_pusher,build_side_probe_side';
+
+statement ok
+CREATE OR REPLACE TABLE facts AS SELECT i%200000 AS k,i AS v FROM range(400000) t(i);
+
+statement ok
+CREATE OR REPLACE TABLE dates AS SELECT i AS k,i+100000 AS g FROM range(200000) t(i);
+
+statement ok
+CREATE OR REPLACE TABLE b AS SELECT 100100+i AS g FROM range(200) t(i);
+
+statement ok
+CREATE OR REPLACE TABLE c AS SELECT i AS g FROM range(100500,100700) t(i);
+
+query II
+EXPLAIN (ANALYZE, FORMAT JSON)
+WITH p AS MATERIALIZED (SELECT d.g,sum(f.v) v FROM facts f JOIN dates d USING(k) GROUP BY d.g)
+SELECT sum(x.v),sum(y.v)
+FROM (SELECT p.* FROM p JOIN b USING(g)) x
+JOIN (SELECT p.* FROM p JOIN c USING(g)) y ON x.g=y.g-400;
+----
+analyzed_plan	<REGEX>:(?s).*"Table": "[^"]*[.]dates"[^}]*"Dynamic Filters": "[^"]* OR [^"]*"[^}]*},\s*"intermediate_rows": 400,.*
+
+statement ok
+INSERT INTO b SELECT 100100+i%200 FROM range(499800) t(i);
+
+# The same eligible scan producer now releases its filter wait instead of bypassing coordination.
+query II
+WITH p AS MATERIALIZED (SELECT d.g,sum(f.v) v FROM facts f JOIN dates d USING(k) GROUP BY d.g)
+SELECT sum(x.v),sum(y.v)
+FROM (SELECT p.* FROM p JOIN b USING(g)) x
+JOIN (SELECT p.* FROM p JOIN c USING(g)) y ON x.g=y.g-400;
+----
+100199500000	100599500000
+
+query II
+EXPLAIN (ANALYZE, FORMAT JSON)
+WITH p AS MATERIALIZED (SELECT d.g,sum(f.v) v FROM facts f JOIN dates d USING(k) GROUP BY d.g)
+SELECT sum(x.v),sum(y.v)
+FROM (SELECT p.* FROM p JOIN b USING(g)) x
+JOIN (SELECT p.* FROM p JOIN c USING(g)) y ON x.g=y.g-400;
+----
+analyzed_plan	<REGEX>:(?s).*"Table": "[^"]*[.]dates"[^}]*},\s*"intermediate_rows": 200000,.*
