@@ -66,7 +66,7 @@ struct RandomQueryState : public ClientContextState {
 		if (!state->query_id.IsValid() || state->query_id.GetIndex() != query_id) {
 			auto &random_engine = RandomEngine::Get(context);
 			lock_guard<mutex> random_guard(random_engine.lock);
-			state->seed = random_engine.NextRandomInteger64();
+			state->seed = random_engine.NextSeed();
 			// Worker allocation must not advance the session RNG or reuse the ordinal streams.
 			state->worker_seeds.SetSeed(~state->seed);
 			state->query_id = query_id;
@@ -116,7 +116,7 @@ void RandomFunction(DataChunk &args, ExpressionState &state, Vector &result) {
 	}
 
 	D_ASSERT(args.ColumnCount() == 2);
-	lstate.InitializeQuery(state.GetContext());
+	lstate.InitializeQuery(state.GetClientContext());
 	auto ordinals = args.data[0].Values<int64_t>();
 	for (auto ordinal : ordinals) {
 		auto position = NumericCast<uint64_t>(ordinal.GetValue() - 1);
@@ -131,12 +131,12 @@ void RandomFunction(DataChunk &args, ExpressionState &state, Vector &result) {
 
 unique_ptr<FunctionLocalState> RandomInitLocalState(ExpressionState &state, const BoundFunctionExpression &expr,
                                                     FunctionData *bind_data) {
-	auto &context = state.GetContext();
+	auto &context = state.GetClientContext();
 	if (!expr.GetChildren().empty()) {
 		D_ASSERT(expr.GetChildren().size() == 2);
 		auto result = make_uniq<RandomLocalState>(0);
 		result->stream_index = expr.GetChildren()[1]->Cast<BoundConstantExpression>().GetValue().GetValue<uint64_t>();
-		return result;
+		return std::move(result);
 	}
 	if (context.transaction.HasActiveTransaction()) {
 		return make_uniq<RandomLocalState>(
@@ -144,7 +144,7 @@ unique_ptr<FunctionLocalState> RandomInitLocalState(ExpressionState &state, cons
 	}
 	auto &random_engine = RandomEngine::Get(context);
 	lock_guard<mutex> guard(random_engine.lock);
-	return make_uniq<RandomLocalState>(random_engine.NextRandomInteger64());
+	return make_uniq<RandomLocalState>(random_engine.NextSeed());
 }
 
 void GenerateUUIDv4Function(DataChunk &args, ExpressionState &state, Vector &result) {
