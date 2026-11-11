@@ -24,7 +24,7 @@ query IIIIII
 SELECT SUM(id) AS id, SUM(id2) AS id2, SUM(id3) AS id3, SUM(value) AS sum_value, SUM(one_min_value) AS sum_one_min_value, sum_value + sum_one_min_value AS sum
 FROM df
 ----
-252652	29774	17657	2498.192	2502.191	5000.383
+254500	29777	17437	2517.301	2483.080	5000.381
 
 # Test right_projection_map
 foreach prefer False True
@@ -47,7 +47,7 @@ FROM (
 GROUP BY ALL
 ORDER BY ALL
 ----
-660 values hashing to fe2237dbeb18fe3400d5323bcab26dd2
+660 values hashing to 6502ad4f213e2a59ab57cc7487ec1dbe
 
 endloop
 

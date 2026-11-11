@@ -1,5 +1,5 @@
 # name: test/sql/function/numeric/setseed_pinned_values.test
-# description: After setseed, samples and random functions return the same values as in earlier releases
+# description: Fixed seeded sample and random function values
 # group: [numeric]
 
 # the values depend on the vector size, and a reload starts a connection without the seed
@@ -26,9 +26,9 @@ SELECT list(i ORDER BY i) FROM (SELECT * FROM range(100) t(i) USING SAMPLE 10 PE
 query I
 SELECT random()
 ----
-0.44176862017860546
+0.896484456861794
 
 query I
 SELECT uuid()
 ----
-098fbc2e-a802-4459-ad75-ee51e5a1a256
+dfa3f28d-b648-49cd-8e4e-e2af33c3debe

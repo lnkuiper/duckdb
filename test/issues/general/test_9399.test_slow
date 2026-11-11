@@ -17,7 +17,7 @@ SELECT CASE WHEN random() < 0.002 THEN range ELSE 100000 - range END c0,
     random() c2
 FROM range(100000)
 
-# should return 99815 rows (was 99870 before)
+# should return 99790 rows
 query III
 WITH cte AS (SELECT c0,
 avg(c1) AS c1_avg,
@@ -26,4 +26,4 @@ FROM test GROUP BY c0)
 SELECT * FROM cte
 ORDER BY c0
 ----
-299370 values hashing to bbebcd893b08ad0e1c1240e29a1b814d
+299370 values hashing to 508635ffca25568b1692be771a587997

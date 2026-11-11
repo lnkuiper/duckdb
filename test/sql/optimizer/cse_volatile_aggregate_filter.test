@@ -2,6 +2,10 @@
 # description: Common sub-expressions of volatile aggregate filters are extracted once, the filters stay separate
 # group: [optimizer]
 
+# Keep random calls visible while checking common sub-expression extraction.
+statement ok
+SET disabled_optimizers='window_rewriter'
+
 statement ok
 CREATE TABLE g AS SELECT i, repeat(i::VARCHAR, 32) AS s FROM range(20000) t(i)
 

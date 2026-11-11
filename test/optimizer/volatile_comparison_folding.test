@@ -156,6 +156,10 @@ SELECT currval('seq_between')
 ----
 3
 
+# Keep random calls visible while checking comparison rewrites.
+statement ok
+SET disabled_optimizers='window_rewriter'
+
 query II
 EXPLAIN SELECT * FROM range(10) t(i) WHERE i * 3 >= 2 AND i * 3 <= 8
 ----
