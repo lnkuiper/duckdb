@@ -4,6 +4,7 @@
 #include "duckdb/common/mutex.hpp"
 #include "duckdb/common/optional_idx.hpp"
 #include "duckdb/common/string_util.hpp"
+#include "duckdb/common/random_engine.hpp"
 #include "duckdb/planner/expression/bound_conjunction_expression.hpp"
 #include "duckdb/planner/filter/expression_filter.hpp"
 #include "duckdb/transaction/transaction.hpp"
@@ -36,6 +37,13 @@ public:
 	TableScanGlobalSourceState(ClientContext &context, const PhysicalTableScan &op) {
 		physical_table_scan_execution_strategy = Settings::Get<DebugPhysicalTableScanExecutionStrategySetting>(context);
 
+		if (op.random_column_count) {
+			RandomEngine seeds(0);
+			seeds.SetSeed(RandomEngine::GetQuerySeed(context));
+			for (idx_t i = 0; i < op.random_column_count; i++) {
+				random_seeds.push_back(seeds.NextRandomInteger64());
+			}
+		}
 		if (op.dynamic_filters && op.dynamic_filters->HasFilters()) {
 			table_filters = op.dynamic_filters->GetFinalTableFilters(op, op.table_filters.get());
 		}
@@ -72,6 +80,7 @@ public:
 	unique_ptr<GlobalTableFunctionState> global_state;
 	bool in_out_final = false;
 	DataChunk input_chunk;
+	vector<uint64_t> random_seeds;
 
 	optional_ptr<TableFilterSet> GetTableFilters(const PhysicalTableScan &op) const {
 		return table_filters ? table_filters.get() : op.table_filters.get();
@@ -90,9 +99,48 @@ public:
 			                             gstate.GetTableFilters(op), op.extra_info.sample_options, &op);
 			local_state = op.function.init_local(context, input, gstate.global_state.get());
 		}
+		if (op.random_column_count) {
+			auto source_types = op.types;
+			source_types.resize(source_types.size() - op.random_column_count);
+			if (op.random_row_number_index.GetIndex() == source_types.size()) {
+				source_types.push_back(LogicalType::BIGINT);
+			}
+			source_chunk.Initialize(BufferAllocator::Get(context.client), source_types);
+			for (auto seed : gstate.random_seeds) {
+				auto engine = make_uniq<RandomEngine>(0);
+				engine->SetSeed(seed);
+				random_engines.push_back(std::move(engine));
+			}
+			random_positions.resize(op.random_column_count, 0);
+		}
 	}
 
 	unique_ptr<LocalTableFunctionState> local_state;
+	DataChunk source_chunk;
+	vector<unique_ptr<RandomEngine>> random_engines;
+	vector<uint64_t> random_positions;
+
+	void GenerateRandomColumns(const PhysicalTableScan &op, DataChunk &output) {
+		const auto source_column_count = op.types.size() - op.random_column_count;
+		for (idx_t i = 0; i < source_column_count; i++) {
+			output.data[i].Reference(source_chunk.data[i]);
+		}
+		auto ordinals = source_chunk.data[op.random_row_number_index.GetIndex()].Values<int64_t>();
+		for (idx_t i = 0; i < random_engines.size(); i++) {
+			auto &engine = *random_engines[i];
+			auto &position = random_positions[i];
+			auto writer = FlatVector::Writer<double>(output.data[source_column_count + i], source_chunk.size());
+			for (auto ordinal : ordinals) {
+				auto next_position = NumericCast<uint64_t>(ordinal.GetValue() - 1);
+				if (next_position != position) {
+					// PCG wraps modulo 2^64; a double consumes two 32-bit outputs.
+					engine.Advance((next_position - position) * uint64_t(2));
+				}
+				writer.WriteValue(engine.NextRandom());
+				position = next_position + 1;
+			}
+		}
+	}
 };
 
 unique_ptr<LocalSourceState> PhysicalTableScan::GetLocalSourceState(ExecutionContext &context,
@@ -179,14 +227,18 @@ SourceResultType PhysicalTableScan::GetDataInternal(ExecutionContext &context, D
 		data.results_execution_mode = input_execution_mode;
 
 		// Actually call the function
-		function.function(context.client, data, chunk);
+		auto &source_chunk = random_column_count ? l_state.source_chunk : chunk;
+		if (random_column_count) {
+			source_chunk.Reset();
+		}
+		function.function(context.client, data, source_chunk);
 
 		const auto output_async_result = data.async_result.GetResultType();
 
 		// Compare and check whether state before and after function.function call is compatible, will throw in case of
 		// inconsistencies
 		ValidateAsyncStrategyResult(execution_strategy, input_execution_mode, data.results_execution_mode,
-		                            initial_async_result, output_async_result, chunk.size());
+		                            initial_async_result, output_async_result, source_chunk.size());
 
 		// Handle results
 		if (output_async_result == AsyncResultType::BLOCKED) {
@@ -204,7 +256,10 @@ SourceResultType PhysicalTableScan::GetDataInternal(ExecutionContext &context, D
 			data.async_result.ExecuteTasksSynchronously(context.client);
 			return SourceResultType::HAVE_MORE_OUTPUT;
 		}
-		return AsyncResult::GetSourceResultType(output_async_result, chunk.size());
+		if (random_column_count && source_chunk.size()) {
+			l_state.GenerateRandomColumns(*this, chunk);
+		}
+		return AsyncResult::GetSourceResultType(output_async_result, source_chunk.size());
 	}
 
 	if (g_state.in_out_final) {
@@ -362,6 +417,10 @@ InsertionOrderPreservingMap<string> PhysicalTableScan::ParamsToString() const {
 	if (function.filter_pushdown && table_filters) {
 		result["Filters"] = GetFilterInfo(*table_filters);
 	}
+	if (random_column_count) {
+		vector<string> random_columns(random_column_count, "random()");
+		result["Computed Columns"] = StringUtil::Join(random_columns, "\n");
+	}
 
 	if (function.filter_pushdown && dynamic_filters && dynamic_filters->HasFilters()) {
 		result["Dynamic Filters"] = GetFilterInfo(*dynamic_filters->GetFinalTableFilters(*this, nullptr));
@@ -388,6 +447,9 @@ bool PhysicalTableScan::Equals(const PhysicalOperator &other_p) const {
 		return false;
 	}
 	auto &other = other_p.Cast<PhysicalTableScan>();
+	if (random_column_count || other.random_column_count) {
+		return false;
+	}
 	if (function != other.function) {
 		return false;
 	}

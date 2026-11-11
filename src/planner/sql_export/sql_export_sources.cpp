@@ -85,6 +85,10 @@ LogicalPlanSQLExportResult LogicalGet::ExportSQLSource(LogicalPlanSQLExportConte
 		}
 		input = LogicalPlanSQLExportHelpers::CreateSubquery(std::move(child.GetValue()));
 	}
+	for (idx_t i = 0; i < get.expressions.size(); i++) {
+		scan_fields.push_back({ColumnBinding(get.table_index, ProjectionIndex(get.GetColumnIds().size() + i)),
+		                       get.expressions[i]->GetReturnType()});
+	}
 	if (ordinality) {
 		fields.GetValue().push_back(*ordinality);
 		scan_fields.push_back(*ordinality);

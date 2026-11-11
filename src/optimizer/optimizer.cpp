@@ -562,6 +562,7 @@ unique_ptr<LogicalOperator> Optimizer::LowerMandatoryAggregateRewrites(unique_pt
 }
 
 unique_ptr<LogicalOperator> Optimizer::Optimize(unique_ptr<LogicalOperator> plan_p) {
+	RowNumberRewriter::RestoreScanExpressions(plan_p, binder);
 	plan_p = LowerMandatoryAggregateRewrites(std::move(plan_p));
 	if (!Settings::Get<EnableOptimizerSetting>(context)) {
 		CTEFilterPusher::ClearDependencies(*plan_p);

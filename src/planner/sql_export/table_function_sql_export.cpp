@@ -303,6 +303,15 @@ SQLSourceQueryResult LogicalPlanSQLExportHelpers::ReconstructSQLSource(ClientCon
 	for (auto index : get.projected_input) {
 		select->select_list.push_back(make_uniq<ColumnRefExpression>(input->column_name_alias[index], input->alias));
 	}
+	for (auto &expression : get.expressions) {
+		BoundExpressionSQLExportContext export_context;
+		export_context.client_context = &context;
+		auto exported = BoundExpressionSQLExporter::Export(*expression, export_context);
+		if (exported.HasError()) {
+			return {nullptr, "computed_scan_expression"};
+		}
+		select->select_list.push_back(std::move(exported.GetValue()));
+	}
 	if (source_ordinality) {
 		select->select_list.push_back(
 		    make_uniq<ColumnRefExpression>(function_ref.column_name_alias.back(), function_ref.alias));

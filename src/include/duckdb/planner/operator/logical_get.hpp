@@ -23,6 +23,7 @@ class DynamicTableFilterSet;
 struct LogicalPlanSQLExportField;
 
 //! LogicalGet represents a scan operation from a data source
+//! Late random pushdown appends zero-argument random expressions after the source columns.
 class LogicalGet : public LogicalOperator {
 public:
 	LogicalPlanSQLExportResult ToSQL(LogicalPlanSQLExportContext &context,

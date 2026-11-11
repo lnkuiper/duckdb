@@ -92,6 +92,14 @@ TEST_CASE("Test logical_empty_result", "[serialization]") {
 	test_helper("SELECT * FROM (SELECT 42) WHERE 1>2");
 }
 
+TEST_CASE("Computed scan columns survive serialization and reoptimization", "[serialization]") {
+	test_helper("SELECT row_number() OVER (), random(), random() FROM range(37)");
+	test_helper("SELECT r, r FROM (SELECT random() r FROM range(37)) WHERE r < 0.5");
+	test_helper("SELECT random() FROM t", {"CREATE TABLE t AS SELECT * FROM range(37)"});
+	test_helper("SELECT min(random()) FROM t", {"CREATE TABLE t AS SELECT * FROM range(37)"});
+	test_helper("SELECT random(), i FROM t ORDER BY i LIMIT 3", {"CREATE TABLE t AS SELECT i FROM range(10000) r(i)"});
+}
+
 TEST_CASE("Test create_table", "[serialization]") {
 	test_helper("CREATE TABLE tbl (foo INTEGER)");
 }

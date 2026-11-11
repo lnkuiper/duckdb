@@ -94,7 +94,7 @@ bool LogicalGet::SupportsRowNumber() const {
 }
 
 InsertionOrderPreservingMap<string> LogicalGet::ParamsToString() const {
-	InsertionOrderPreservingMap<string> result;
+	auto result = expressions.empty() ? InsertionOrderPreservingMap<string>() : LogicalOperator::ParamsToString();
 
 	string filters_info;
 	bool first_item = true;
@@ -216,6 +216,9 @@ vector<ColumnBinding> LogicalGet::GetColumnBindings() {
 			result.emplace_back(child_bindings[entry]);
 		}
 	}
+	for (idx_t i = 0; i < expressions.size(); i++) {
+		result.emplace_back(table_index, ProjectionIndex(column_ids.size() + i));
+	}
 	return result;
 }
 
@@ -283,6 +286,9 @@ void LogicalGet::ResolveTypes() {
 			D_ASSERT(entry < children[0]->types.size());
 			types.push_back(children[0]->types[entry]);
 		}
+	}
+	for (auto &expression : expressions) {
+		types.push_back(expression->GetReturnType());
 	}
 }
 
@@ -354,6 +360,9 @@ void LogicalGet::Serialize(Serializer &serializer) const {
 	if (bind_info) {
 		throw NotImplementedException("Cannot serialize a table function with process-local bind input");
 	}
+	if (!expressions.empty() && !serializer.ShouldSerialize(StorageVersion::V2_1_0)) {
+		throw SerializationException("Computed scan columns require serialization compatibility v2.1.0 or newer");
+	}
 	LogicalOperator::Serialize(serializer);
 	serializer.WriteProperty(200, "table_index", table_index);
 	serializer.WriteProperty(201, "returned_types", returned_types);
@@ -380,6 +389,7 @@ void LogicalGet::Serialize(Serializer &serializer) const {
 	serializer.WriteProperty(217, "table_filters_by_projection", true);
 	serializer.WritePropertyWithDefault(218, "has_pushed_projection", has_pushed_projection, false);
 	serializer.WritePropertyWithDefault(219, "at_clause", at_clause);
+	serializer.WritePropertyWithDefault(220, "expressions", expressions);
 }
 
 unique_ptr<LogicalOperator> LogicalGet::Deserialize(Deserializer &deserializer) {
@@ -421,6 +431,7 @@ unique_ptr<LogicalOperator> LogicalGet::Deserialize(Deserializer &deserializer) 
 	result->has_pushed_projection =
 	    deserializer.ReadPropertyWithExplicitDefault<bool>(218, "has_pushed_projection", false);
 	result->at_clause = deserializer.ReadPropertyWithDefault<unique_ptr<BoundAtClause>>(219, "at_clause");
+	deserializer.ReadPropertyWithDefault(220, "expressions", result->expressions);
 	if (!legacy_column_ids.empty()) {
 		if (!result->column_ids.empty()) {
 			throw SerializationException(

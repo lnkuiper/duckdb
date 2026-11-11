@@ -57,6 +57,9 @@ public:
 	shared_ptr<DynamicTableFilterSet> dynamic_filters;
 	//! Virtual columns
 	virtual_column_map_t virtual_columns;
+	//! Random outputs appended to the source columns, generated from a private source ordinal.
+	idx_t random_column_count = 0;
+	optional_idx random_row_number_index;
 
 public:
 	string GetName() const override;

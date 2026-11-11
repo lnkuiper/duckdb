@@ -6,6 +6,7 @@
 #include "duckdb/planner/expression_iterator.hpp"
 #include "duckdb/planner/operator/logical_aggregate.hpp"
 #include "duckdb/planner/operator/logical_projection.hpp"
+#include "duckdb/planner/operator/logical_get.hpp"
 
 namespace duckdb {
 
@@ -127,7 +128,16 @@ static CompositionProperties OutputProperties(LogicalOperator &op, const ColumnB
 			}
 			return {};
 		}
-		if (op.type == LogicalOperatorType::LOGICAL_GET || op.type == LogicalOperatorType::LOGICAL_DUMMY_SCAN) {
+		if (op.type == LogicalOperatorType::LOGICAL_GET) {
+			auto &get = op.Cast<LogicalGet>();
+			auto column_index = binding.column_index.GetIndex();
+			if (binding.table_index == get.table_index && column_index >= get.GetColumnIds().size()) {
+				auto &expression = *get.expressions[column_index - get.GetColumnIds().size()];
+				return {!expression.IsVolatile() && !expression.CanThrow(), false, expression.IsVolatile()};
+			}
+			return {true, false, false};
+		}
+		if (op.type == LogicalOperatorType::LOGICAL_DUMMY_SCAN) {
 			return {true, false, false};
 		}
 		if (op.children.size() == 1 &&

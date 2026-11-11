@@ -4,8 +4,130 @@
 #include "duckdb/planner/expression/bound_window_expression.hpp"
 #include "duckdb/optimizer/column_binding_replacer.hpp"
 #include "duckdb/planner/operator/logical_window.hpp"
+#include "duckdb/planner/operator/logical_filter.hpp"
+#include "duckdb/planner/operator/logical_projection.hpp"
+#include "duckdb/planner/expression/bound_columnref_expression.hpp"
+#include "duckdb/planner/expression/bound_function_expression.hpp"
+#include "duckdb/planner/expression_iterator.hpp"
+#include "duckdb/planner/logical_operator_visitor.hpp"
+#include "duckdb/planner/binder.hpp"
 
 namespace duckdb {
+
+namespace {
+
+struct RandomColumn {
+	ColumnBinding binding;
+	ProjectionIndex index;
+};
+
+class RandomColumnPushdown {
+public:
+	void Visit(LogicalOperator &op) {
+		if (op.children.size() != 1 || op.type == LogicalOperatorType::LOGICAL_GET) {
+			return;
+		}
+		Visit(*op.children[0]);
+		if ((op.type != LogicalOperatorType::LOGICAL_PROJECTION &&
+		     op.type != LogicalOperatorType::LOGICAL_AGGREGATE_AND_GROUP_BY &&
+		     op.type != LogicalOperatorType::LOGICAL_FILTER) ||
+		    !SupportsPushdown(*op.children[0])) {
+			return;
+		}
+		auto column_count = op.GetColumnBindings().size();
+		LogicalOperatorVisitor::EnumerateExpressions(
+		    op, [&](unique_ptr<Expression> *expr) { PushRandom(*expr, *op.children[0]); });
+		if (op.type == LogicalOperatorType::LOGICAL_FILTER && op.GetColumnBindings().size() != column_count) {
+			auto &projection_map = op.Cast<LogicalFilter>().projection_map;
+			D_ASSERT(projection_map.empty());
+			for (idx_t i = 0; i < column_count; i++) {
+				projection_map.emplace_back(i);
+			}
+		}
+	}
+
+private:
+	static bool SupportsPushdown(LogicalOperator &op) {
+		if (op.type == LogicalOperatorType::LOGICAL_GET) {
+			return op.Cast<LogicalGet>().SupportsRowNumber();
+		}
+		if (op.type != LogicalOperatorType::LOGICAL_PROJECTION && op.type != LogicalOperatorType::LOGICAL_FILTER) {
+			return false;
+		}
+		return op.children.size() == 1 && SupportsPushdown(*op.children[0]);
+	}
+
+	static void PushRandom(unique_ptr<Expression> &expr, LogicalOperator &input) {
+		ExpressionIterator::EnumerateChildren(*expr, [&](unique_ptr<Expression> &child) { PushRandom(child, input); });
+		if (expr->GetExpressionClass() != ExpressionClass::BOUND_FUNCTION) {
+			return;
+		}
+		auto &function = expr->Cast<BoundFunctionExpression>();
+		if (function.Function().GetName() != "random" || function.Function().GetCatalogName() != SYSTEM_CATALOG ||
+		    function.Function().GetSchemaName() != Identifier::DefaultSchema() || !function.GetChildren().empty() ||
+		    expr->GetReturnType() != LogicalType::DOUBLE) {
+			return;
+		}
+		auto alias = expr->GetAlias();
+		auto column = AddColumn(input, std::move(expr));
+		expr = make_uniq<BoundColumnRefExpression>(alias, LogicalType::DOUBLE, column.binding);
+	}
+
+	static RandomColumn AddColumn(LogicalOperator &op, unique_ptr<Expression> expr) {
+		if (op.type == LogicalOperatorType::LOGICAL_GET) {
+			auto &get = op.Cast<LogicalGet>();
+			if (get.GetColumnIds().empty()) {
+				get.AddColumnId(get.GetAnyColumn());
+			}
+			auto output_index = ProjectionIndex(get.GetColumnBindings().size());
+			auto binding_index = ProjectionIndex(get.GetColumnIds().size() + get.expressions.size());
+			get.expressions.push_back(std::move(expr));
+			return {{get.table_index, binding_index}, output_index};
+		}
+		auto column = AddColumn(*op.children[0], std::move(expr));
+		if (op.type == LogicalOperatorType::LOGICAL_PROJECTION) {
+			auto &projection = op.Cast<LogicalProjection>();
+			auto index = ProjectionIndex(projection.expressions.size());
+			projection.expressions.push_back(make_uniq<BoundColumnRefExpression>(LogicalType::DOUBLE, column.binding));
+			return {{projection.table_index, index}, index};
+		}
+		auto &filter = op.Cast<LogicalFilter>();
+		if (!filter.projection_map.empty()) {
+			auto index = ProjectionIndex(filter.projection_map.size());
+			filter.projection_map.push_back(column.index);
+			column.index = index;
+		}
+		return column;
+	}
+};
+
+void RestoreScanExpressionsInternal(unique_ptr<LogicalOperator> &op, unique_ptr<LogicalOperator> &root,
+                                    Binder &binder) {
+	for (auto &child : op->children) {
+		RestoreScanExpressionsInternal(child, root, binder);
+	}
+	if (op->type != LogicalOperatorType::LOGICAL_GET || op->expressions.empty()) {
+		return;
+	}
+	auto old_bindings = op->GetColumnBindings();
+	auto computed = std::move(op->expressions);
+	auto projection = LogicalProjection::CreateIdentity(binder.GenerateTableIndex(), std::move(op));
+	for (auto &expression : computed) {
+		projection->expressions.push_back(std::move(expression));
+	}
+	CorrelatedColumnBindingReplacer replacer;
+	replacer.AddReplacements(old_bindings, projection->GetColumnBindings());
+	replacer.stop_operator = projection.get();
+	op = std::move(projection);
+	op->ResolveOperatorTypes();
+	replacer.VisitOperator(*root);
+}
+
+} // namespace
+
+void RowNumberRewriter::RestoreScanExpressions(unique_ptr<LogicalOperator> &plan, Binder &binder) {
+	RestoreScanExpressionsInternal(plan, plan, binder);
+}
 
 bool RowNumberRewriter::CanOptimize(LogicalOperator &op) {
 	if (op.type != LogicalOperatorType::LOGICAL_WINDOW) {
@@ -32,7 +154,7 @@ bool RowNumberRewriter::CanOptimize(LogicalOperator &op) {
 
 	auto &get = window_ch->Cast<LogicalGet>();
 
-	return get.SupportsRowNumber();
+	return get.expressions.empty() && get.SupportsRowNumber();
 }
 
 unique_ptr<LogicalOperator> RowNumberRewriter::Optimize(unique_ptr<LogicalOperator> op) {
@@ -44,6 +166,9 @@ unique_ptr<LogicalOperator> RowNumberRewriter::Optimize(unique_ptr<LogicalOperat
 		replacer.VisitOperator(*root);
 	}
 
+	// Computed bindings follow the source columns, so finish adding ROW_NUMBER columns first.
+	RandomColumnPushdown random_pushdown;
+	random_pushdown.Visit(*op);
 	return op;
 }
 

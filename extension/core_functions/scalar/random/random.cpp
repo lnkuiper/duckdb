@@ -2,8 +2,6 @@
 #include "duckdb/common/vector_operations/vector_operations.hpp"
 #include "duckdb/execution/expression_executor.hpp"
 #include "duckdb/main/client_context.hpp"
-#include "duckdb/main/client_context_state.hpp"
-#include "duckdb/planner/expression/bound_constant_expression.hpp"
 #include "duckdb/planner/expression/bound_function_expression.hpp"
 #include "duckdb/common/random_engine.hpp"
 #include "duckdb/common/types/uuid.hpp"
@@ -59,92 +57,27 @@ void ExtractTimestampFunction(DataChunk &args, ExpressionState &state, Vector &r
 	UnaryExecutor::Execute<INPUT, timestamp_t, OP>(input, result);
 }
 
-struct RandomQueryState : public ClientContextState {
-	static uint64_t GetSeed(ClientContext &context, idx_t query_id, bool per_worker = false) {
-		auto state = context.registered_state->GetOrCreate<RandomQueryState>("random_query_seed");
-		lock_guard<mutex> guard(state->lock);
-		if (!state->query_id.IsValid() || state->query_id.GetIndex() != query_id) {
-			auto &random_engine = RandomEngine::Get(context);
-			lock_guard<mutex> random_guard(random_engine.lock);
-			state->seed = random_engine.NextSeed();
-			// Worker allocation must not advance the session RNG or reuse the ordinal streams.
-			state->worker_seeds.SetSeed(~state->seed);
-			state->query_id = query_id;
-		}
-		return per_worker ? state->worker_seeds.NextRandomInteger64() : state->seed;
-	}
-
-	mutex lock;
-	optional_idx query_id;
-	uint64_t seed = 0;
-	RandomEngine worker_seeds {0};
-};
-
 struct RandomLocalState : public FunctionLocalState {
 	explicit RandomLocalState(uint64_t seed) : random_engine(0) {
 		random_engine.SetSeed(seed);
 	}
 
 	RandomEngine random_engine;
-	uint64_t position = 0;
-	uint64_t stream_index = 0;
-	optional_idx query_id;
-
-	void InitializeQuery(ClientContext &context) {
-		auto current_query = context.transaction.GetActiveQuery();
-		if (query_id.IsValid() && query_id.GetIndex() == current_query) {
-			return;
-		}
-		random_engine.SetSeed(RandomQueryState::GetSeed(context, current_query));
-		random_engine.Advance(stream_index * uint64_t(2));
-		auto seed = random_engine.NextRandomInteger64();
-		random_engine.SetSeed(seed);
-		position = 0;
-		query_id = current_query;
-	}
 };
 
 void RandomFunction(DataChunk &args, ExpressionState &state, Vector &result) {
 	auto &lstate = ExecuteFunctionState::GetFunctionState(state)->Cast<RandomLocalState>();
 	result.SetVectorType(VectorType::FLAT_VECTOR);
 	auto result_data = FlatVector::Writer<double>(result, args.size());
-	if (args.ColumnCount() == 0) {
-		for (idx_t i = 0; i < args.size(); i++) {
-			result_data.WriteValue(lstate.random_engine.NextRandom());
-		}
-		return;
-	}
-
-	D_ASSERT(args.ColumnCount() == 2);
-	lstate.InitializeQuery(state.GetClientContext());
-	auto ordinals = args.data[0].Values<int64_t>();
-	for (auto ordinal : ordinals) {
-		auto position = NumericCast<uint64_t>(ordinal.GetValue() - 1);
-		if (position != lstate.position) {
-			// Unsigned subtraction and the PCG period wrap modulo 2^64. A double consumes two outputs.
-			lstate.random_engine.Advance((position - lstate.position) * uint64_t(2));
-		}
+	D_ASSERT(args.ColumnCount() == 0);
+	for (idx_t i = 0; i < args.size(); i++) {
 		result_data.WriteValue(lstate.random_engine.NextRandom());
-		lstate.position = position + 1;
 	}
 }
 
 unique_ptr<FunctionLocalState> RandomInitLocalState(ExpressionState &state, const BoundFunctionExpression &expr,
                                                     FunctionData *bind_data) {
-	auto &context = state.GetClientContext();
-	if (!expr.GetChildren().empty()) {
-		D_ASSERT(expr.GetChildren().size() == 2);
-		auto result = make_uniq<RandomLocalState>(0);
-		result->stream_index = expr.GetChildren()[1]->Cast<BoundConstantExpression>().GetValue().GetValue<uint64_t>();
-		return std::move(result);
-	}
-	if (context.transaction.HasActiveTransaction()) {
-		return make_uniq<RandomLocalState>(
-		    RandomQueryState::GetSeed(context, context.transaction.GetActiveQuery(), true));
-	}
-	auto &random_engine = RandomEngine::Get(context);
-	lock_guard<mutex> guard(random_engine.lock);
-	return make_uniq<RandomLocalState>(random_engine.NextSeed());
+	return make_uniq<RandomLocalState>(RandomEngine::GetQuerySeed(state.GetClientContext(), true));
 }
 
 void GenerateUUIDv4Function(DataChunk &args, ExpressionState &state, Vector &result) {

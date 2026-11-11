@@ -9,6 +9,8 @@
 #include "duckdb/main/attached_database.hpp"
 #include "duckdb/main/client_config.hpp"
 #include "duckdb/main/client_context.hpp"
+#include "duckdb/main/client_context_state.hpp"
+#include "duckdb/main/context.hpp"
 #include "duckdb/main/client_context_file_opener.hpp"
 #include "duckdb/main/database.hpp"
 #include "duckdb/main/database_manager.hpp"
@@ -43,6 +45,34 @@ const ClientData &ClientData::Get(const ClientContext &context) {
 
 RandomEngine &RandomEngine::Get(ClientContext &context) {
 	return *ClientData::Get(context).random_engine;
+}
+
+namespace {
+struct RandomQueryState : public ClientContextState {
+	mutex lock;
+	optional_idx query_id;
+	uint64_t seed = 0;
+	RandomEngine worker_seeds {0};
+};
+} // namespace
+
+uint64_t RandomEngine::GetQuerySeed(ClientContext &context, bool per_worker) {
+	auto &random_engine = Get(context);
+	if (!context.transaction.HasActiveTransaction()) {
+		lock_guard<mutex> guard(random_engine.lock);
+		return random_engine.NextSeed();
+	}
+	auto state = context.GetContext().GetRegisteredState().GetOrCreate<RandomQueryState>("random_query_seed");
+	lock_guard<mutex> guard(state->lock);
+	auto query_id = context.transaction.GetActiveQuery();
+	if (!state->query_id.IsValid() || state->query_id.GetIndex() != query_id) {
+		lock_guard<mutex> random_guard(random_engine.lock);
+		state->seed = random_engine.NextSeed();
+		// Worker allocation must not advance the session RNG or reuse the scan streams.
+		state->worker_seeds.SetSeed(~state->seed);
+		state->query_id = query_id;
+	}
+	return per_worker ? state->worker_seeds.NextRandomInteger64() : state->seed;
 }
 
 } // namespace duckdb

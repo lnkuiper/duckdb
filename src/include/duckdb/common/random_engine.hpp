@@ -48,6 +48,8 @@ public:
 	void RandomData(duckdb::data_ptr_t data, duckdb::idx_t len);
 
 	static RandomEngine &Get(ClientContext &context);
+	//! One seed per statement, with a separate stream for worker-local consumers.
+	static uint64_t GetQuerySeed(ClientContext &context, bool per_worker = false);
 
 	mutex lock;
 

@@ -240,11 +240,34 @@ PhysicalOperator &PhysicalPlanGenerator::CreatePlan(LogicalGet &op) {
 		projection_indices.push_back(proj_id);
 	}
 
+	optional_idx random_row_number_index;
+	if (!op.expressions.empty()) {
+		D_ASSERT(op.SupportsRowNumber());
+		auto index = op.TryGetProjectionIndex(COLUMN_IDENTIFIER_ROW_NUMBER);
+		if (!index.IsValid()) {
+			index = ProjectionIndex(column_ids.size());
+			column_ids.emplace_back(COLUMN_IDENTIFIER_ROW_NUMBER);
+		}
+		if (projection_indices.empty()) {
+			random_row_number_index = index.GetIndex();
+		} else {
+			auto entry = std::find(projection_indices.begin(), projection_indices.end(), index.GetIndex());
+			if (entry == projection_indices.end()) {
+				random_row_number_index = projection_indices.size();
+				projection_indices.push_back(index.GetIndex());
+			} else {
+				random_row_number_index = NumericCast<idx_t>(entry - projection_indices.begin());
+			}
+		}
+	}
+
 	auto &table_scan = Make<PhysicalTableScan>(
 	    op.types, op.function, std::move(op.bind_data), op.returned_types, column_ids, std::move(projection_indices),
 	    IdentifiersToStrings(op.names), std::move(table_filters), op.estimated_cardinality, std::move(op.extra_info),
 	    std::move(op.parameters), std::move(op.virtual_columns));
 	auto &cast_table_scan = table_scan.Cast<PhysicalTableScan>();
+	cast_table_scan.random_column_count = op.expressions.size();
+	cast_table_scan.random_row_number_index = random_row_number_index;
 	cast_table_scan.dynamic_filters = op.dynamic_filters;
 	if (!filter) {
 		return table_scan;

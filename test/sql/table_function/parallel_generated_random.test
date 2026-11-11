@@ -1,5 +1,5 @@
 # name: test/sql/table_function/parallel_generated_random.test
-# description: Generated projections reproduce seeded data through ordinary ordinal arguments
+# description: Scan-generated random columns reproduce seeded data across workers
 # group: [table_function]
 
 require skip_reload
@@ -19,7 +19,7 @@ PREPARE populate AS INSERT INTO generated SELECT i, random(), random() FROM rang
 statement ok
 PREPARE populate_chain AS INSERT INTO generated SELECT i, a, random() FROM (SELECT i, random() a FROM generate_series(0, 4096) t(i))
 
-# An unrelated CASE must not disable positional random state.
+# An unrelated CASE must not disable random pushdown.
 statement ok
 PREPARE populate_case_sibling AS INSERT INTO generated
 SELECT CASE WHEN i % 2 = 0 THEN i ELSE -i END, random(), random() FROM range(4097) t(i)
@@ -56,6 +56,10 @@ statement ok
 PREPARE populate_table AS INSERT INTO generated SELECT i, random(), random() FROM source
 
 statement ok
+PREPARE populate_row_number AS INSERT INTO generated
+SELECT row_number() OVER (), random(), random() FROM range(4097)
+
+statement ok
 PREPARE populate_filtered AS INSERT INTO generated
 SELECT i, random(), random() FROM range(-4097, 4097) t(i) WHERE i >= 0
 
@@ -69,7 +73,7 @@ SELECT i, random(), random() FROM range(4097) WITH ORDINALITY t(i, n)
 
 # Compare two consecutive queries after one setseed with a single-threaded baseline.
 # Worker-local consumers such as UUID must not affect the next query's random seed.
-foreach population populate populate_chain populate_case_sibling populate_skipped_argument populate_selected_case populate_coalesce populate_conjunction populate_lambda_argument populate_uuid populate_table populate_filtered populate_repeat populate_unused_ordinality
+foreach population populate populate_chain populate_case_sibling populate_skipped_argument populate_selected_case populate_coalesce populate_conjunction populate_lambda_argument populate_uuid populate_table populate_row_number populate_filtered populate_repeat populate_unused_ordinality
 
 statement ok
 SET threads=1

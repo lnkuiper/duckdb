@@ -5,6 +5,20 @@
   "inherit_skip_tests": "test/configs/stats_dependent_tests.json",
   "skip_tests": [
     {
+      "reason": "Seeded parallel replay and plan checks require random scan pushdown.",
+      "paths": [
+        "test/sql/table_function/parallel_generated_random.test",
+        "test/optimizer/random_pushdown.test"
+      ]
+    },
+    {
+      "reason": "The seeded fixture data changes when random scan pushdown is disabled.",
+      "paths": [
+        "test/optimizer/topn/complex_top_n.test",
+        "test/sql/join/iejoin/test_iejoin_events.test"
+      ]
+    },
+    {
       "reason": "Checks the plan of an executed query through the profiler output.",
       "paths": [
         "test/optimizer/partial_aggregate_pushdown_serialized_plan.test"

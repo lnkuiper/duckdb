@@ -132,7 +132,6 @@ public:
 	PhysicalOperator &CreatePlan(LogicalCopyToFile &op, PhysicalOperator &plan);
 
 protected:
-	void PlanRandom(LogicalOperator &op);
 	PhysicalOperator &CreatePlan(LogicalAggregate &op);
 	PhysicalOperator &CreatePlan(LogicalAnyJoin &op);
 	PhysicalOperator &CreatePlan(LogicalColumnDataGet &op);

@@ -14,10 +14,13 @@
 namespace duckdb {
 
 class Optimizer;
+class Binder;
 
 class RowNumberRewriter {
 public:
 	unique_ptr<LogicalOperator> Optimize(unique_ptr<LogicalOperator> op);
+	//! Restore ordinary expressions before an already optimized plan re-enters the optimizer.
+	static void RestoreScanExpressions(unique_ptr<LogicalOperator> &plan, Binder &binder);
 
 private:
 	unique_ptr<LogicalOperator> RewritePlan(unique_ptr<LogicalOperator> op, ColumnBindingReplacer &replacer);

@@ -1,0 +1,63 @@
+# name: test/optimizer/random_pushdown.test
+# description: Random scan columns retain their evaluation scope and honor optimizer gates
+# group: [optimizer]
+
+query II
+EXPLAIN (FORMAT JSON) SELECT random(), random() FROM range(37)
+----
+physical_plan	<REGEX>:[\s\S]*"Computed Columns"[\s\S]*
+
+statement ok
+CREATE TABLE source AS SELECT i, 'unused' s FROM range(37) t(i)
+
+query II
+EXPLAIN (FORMAT JSON) SELECT random() FROM source
+----
+physical_plan	<REGEX>:[\s\S]*"Computed Columns"[\s\S]*
+
+# Random in a lambda body has a different row domain.
+query II
+EXPLAIN (FORMAT JSON) SELECT list_transform([1,2], lambda x: random()) FROM range(37)
+----
+physical_plan	<!REGEX>:[\s\S]*"Computed Columns"[\s\S]*
+
+query II
+EXPLAIN (FORMAT JSON) SELECT random() FROM range(37) a, range(2) b
+----
+physical_plan	<!REGEX>:[\s\S]*"Computed Columns"[\s\S]*
+
+statement ok
+SET disabled_optimizers='window_rewriter'
+
+query II
+EXPLAIN (FORMAT JSON) SELECT random() FROM range(37)
+----
+physical_plan	<!REGEX>:[\s\S]*"Computed Columns"[\s\S]*
+
+statement ok
+RESET disabled_optimizers
+
+statement ok
+SET debug_verify_serializer=true
+
+query III
+SELECT count(*), count(*) FILTER (WHERE a=b), count(DISTINCT a)
+FROM (SELECT random() a, random() b FROM range(37))
+----
+37	0	37
+
+statement ok
+RESET debug_verify_serializer
+
+statement ok
+SET debug_verify_statement='explain_sql_strict'
+
+# Exporting a reused random alias must not duplicate its evaluation.
+query II
+SELECT count(*), count(*) FILTER (WHERE a=b)
+FROM (SELECT r a, r b FROM (SELECT random() r FROM range(37)) WHERE r>=0)
+----
+37	37
+
+statement ok
+RESET debug_verify_statement

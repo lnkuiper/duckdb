@@ -29,7 +29,6 @@ unique_ptr<PhysicalPlan> PhysicalPlanGenerator::Plan(unique_ptr<LogicalOperator>
 
 PhysicalOperator &PhysicalPlanGenerator::ResolveAndPlan(unique_ptr<LogicalOperator> op) {
 	auto &profiler = QueryProfiler::Get(context);
-	PlanRandom(*op);
 
 	// Resolve the types of each operator.
 	{
