@@ -60,6 +60,8 @@ PhysicalOperator &PhysicalPlanGenerator::CreatePlan(LogicalMaterializedCTE &op) 
 	cast_cte.exchange = exchange;
 	cast_cte.cte_scans = materialized_ctes[op.table_index];
 	cast_cte.cte_body_has_side_effects = cte_body_has_side_effects;
+	cast_cte.streaming_only = op.materialize == CTEMaterialize::CTE_MATERIALIZE_STREAMING;
+	D_ASSERT(!cast_cte.streaming_only || use_exchange);
 	cast_cte.preserve_order = preserve_cte_order;
 	cast_cte.use_batch_index = use_batch_index;
 	cast_cte.parallel = !preserve_cte_order || use_batch_index;

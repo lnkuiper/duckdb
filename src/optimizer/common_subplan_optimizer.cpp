@@ -15,6 +15,8 @@
 #include "duckdb/planner/expression/bound_conjunction_expression.hpp"
 #include "duckdb/planner/expression/bound_constant_expression.hpp"
 #include "duckdb/planner/expression/expression_barrier.hpp"
+#include "duckdb/planner/logical_operator_repeatability.hpp"
+#include "duckdb/planner/filter/table_filter_functions.hpp"
 
 #include <algorithm>
 
@@ -106,6 +108,22 @@ static bool CanShareSubplanExpression(const Expression &expr) {
 		unsafe |= ExpressionFilter::IsOptionalExpression(function);
 	});
 	return !unsafe;
+}
+
+static bool CanShareScanFilter(const ExpressionFilter &filter) {
+	auto predicate = ExpressionFilter::GetOptionalFilterChild(*filter.expr);
+	if (predicate && !ExpressionFilter::IsRootNonSelectivityOptionalFilter(filter)) {
+		return false;
+	}
+	auto &expression = predicate ? *predicate : *filter.expr;
+	if (!CanShareSubplanExpression(expression)) {
+		return false;
+	}
+	bool has_runtime_filter = false;
+	ExpressionIterator::VisitExpression<BoundFunctionExpression>(expression, [&](const auto &function) {
+		has_runtime_filter |= TableFilterFunctions::IsTableFilterFunction(function.Function());
+	});
+	return !has_runtime_filter;
 }
 
 static bool HasFixedSizeState(const LogicalType &type, const AggregateStateField &field) {
@@ -1007,13 +1025,18 @@ public:
 		}
 	}
 
-	void FilterSubplans() {
+	void FilterSubplans(CTEMaterialize materialize) {
 		// Filter out redundant or ineligible subplans before returning
 		vector<subplan_map_t::key_type> to_remove;
 		for (auto &entry : subplans) {
 			auto &signature = entry.first.get();
 			auto &subplan_info = entry.second;
-			if (signature.OperatorCount() == 1) {
+			const auto scan_subplan = IsScanSubplan(*subplan_info.subplans[0].op.get());
+			if (scan_subplan != (materialize == CTEMaterialize::CTE_MATERIALIZE_STREAMING)) {
+				to_remove.push_back(signature);
+				continue;
+			}
+			if (signature.OperatorCount() == 1 && !scan_subplan) {
 				to_remove.push_back(signature); // Just one operator in this subplan
 				continue;
 			}
@@ -1034,7 +1057,8 @@ public:
 					const auto parent_subplan_count = parent_it->second.subplans.size();
 					const auto parent_count = parent_subplan_count * parent_signature->OperatorCount();
 					if (parent_subplan_count != 1 && parent_count >= subplan_count &&
-					    ShouldMaterialize(parent_it->second)) {
+					    scan_subplan == IsScanSubplan(*parent_it->second.subplans[0].op.get()) &&
+					    ShouldShare(parent_it->second)) {
 						to_remove.push_back(signature); // Parent is better, this one is redundant
 						continue;
 					}
@@ -1073,18 +1097,25 @@ public:
 
 	void ConvertSubplansToCTEs(Optimizer &optimizer, unique_ptr<LogicalOperator> &op) {
 		const auto sorted_subplans = GetSortedSubplans();
-		idx_t index = 1;
 		for (auto &entry : sorted_subplans) {
 			auto &subplan_info = entry.get().second;
-			if (!ShouldMaterialize(subplan_info)) {
+			if (!ShouldShare(subplan_info)) {
 				continue; // No longer worth materializing due to other materializations
 			}
 			if (!SelectPrimarySubplan(subplan_info)) {
 				continue; // Nested subplans were replaced by CTE refs that no longer expose the required bindings
 			}
+			const auto scan_sharing = IsScanSubplan(*subplan_info.subplans[0].op.get());
+			if (scan_sharing) {
+				try {
+					subplan_info.subplans[0].op.get()->Copy(optimizer.context);
+				} catch (NotImplementedException &) {
+					continue;
+				}
+			}
 
 			const auto cte_index = optimizer.binder.GenerateTableIndex();
-			const auto cte_name = StringUtil::Format("__common_subplan_%llu", index++);
+			const auto cte_name = StringUtil::Format("__common_subplan_%llu", cte_index.index);
 			if (!min_cte_idx.IsValid()) {
 				min_cte_idx = cte_index;
 			}
@@ -1164,9 +1195,7 @@ public:
 				const auto &subplan = subplan_info.subplans[subplan_idx];
 				const auto cte_ref_index = optimizer.binder.GenerateTableIndex();
 				cte_refs.emplace_back(make_uniq<LogicalCTERef>(cte_ref_index, cte_index, types, col_names));
-				if (subplan.op.get()->has_estimated_cardinality) {
-					cte_refs.back()->SetEstimatedCardinality(subplan.op.get()->estimated_cardinality);
-				}
+				cte_refs.back()->SetEstimatedCardinality(subplan.op.get()->EstimateCardinality(optimizer.context));
 				auto new_bindings = cte_refs.back()->GetColumnBindings();
 				if (needs_projection[subplan_idx]) {
 					// Preserve each subplan's original output order when it differs from the
@@ -1180,6 +1209,7 @@ public:
 					// Place the projection on top
 					auto proj =
 					    make_uniq<LogicalProjection>(optimizer.binder.GenerateTableIndex(), std::move(select_list));
+					proj->SetEstimatedCardinality(cte_refs.back()->estimated_cardinality);
 					proj->children.emplace_back(std::move(cte_refs.back()));
 					cte_refs.back() = std::move(proj);
 					new_bindings = cte_refs.back()->GetColumnBindings();
@@ -1209,14 +1239,18 @@ public:
 			}
 			auto materialized_projection = make_uniq<LogicalProjection>(optimizer.binder.GenerateTableIndex(),
 			                                                            std::move(materialized_select_list));
+			materialized_projection->SetEstimatedCardinality(
+			    materialized_subplan->EstimateCardinality(optimizer.context));
 			materialized_projection->children.emplace_back(std::move(materialized_subplan));
 			auto cte = make_uniq<LogicalMaterializedCTE>(Identifier(cte_name), cte_index, materialized_column_count,
 			                                             std::move(materialized_projection), std::move(remainder),
-			                                             CTEMaterialize::CTE_MATERIALIZE_DEFAULT);
+			                                             scan_sharing ? CTEMaterialize::CTE_MATERIALIZE_STREAMING
+			                                                          : CTEMaterialize::CTE_MATERIALIZE_DEFAULT);
 			for (idx_t subplan_idx = 0; subplan_idx < subplan_info.subplans.size(); subplan_idx++) {
 				const auto &subplan = subplan_info.subplans[subplan_idx];
 				subplan.op.get() = std::move(cte_refs[subplan_idx]);
 			}
+			cte->SetEstimatedCardinality(cte->children[1]->EstimateCardinality(optimizer.context));
 			lowest_common_ancestor = std::move(cte);
 
 			// Replace bindings of subplans with those of the CTE refs
@@ -1507,9 +1541,35 @@ private:
 		}
 	}
 
-	bool ShouldMaterialize(const SubplanInfo &subplan_info) const {
+	static bool IsScanSubplan(LogicalOperator &op) {
+		if (op.type == LogicalOperatorType::LOGICAL_GET) {
+			auto &get = op.Cast<LogicalGet>();
+			if (!CanExpandScan(get) || get.table_filters.HasMultiColumnFilters() || !LogicalSubtreeIsRepeatable(op)) {
+				return false;
+			}
+			for (auto &entry : get.table_filters) {
+				auto &filter = ExpressionFilter::GetExpressionFilter(entry.Filter(), "CommonSubplanOptimizer");
+				if (!CanShareScanFilter(filter)) {
+					return false;
+				}
+			}
+			return true;
+		}
+		if ((op.type != LogicalOperatorType::LOGICAL_PROJECTION && op.type != LogicalOperatorType::LOGICAL_FILTER) ||
+		    op.children.size() != 1) {
+			return false;
+		}
+		for (auto &expr : op.expressions) {
+			if (!CanShareSubplanExpression(*expr)) {
+				return false;
+			}
+		}
+		return IsScanSubplan(*op.children[0]);
+	}
+
+	bool ShouldShare(const SubplanInfo &subplan_info) const {
 		auto &subplan = subplan_info.subplans[0].op.get();
-		return CTEInlining::EndsInAggregateOrDistinct(*subplan) ||
+		return IsScanSubplan(*subplan) || CTEInlining::EndsInAggregateOrDistinct(*subplan) ||
 		       (subplan->has_estimated_cardinality &&
 		        IsSelectiveMultiTablePlan(*subplan, subplan->estimated_cardinality));
 	}
@@ -1585,9 +1645,9 @@ private:
 };
 
 //===--------------------------------------------------------------------===//
-// Filtered join inputs
+// Filtered subplan inputs
 //===--------------------------------------------------------------------===//
-class CommonJoinFilters {
+class CommonSubplanFilters {
 	struct Candidate {
 		explicit Candidate(unique_ptr<LogicalOperator> &op) : op(op) {
 		}
@@ -1610,7 +1670,8 @@ class CommonJoinFilters {
 			for (idx_t i = 0; i < primary.scans.size(); i++) {
 				auto &left = primary.scans[i].get()->Cast<LogicalGet>();
 				auto &right = candidate.scans[i].get()->Cast<LogicalGet>();
-				if (left.GetColumnIds() != right.GetColumnIds()) {
+				if (primary.op.get()->type != LogicalOperatorType::LOGICAL_GET &&
+				    left.GetColumnIds() != right.GetColumnIds()) {
 					return false;
 				}
 				if (left.table_filters.Equals(right.table_filters)) {
@@ -1632,11 +1693,11 @@ class CommonJoinFilters {
 	};
 
 public:
-	explicit CommonJoinFilters(ClientContext &context) : state(context) {
+	explicit CommonSubplanFilters(ClientContext &context) : state(context) {
 	}
 
-	void Normalize(unique_ptr<LogicalOperator> &op) {
-		FindCandidates(op);
+	void Normalize(unique_ptr<LogicalOperator> &op, CTEMaterialize materialize) {
+		FindCandidates(op, materialize);
 		for (auto &entry : candidates) {
 			vector<CandidateGroup> groups;
 			for (auto &candidate : entry.second) {
@@ -1690,11 +1751,11 @@ private:
 		}
 		auto &get = op->Cast<LogicalGet>();
 		if (!get.children.empty() || get.table_filters.HasMultiColumnFilters() || get.dynamic_filters ||
-		    get.extra_info.sample_options || get.has_pushed_projection) {
+		    get.extra_info.sample_options || get.has_pushed_projection || !LogicalSubtreeIsRepeatable(get)) {
 			return create();
 		}
 		for (auto &entry : get.table_filters) {
-			auto &filter = ExpressionFilter::GetExpressionFilter(entry.Filter(), "CommonJoinFilters");
+			auto &filter = ExpressionFilter::GetExpressionFilter(entry.Filter(), "CommonSubplanFilters");
 			if (!CanShareSubplanExpression(*filter.expr) || ExpressionFilter::IsOptionalFilter(filter)) {
 				return create();
 			}
@@ -1706,8 +1767,9 @@ private:
 		return signature;
 	}
 
-	void FindCandidates(unique_ptr<LogicalOperator> &op) {
-		if (IsInnerJoin(*op)) {
+	void FindCandidates(unique_ptr<LogicalOperator> &op, CTEMaterialize materialize) {
+		const bool scan_sharing = materialize == CTEMaterialize::CTE_MATERIALIZE_STREAMING;
+		if (scan_sharing ? op->type == LogicalOperatorType::LOGICAL_GET : IsInnerJoin(*op)) {
 			Candidate candidate(op);
 			auto signature = Signature(op, candidate, true);
 			if (signature) {
@@ -1716,7 +1778,7 @@ private:
 			return;
 		}
 		for (auto &child : op->children) {
-			FindCandidates(child);
+			FindCandidates(child, materialize);
 		}
 	}
 
@@ -1749,7 +1811,86 @@ private:
 		}
 	}
 
+	static void NormalizeScans(CandidateGroup &candidate_group) {
+		auto &group = candidate_group.candidates;
+		if (group.size() < 2 || group[0].get().scans.size() != 1) {
+			return;
+		}
+		auto &primary = group[0].get().op.get()->Cast<LogicalGet>();
+		vector<pair<ColumnIndex, unique_ptr<ExpressionFilter>>> shared_filters;
+		for (auto &entry : primary.table_filters) {
+			const auto &column = primary.GetColumnIds()[entry.GetIndex()];
+			vector<unique_ptr<Expression>> predicates;
+			auto &primary_filter = entry.Filter().Cast<ExpressionFilter>();
+			predicates.push_back(primary_filter.expr->Copy());
+			bool all_equal = true;
+			for (idx_t i = 1; i < group.size(); i++) {
+				auto &get = group[i].get().op.get()->Cast<LogicalGet>();
+				auto &columns = get.GetColumnIds();
+				auto match = std::find(columns.begin(), columns.end(), column);
+				if (match == columns.end()) {
+					break;
+				}
+				auto filter = get.table_filters.TryGetFilterByColumnIndex(
+				    ProjectionIndex(NumericCast<idx_t>(match - columns.begin())));
+				if (!filter) {
+					break;
+				}
+				auto &expression_filter = filter->Cast<ExpressionFilter>();
+				all_equal &= primary_filter.Equals(expression_filter);
+				predicates.push_back(expression_filter.expr->Copy());
+			}
+			if (predicates.size() == group.size()) {
+				// Preserve pruning for columns constrained by every consumer.
+				auto filter =
+				    all_equal
+				        ? primary_filter.Copy()
+				        : make_uniq<ExpressionFilter>(CreateOptionalFilterExpression(
+				              BoundConjunctionExpression::Create(ExpressionType::CONJUNCTION_OR, std::move(predicates)),
+				              primary.GetColumnType(column)));
+				shared_filters.emplace_back(column, std::move(filter));
+			}
+		}
+		for (Candidate &candidate : group) {
+			auto &op = candidate.op.get();
+			auto &get = op->Cast<LogicalGet>();
+			TableFilterSet common_filters;
+			vector<unique_ptr<Expression>> residuals;
+			for (auto &entry : get.table_filters) {
+				const auto index = entry.GetIndex();
+				const auto &column = get.GetColumnIds()[index];
+				auto shared_filter = std::find_if(shared_filters.begin(), shared_filters.end(),
+				                                  [&](const auto &filter) { return filter.first == column; });
+				if (shared_filter != shared_filters.end()) {
+					common_filters.PushFilter(index, shared_filter->second->Copy());
+				}
+				if (shared_filter == shared_filters.end() ||
+				    !shared_filter->second->Equals(entry.Filter().Cast<ExpressionFilter>())) {
+					BoundColumnRefExpression ref(get.GetColumnType(column), ColumnBinding(get.table_index, index));
+					residuals.push_back(entry.Filter().ToExpression(ref));
+				}
+			}
+			get.table_filters = std::move(common_filters);
+			if (residuals.empty()) {
+				continue;
+			}
+			auto filter = make_uniq<LogicalFilter>();
+			filter->expressions = std::move(residuals);
+			filter->projection_map = std::move(get.projection_ids);
+			if (get.has_estimated_cardinality) {
+				filter->SetEstimatedCardinality(get.estimated_cardinality);
+				get.has_estimated_cardinality = false;
+			}
+			filter->children.push_back(std::move(op));
+			op = std::move(filter);
+		}
+	}
+
 	void NormalizeGroup(CandidateGroup &candidate_group) {
+		if (candidate_group.candidates[0].get().op.get()->type == LogicalOperatorType::LOGICAL_GET) {
+			NormalizeScans(candidate_group);
+			return;
+		}
 		auto &group = candidate_group.candidates;
 		auto differing_scan = candidate_group.differing_scan;
 		if (group.size() < 2 || !differing_scan.IsValid()) {
@@ -1829,13 +1970,15 @@ CommonSubplanOptimizer::CommonSubplanOptimizer(Optimizer &optimizer_p) : optimiz
 }
 
 unique_ptr<LogicalOperator> CommonSubplanOptimizer::Optimize(unique_ptr<LogicalOperator> op) {
-	CommonJoinFilters join_filters(optimizer.context);
-	join_filters.Normalize(op);
-	// Bottom-up identification of identical subplans
-	CommonSubplanFinder finder(optimizer.context);
-	finder.FindCommonSubplans(op);
-	finder.FilterSubplans();
-	finder.ConvertSubplansToCTEs(optimizer, op);
+	// Share reduced results first; scan sharing must not prevent aggregate coalescing.
+	for (auto materialize : {CTEMaterialize::CTE_MATERIALIZE_DEFAULT, CTEMaterialize::CTE_MATERIALIZE_STREAMING}) {
+		CommonSubplanFilters filters(optimizer.context);
+		filters.Normalize(op, materialize);
+		CommonSubplanFinder finder(optimizer.context);
+		finder.FindCommonSubplans(op);
+		finder.FilterSubplans(materialize);
+		finder.ConvertSubplansToCTEs(optimizer, op);
+	}
 	return op;
 }
 

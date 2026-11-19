@@ -26,6 +26,8 @@ public:
 	explicit CTEInlining(Optimizer &optimizer);
 	unique_ptr<LogicalOperator> Optimize(unique_ptr<LogicalOperator> op);
 	static bool EndsInAggregateOrDistinct(const LogicalOperator &op);
+	//! Inline generated streaming CTEs whose consumer pipelines cannot stream directly.
+	bool FinalizeStreamingCTEs(unique_ptr<LogicalOperator> &op, bool recursive = false);
 
 private:
 	void TryInlining(unique_ptr<LogicalOperator> &op);

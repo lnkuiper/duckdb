@@ -74,6 +74,8 @@ public:
 	TableIndex table_index;
 	Identifier ctename;
 	bool cte_body_has_side_effects = false;
+	//! Logical planning proved all consumers can accept direct input.
+	bool streaming_only = false;
 	CTEPipelineSelectionState pipeline_selection_state = CTEPipelineSelectionState::UNRESOLVED;
 	bool preserve_order = false;
 	bool use_batch_index = false;

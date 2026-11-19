@@ -122,6 +122,22 @@ static void ClearProjectionMaps(LogicalOperator &op) {
 	}
 }
 
+static void PushdownInlinedScanFilters(Optimizer &optimizer, unique_ptr<LogicalOperator> &op) {
+	reference<LogicalOperator> scan(*op);
+	while (scan.get().type == LogicalOperatorType::LOGICAL_FILTER ||
+	       scan.get().type == LogicalOperatorType::LOGICAL_PROJECTION) {
+		scan = *scan.get().children[0];
+	}
+	if (scan.get().type == LogicalOperatorType::LOGICAL_GET && scan.get().children.empty()) {
+		FilterPushdown pushdown(optimizer);
+		op = pushdown.Rewrite(std::move(op));
+		return;
+	}
+	for (auto &child : op->children) {
+		PushdownInlinedScanFilters(optimizer, child);
+	}
+}
+
 static bool ContainsDML(const LogicalOperator &op) {
 	switch (op.type) {
 	case LogicalOperatorType::LOGICAL_INSERT:
@@ -455,6 +471,25 @@ void Optimizer::RunBuiltInOptimizers() {
 			statistics_map = propagator.GetStatisticsMap();
 			removed_expressions |= propagator.HasRemovedExpressions();
 		}
+	}
+
+	// Resolve streaming-only CTEs before projection placement and runtime filter pushdown.
+	CTEInlining cte_inlining(*this);
+	while (cte_inlining.FinalizeStreamingCTEs(plan)) {
+		ClearProjectionMaps(*plan);
+		RunOptimizer(OptimizerType::FILTER_PUSHDOWN, [&]() { PushdownInlinedScanFilters(*this, plan); });
+		RunOptimizer(OptimizerType::UNUSED_COLUMNS, [&]() {
+			RemoveUnusedColumns unused(*this);
+			unused.VisitOperator(plan);
+		});
+		if (propagated_statistics) {
+			StatisticsPropagator propagator(*this, plan, StatisticsPropagationMode::FILTER_SIMPLIFICATION);
+			propagator.PropagateStatistics(plan);
+			statistics_map = propagator.GetStatisticsMap();
+			removed_expressions |= propagator.HasRemovedExpressions();
+		}
+	}
+	if (propagated_statistics) {
 		RunOptimizer(OptimizerType::PROJECTION_PLACEMENT, [&]() {
 			ProjectionPlacementOptimizer projection_placement(*this, statistics_map);
 			projection_placement.Optimize(plan);

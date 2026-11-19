@@ -43,14 +43,14 @@ query II
 EXPLAIN (FORMAT JSON) SELECT sum(length(s)), avg(length(s)) FROM projected_plan WHERE length(s) > 1
 UNION ALL SELECT sum(length(u)), avg(length(u)) FROM projected_plan WHERE length(u) > 1;
 ----
-logical_opt	<!REGEX>:.*__common_subplan_.*
+logical_opt	<REGEX>:.*"CTE".*"AGGREGATE".*"FILTER".*"AGGREGATE".*"FILTER".*
 
 # Fallible projected expressions cannot be added to a shared producer.
 query II
 EXPLAIN (FORMAT JSON) SELECT sum(s::INTEGER), avg(s::INTEGER) FROM projected_plan
 UNION ALL SELECT sum(u::INTEGER), avg(u::INTEGER) FROM projected_plan;
 ----
-logical_opt	<!REGEX>:.*__common_subplan_.*
+logical_opt	<REGEX>:.*"CTE".*"SEQ_SCAN".*"AGGREGATE".*"AGGREGATE".*
 
 # Identical positional inputs still allow aggregate sharing above UNION ALL.
 query II
@@ -87,7 +87,7 @@ query II
 EXPLAIN (FORMAT JSON) SELECT (SELECT sum(a) FROM plan_fact WHERE k < 5),
                             (SELECT sum(b) FROM plan_fact WHERE a < 5);
 ----
-logical_opt	<!REGEX>:.*__common_subplan_.*
+logical_opt	<REGEX>:.*"CTE".*"AGGREGATE".*"FILTER".*"AGGREGATE".*"FILTER".*
 
 query II
 EXPLAIN (FORMAT JSON) SELECT (SELECT sum(a) FROM plan_fact), (SELECT sum(b) FROM plan_fact);
@@ -131,7 +131,7 @@ query II
 EXPLAIN (FORMAT JSON) SELECT k, sum(a) FROM plan_fact GROUP BY k
 UNION ALL SELECT k, sum(b) FROM plan_fact GROUP BY k;
 ----
-logical_opt	<!REGEX>:.*__common_subplan_.*
+logical_opt	<REGEX>:.*"CTE".*"SEQ_SCAN".*"AGGREGATE".*"AGGREGATE".*
 
 # Growing states and execution wrappers retain separate aggregate producers.
 query II
@@ -144,13 +144,13 @@ query II
 EXPLAIN (FORMAT JSON) SELECT count(DISTINCT a) FROM plan_fact
 UNION ALL SELECT count(DISTINCT b) FROM plan_fact;
 ----
-logical_opt	<!REGEX>:.*__common_subplan_.*
+logical_opt	<REGEX>:.*"CTE".*"SEQ_SCAN".*"AGGREGATE".*"AGGREGATE".*
 
 query II
 EXPLAIN (FORMAT JSON) SELECT quantile_cont(a, 0.5) FROM plan_fact
 UNION ALL SELECT quantile_cont(b, 0.5) FROM plan_fact;
 ----
-logical_opt	<!REGEX>:.*__common_subplan_.*
+logical_opt	<REGEX>:.*"CTE".*"SEQ_SCAN".*"AGGREGATE".*"AGGREGATE".*
 
 # Existing exact aggregate sharing still supports growing states.
 query II
@@ -159,7 +159,7 @@ UNION ALL SELECT len(list(a)) FROM plan_fact;
 ----
 logical_opt	<REGEX>:.*"CTE".*CTE_SCAN.*CTE_SCAN.*__common_subplan_.*
 
-# Throwing aggregate arguments remain ineligible.
+# Throwing aggregate arguments remain in their separate consumers.
 statement ok
 CREATE TABLE throwing_input AS SELECT i AS k, CASE WHEN i < 5 THEN i::VARCHAR ELSE 'invalid' END AS v FROM range(10) t(i);
 
@@ -167,7 +167,7 @@ query II
 EXPLAIN (FORMAT JSON) SELECT (SELECT sum(v::INTEGER) FROM throwing_input WHERE k < 5),
                             (SELECT max(v::INTEGER) FROM throwing_input WHERE k < 5);
 ----
-logical_opt	<!REGEX>:.*__common_subplan_.*
+logical_opt	<REGEX>:.*"CTE".*"SEQ_SCAN".*"AGGREGATE".*"AGGREGATE".*
 
 # Matching input filters are not broadened when combining aggregate outputs.
 query II
@@ -181,7 +181,7 @@ query II
 EXPLAIN (FORMAT JSON) SELECT (SELECT sum_no_overflow(b) FROM plan_fact WHERE k < 5),
                             (SELECT max(b) FROM plan_fact WHERE k < 5);
 ----
-logical_opt	<!REGEX>:.*__common_subplan_.*
+logical_opt	<REGEX>:.*"CTE".*"SEQ_SCAN".*"AGGREGATE".*"AGGREGATE".*
 
 # Joins reading different payloads share one producer exposing their union.
 query II

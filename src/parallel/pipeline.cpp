@@ -1029,10 +1029,12 @@ void PipelineBuildState::AddCTEPipelineSelection(PhysicalCTE &cte, Pipeline &pip
 }
 
 void PipelineBuildState::ResolveExternalInputs(const vector<shared_ptr<MetaPipeline>> &meta_pipelines) {
-	if (data->external_input_candidates.empty()) {
+	if (data->external_input_candidates.empty() && cte_dependencies.empty()) {
 		return;
 	}
-	SelectExternalInputCandidates(*data);
+	if (!data->external_input_candidates.empty()) {
+		SelectExternalInputCandidates(*data);
+	}
 	auto activate_candidate = [&](PipelineExternalInputCandidate &candidate) {
 		D_ASSERT(candidate.UsesExternalInput());
 		auto &pipeline = candidate.pipeline.get();

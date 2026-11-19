@@ -253,6 +253,13 @@ void PhysicalColumnDataScan::BuildPipelines(Pipeline &current, MetaPipeline &met
 			D_ASSERT(cte_sink->type == PhysicalOperatorType::CTE);
 			auto &cte = cte_sink->Cast<PhysicalCTE>();
 			auto &source = cte_source->Cast<PhysicalCTEConsumerSource>();
+			if (cte.streaming_only) {
+				if (!cte.TryRegisterDirectConsumer(current, source.consumer_idx)) {
+					throw InternalException("Planned streaming CTE has an unsupported consumer");
+				}
+				state.SetPipelineSource(current, *cte_source);
+				return;
+			}
 			// Prefer direct fanout. Buffered exchange is only used when it can avoid full materialization or
 			// when the consumer can stop early; otherwise this scan reads the materialized working table.
 			auto has_blocking_dependencies = !current.GetDependencies().empty();

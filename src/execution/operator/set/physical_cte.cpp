@@ -554,7 +554,11 @@ InsertionOrderPreservingMap<string> PhysicalCTE::ParamsToString() const {
 	result["CTE Name"] = ctename.GetIdentifierName();
 	result["Table Index"] = StringUtil::Format("%llu", table_index.index);
 	if (exchange && pipeline_selection_state == CTEPipelineSelectionState::UNRESOLVED) {
-		result["Execution Mode"] = "PIPELINE_DEPENDENT";
+		result["Execution Mode"] = streaming_only ? "STREAMING_FANOUT" : "PIPELINE_DEPENDENT";
+		if (streaming_only) {
+			result["Fanout Mode"] = "DIRECT";
+			result["Chunk Storage"] = "NONE";
+		}
 		if (exchange->RunToCompletion()) {
 			result["Run To Completion"] = "true";
 		}

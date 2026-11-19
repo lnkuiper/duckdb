@@ -1113,19 +1113,20 @@ const StringUtil::EnumStringLiteral *GetCTEMaterializeValues() {
 	static constexpr StringUtil::EnumStringLiteral values[] {
 		{ static_cast<uint32_t>(CTEMaterialize::CTE_MATERIALIZE_DEFAULT), "CTE_MATERIALIZE_DEFAULT" },
 		{ static_cast<uint32_t>(CTEMaterialize::CTE_MATERIALIZE_ALWAYS), "CTE_MATERIALIZE_ALWAYS" },
-		{ static_cast<uint32_t>(CTEMaterialize::CTE_MATERIALIZE_NEVER), "CTE_MATERIALIZE_NEVER" }
+		{ static_cast<uint32_t>(CTEMaterialize::CTE_MATERIALIZE_NEVER), "CTE_MATERIALIZE_NEVER" },
+		{ static_cast<uint32_t>(CTEMaterialize::CTE_MATERIALIZE_STREAMING), "CTE_MATERIALIZE_STREAMING" }
 	};
 	return values;
 }
 
 template<>
 const char* EnumUtil::ToChars<CTEMaterialize>(CTEMaterialize value) {
-	return StringUtil::EnumToString(GetCTEMaterializeValues(), 3, "CTEMaterialize", static_cast<uint32_t>(value));
+	return StringUtil::EnumToString(GetCTEMaterializeValues(), 4, "CTEMaterialize", static_cast<uint32_t>(value));
 }
 
 template<>
 CTEMaterialize EnumUtil::FromString<CTEMaterialize>(const char *value) {
-	return static_cast<CTEMaterialize>(StringUtil::StringToEnum(GetCTEMaterializeValues(), 3, "CTEMaterialize", value));
+	return static_cast<CTEMaterialize>(StringUtil::StringToEnum(GetCTEMaterializeValues(), 4, "CTEMaterialize", value));
 }
 
 const StringUtil::EnumStringLiteral *GetCacheBlockStateValues() {

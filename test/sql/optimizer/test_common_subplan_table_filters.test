@@ -47,13 +47,13 @@ y	3
 statement ok
 PRAGMA explain_output='optimized_only';
 
-# Different table filters must not be extracted as a common subplan
+# Different predicates retain separate aggregates above the shared scan.
 query II
 EXPLAIN SELECT 'a', count(*) FROM csp_filter_key WHERE a > 1
 UNION ALL
 SELECT 'b', count(*) FROM csp_filter_key WHERE b > 1;
 ----
-logical_opt	<!REGEX>:.*CTE.*
+logical_opt	<REGEX>:.*CTE.*Aggregate.*Aggregate.*Filter.*Filter.*
 
 query II
 EXPLAIN SELECT 'x', count(*) FROM csp_filter_key WHERE a > 1

@@ -1,0 +1,220 @@
+# name: test/sql/optimizer/test_common_subplan_streaming_scan.test
+# description: Stream common scans into independent aggregates, or inline before physical planning
+# group: [optimizer]
+
+statement ok
+CREATE TABLE share_scan AS
+SELECT i::INTEGER AS k, (i%3)::INTEGER AS g,
+       CASE WHEN i%5<>0 THEN (i*3)::BIGINT END AS v,
+       repeat('x', i%4) AS s, [i, NULL] AS a
+FROM range(30) t(i);
+
+# Disjoint predicates and payload columns still share one scan.
+query II
+SELECT (SELECT sum(v) FROM share_scan WHERE k<10),
+       (SELECT sum(length(s)) FROM share_scan WHERE k>=10);
+----
+120	30
+
+query II
+EXPLAIN
+SELECT (SELECT sum(v) FROM share_scan WHERE k<10),
+       (SELECT sum(length(s)) FROM share_scan WHERE k>=10);
+----
+physical_plan	<REGEX>:.*Execution Mode: STREAMING_FANOUT.*Fanout Mode: DIRECT.*Chunk Storage: NONE.*
+
+query II
+EXPLAIN ANALYZE
+SELECT (SELECT sum(v) FROM share_scan WHERE k<10),
+       (SELECT sum(length(s)) FROM share_scan WHERE k>=10);
+----
+analyzed_plan	<REGEX>:.*Execution Mode: STREAMING_FANOUT.*Fanout Mode: DIRECT.*Direct Consumers: 2.*
+
+# Different projection positions must still retain the scan predicate used for pruning.
+query II
+SELECT (SELECT sum(k) FROM share_scan WHERE k BETWEEN 5 AND 7),
+       (SELECT sum(length(s)) FROM share_scan WHERE k BETWEEN 20 AND 22);
+----
+18	3
+
+query II
+EXPLAIN
+SELECT (SELECT sum(k) FROM share_scan WHERE k BETWEEN 5 AND 7),
+       (SELECT sum(length(s)) FROM share_scan WHERE k BETWEEN 20 AND 22);
+----
+physical_plan	<REGEX>:.*Filters:.* OR .*
+
+# Grouped consumers keep separate aggregate states.
+query II rowsort
+SELECT g, sum(v) FROM share_scan WHERE k<10 GROUP BY g
+UNION ALL
+SELECT g, sum(length(s)) FROM share_scan WHERE k>=10 GROUP BY g;
+----
+0	54
+0	9
+1	36
+1	9
+2	12
+2	30
+
+query II
+EXPLAIN ANALYZE
+SELECT g, avg(v) FROM share_scan WHERE k<10 GROUP BY g
+UNION ALL
+SELECT k, avg(v) FROM share_scan WHERE k>=10 GROUP BY k;
+----
+analyzed_plan	<REGEX>:.*Execution Mode: STREAMING_FANOUT.*Fanout Mode: DIRECT.*Direct Consumers: 2.*
+
+# Retain the common scan predicate and evaluate each residual in its consumer.
+query II
+SELECT (SELECT sum(v) FROM share_scan WHERE g=1 AND k<10),
+       (SELECT sum(length(s)) FROM share_scan WHERE g=1 AND k>=10);
+----
+36	9
+
+# Nested payloads must preserve their column bindings.
+query II
+SELECT (SELECT sum(a[1]) FROM share_scan WHERE k<10),
+       (SELECT sum(length(s)) FROM share_scan WHERE k>=10);
+----
+45	30
+
+statement ok
+PREPARE shared_p AS
+SELECT (SELECT sum(v) FROM share_scan WHERE k<$1),
+       (SELECT sum(length(s)) FROM share_scan WHERE k>=$1);
+
+query II
+EXECUTE shared_p(10);
+----
+120	30
+
+query II
+EXECUTE shared_p(20);
+----
+480	13
+
+statement ok
+SET threads=4;
+
+query II
+SELECT (SELECT sum(i) FROM range(1000000) t(i) WHERE i%2=0),
+       (SELECT count(*) FROM range(1000000) t(i) WHERE i%3=0);
+----
+249999500000	333334
+
+query II
+EXECUTE shared_p(10);
+----
+120	30
+
+statement ok
+SET threads=1;
+
+# Range scans allow the prepared physical plan itself to be reused.
+statement ok
+PREPARE shared_range AS
+SELECT (SELECT sum(i) FROM range(30) t(i) WHERE i<10),
+       (SELECT count(*) FROM range(30) t(i) WHERE i>=10);
+
+query II
+EXECUTE shared_range;
+----
+45	20
+
+statement ok
+SET threads=4;
+
+query II
+EXECUTE shared_range;
+----
+45	20
+
+statement ok
+SET threads=1;
+
+query II
+EXECUTE shared_range;
+----
+45	20
+
+# An order-dependent sink must retain independent scans, with filters pushed back down.
+query II
+SELECT (SELECT first(k) FROM share_scan WHERE g=1 AND k<10),
+       (SELECT first(k) FROM share_scan WHERE g=1 AND k>=10);
+----
+1	10
+
+query II
+EXPLAIN SELECT (SELECT first(k) FROM share_scan WHERE g=1 AND k<10),
+               (SELECT first(k) FROM share_scan WHERE g=1 AND k>=10);
+----
+physical_plan	<!REGEX>:.*__common_subplan_.*
+
+# An ordered aggregate argument becomes a serial projection during physical planning.
+statement ok
+CREATE SEQUENCE scan_sequence;
+
+query II
+SELECT (SELECT count(nextval('scan_sequence')) FROM share_scan WHERE k<10),
+       (SELECT count(v) FROM share_scan WHERE k>=10);
+----
+10	16
+
+query II
+EXPLAIN SELECT (SELECT count(nextval('scan_sequence')) FROM share_scan WHERE k<10),
+               (SELECT count(v) FROM share_scan WHERE k>=10);
+----
+physical_plan	<!REGEX>:.*__common_subplan_.*
+
+# Inlined join inputs must still receive runtime filters.
+statement ok
+CREATE TABLE filtered_scan AS SELECT i::INTEGER k FROM range(10000) t(i);
+
+statement ok
+CREATE TABLE filter_keys AS SELECT k FROM filtered_scan WHERE k IN (1, 4999);
+
+statement ok
+SET disabled_optimizers='join_order,build_side_probe_side';
+
+query I
+SELECT count(*) FROM filtered_scan x JOIN filter_keys d USING(k) JOIN filtered_scan y USING(k);
+----
+2
+
+query II
+EXPLAIN ANALYZE
+SELECT count(*) FROM filtered_scan x JOIN filter_keys d USING(k) JOIN filtered_scan y USING(k);
+----
+analyzed_plan	<REGEX>:.*Dynamic Filters:.*k IN.*
+
+statement ok
+SET disabled_optimizers='';
+
+# Sharing the build and probe inputs could create a pipeline dependency cycle.
+query I
+SELECT count(*) FROM (SELECT k FROM share_scan WHERE k<10) x
+JOIN (SELECT k FROM share_scan WHERE k<20) y USING(k);
+----
+10
+
+query II
+EXPLAIN SELECT count(*) FROM (SELECT k FROM share_scan WHERE k<10) x
+JOIN (SELECT k FROM share_scan WHERE k<20) y USING(k);
+----
+physical_plan	<!REGEX>:.*__common_subplan_.*
+
+# CTE sinks do not yet support direct input from another exchange.
+query II
+WITH x AS MATERIALIZED (SELECT v FROM share_scan WHERE k<10),
+     y AS MATERIALIZED (SELECT s FROM share_scan WHERE k>=10)
+SELECT (SELECT sum(v) FROM x), (SELECT sum(length(s)) FROM y);
+----
+120	30
+
+query II
+EXPLAIN WITH x AS MATERIALIZED (SELECT v FROM share_scan WHERE k<10),
+             y AS MATERIALIZED (SELECT s FROM share_scan WHERE k>=10)
+SELECT (SELECT sum(v) FROM x), (SELECT sum(length(s)) FROM y);
+----
+physical_plan	<!REGEX>:.*__common_subplan_.*

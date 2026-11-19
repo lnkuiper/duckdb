@@ -20,6 +20,9 @@ InsertionOrderPreservingMap<string> LogicalMaterializedCTE::ParamsToString() con
 	InsertionOrderPreservingMap<string> result;
 	result["CTE Name"] = ctename.GetIdentifierName();
 	result["Table Index"] = StringUtil::Format("%llu", table_index.index);
+	if (materialize == CTEMaterialize::CTE_MATERIALIZE_STREAMING) {
+		result["Materialization"] = "STREAMING_ONLY";
+	}
 	SetParamsEstimatedCardinality(result);
 	return result;
 }

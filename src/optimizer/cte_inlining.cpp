@@ -6,6 +6,7 @@
 #include "duckdb/planner/expression/list.hpp"
 #include "duckdb/planner/operator/logical_cteref.hpp"
 #include "duckdb/planner/operator/logical_filter.hpp"
+#include "duckdb/planner/operator/logical_get.hpp"
 #include "duckdb/planner/operator/logical_projection.hpp"
 #include "duckdb/planner/operator/logical_materialized_cte.hpp"
 
@@ -23,6 +24,85 @@ CTEInlining::CTEInlining(Optimizer &optimizer_p) : optimizer(optimizer_p) {
 unique_ptr<LogicalOperator> CTEInlining::Optimize(unique_ptr<LogicalOperator> op) {
 	TryInlining(op);
 	return op;
+}
+
+static void PullUpScanFilters(unique_ptr<LogicalOperator> &op) {
+	for (auto &child : op->children) {
+		PullUpScanFilters(child);
+	}
+	if (op->type != LogicalOperatorType::LOGICAL_GET) {
+		return;
+	}
+	auto &get = op->Cast<LogicalGet>();
+	if (!get.table_filters.HasFilters() || get.table_filters.HasMultiColumnFilters()) {
+		return;
+	}
+	vector<unique_ptr<Expression>> expressions;
+	for (auto &entry : get.table_filters) {
+		auto index = entry.GetIndex();
+		BoundColumnRefExpression column(get.GetColumnType(get.GetColumnIds()[index]),
+		                                ColumnBinding(get.table_index, index));
+		expressions.push_back(entry.Filter().ToExpression(column));
+	}
+	get.table_filters.ClearFilters();
+	auto filter = make_uniq<LogicalFilter>();
+	filter->expressions = std::move(expressions);
+	filter->projection_map = std::move(get.projection_ids);
+	filter->children.push_back(std::move(op));
+	op = std::move(filter);
+}
+
+static void EstimateInlinedPlan(LogicalOperator &op, ClientContext &context) {
+	for (auto &child : op.children) {
+		EstimateInlinedPlan(*child, context);
+	}
+	op.SetEstimatedCardinality(op.EstimateCardinality(context));
+}
+
+static bool CanStreamCTEReferences(LogicalOperator &op, TableIndex cte_index, bool streaming_sink = false) {
+	if (op.type == LogicalOperatorType::LOGICAL_RECURSIVE_CTE || op.type == LogicalOperatorType::LOGICAL_DELIM_JOIN ||
+	    op.type == LogicalOperatorType::LOGICAL_EXTENSION_OPERATOR) {
+		return false;
+	}
+	if (op.type == LogicalOperatorType::LOGICAL_CTE_REF) {
+		return op.Cast<LogicalCTERef>().cte_index != cte_index || streaming_sink;
+	}
+	switch (op.type) {
+	case LogicalOperatorType::LOGICAL_AGGREGATE_AND_GROUP_BY: {
+		// Aggregate consumers have no build-side dependencies and do not stop their input early.
+		streaming_sink = true;
+		auto &aggregate = op.Cast<LogicalAggregate>();
+		if (aggregate.groups.empty() && aggregate.grouping_sets.size() <= 1) {
+			for (auto &expr : op.expressions) {
+				if (expr->Cast<BoundAggregateExpression>().Function().GetOrderDependent() ==
+				    AggregateOrderDependent::ORDER_DEPENDENT) {
+					streaming_sink = false;
+					break;
+				}
+			}
+		}
+		break;
+	}
+	case LogicalOperatorType::LOGICAL_PROJECTION:
+	case LogicalOperatorType::LOGICAL_FILTER:
+		break;
+	default:
+		// Other pipeline boundaries need their own proof of direct-input support and acyclic dependencies.
+		streaming_sink = false;
+		break;
+	}
+	if (streaming_sink) {
+		LogicalOperatorVisitor::EnumerateExpressions(op, [&](unique_ptr<Expression> *expr) {
+			ExpressionIterator::VisitExpression<BoundFunctionExpression>(
+			    **expr, [&](const auto &function) { streaming_sink &= !function.RequiresOrderedExecution(); });
+		});
+	}
+	for (auto &child : op.children) {
+		if (!CanStreamCTEReferences(*child, cte_index, streaming_sink)) {
+			return false;
+		}
+	}
+	return true;
 }
 
 static idx_t CountBaseTableReferences(const LogicalOperator &op) {
@@ -50,6 +130,35 @@ static idx_t CountCTEReferences(const LogicalOperator &op, TableIndex cte_index)
 	}
 
 	return number_of_references;
+}
+
+bool CTEInlining::FinalizeStreamingCTEs(unique_ptr<LogicalOperator> &op, bool recursive) {
+	if (op->type == LogicalOperatorType::LOGICAL_PREPARE) {
+		parameter_data = op->Cast<LogicalPrepare>().prepared->value_map;
+	}
+	recursive |= op->type == LogicalOperatorType::LOGICAL_RECURSIVE_CTE;
+	bool changed = false;
+	for (auto &child : op->children) {
+		changed |= FinalizeStreamingCTEs(child, recursive);
+	}
+	if (op->type != LogicalOperatorType::LOGICAL_MATERIALIZED_CTE) {
+		return changed;
+	}
+	auto &cte = op->Cast<LogicalMaterializedCTE>();
+	if (cte.materialize != CTEMaterialize::CTE_MATERIALIZE_STREAMING) {
+		return changed;
+	}
+	const auto ref_count = CountCTEReferences(*cte.children[1], cte.table_index);
+	if (ref_count > 1 && !recursive && CanStreamCTEReferences(*cte.children[1], cte.table_index)) {
+		return changed;
+	}
+	// Recombine the shared predicates with each consumer's filters after inlining.
+	PullUpScanFilters(op->children[0]);
+	if (!Inline(op->children[1], *op, ref_count > 1)) {
+		throw InternalException("Cannot inline a streaming CTE");
+	}
+	op = std::move(op->children[1]);
+	return true;
 }
 
 static bool ContainsLimit(const LogicalOperator &op) {
@@ -253,6 +362,11 @@ bool CTEInlining::Inline(unique_ptr<LogicalOperator> &op, LogicalOperator &mater
 			}
 			op = LogicalProjection::CreateIdentity(cteref.table_index,
 			                                       requires_copy ? std::move(copy) : std::move(definition));
+			if (materialized_cte.Cast<LogicalMaterializedCTE>().materialize ==
+			    CTEMaterialize::CTE_MATERIALIZE_STREAMING) {
+				// Late inlining must restore the estimates that serialization deliberately omits.
+				EstimateInlinedPlan(*op, optimizer.context);
+			}
 			return true;
 		}
 		return true;

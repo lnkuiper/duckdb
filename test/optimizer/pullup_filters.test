@@ -114,7 +114,7 @@ logical_opt	<REGEX>:.*lineitem.*orders.*orders.*
 # if we disable the FilterPullup, we get the original join order again:
 # orders first (joined last), then lineitem, then orders
 statement ok
-set disabled_optimizers to 'filter_pullup'
+set disabled_optimizers to 'filter_pullup,common_subplan'
 
 query II
 explain
