@@ -1,6 +1,8 @@
 #include "duckdb/storage/table/validity_column_data.hpp"
 #include "duckdb/storage/table/column_checkpoint_state.hpp"
 #include "duckdb/storage/table/scan_state.hpp"
+#include "duckdb/common/vector/dictionary_vector.hpp"
+#include "duckdb/common/bit_utils.hpp"
 
 namespace duckdb {
 
@@ -14,9 +16,74 @@ ValidityColumnData::ValidityColumnData(BlockManager &block_manager, DataTableInf
     : ValidityColumnData(block_manager, info, column_index, parent.GetDataType(), parent) {
 }
 
+static bool TryApplyDictionaryValidity(Vector &vector, unsafe_array_ptr<const validity_t> validity) {
+	DictionaryVector::VerifyDictionary(vector);
+	const auto &child = DictionaryVector::Child(vector);
+	const auto count = vector.size();
+	if (child.GetVectorType() != VectorType::FLAT_VECTOR || child.size() == 0 ||
+	    FlatVector::Validity(child).RowIsValid(child.size() - 1)) {
+		return false;
+	}
+	const auto entry_count = ValidityMask::EntryCount(count);
+	D_ASSERT(entry_count <= validity.size());
+	const auto full_entry_count = count / ValidityMask::BITS_PER_VALUE;
+	const auto tail_count = count % ValidityMask::BITS_PER_VALUE;
+	const auto tail_invalid =
+	    tail_count ? ~validity[full_entry_count] & ValidityMask::EntryWithValidBits(tail_count) : 0;
+	idx_t first_invalid = 0;
+	while (first_invalid < full_entry_count && ValidityMask::AllValid(validity[first_invalid])) {
+		first_invalid++;
+	}
+	if (first_invalid == full_entry_count && !tail_invalid) {
+		return true;
+	}
+	auto &buffer = vector.BufferMutable().Cast<DictionaryBuffer>();
+	auto &selection = buffer.GetSelVector();
+	if (vector.GetBufferRef().use_count() != 1 || !selection.sel_data() || selection.sel_data().use_count() != 1) {
+		return false;
+	}
+	const auto null_index = child.size() - 1;
+	unsafe_array_ptr<sel_t> target(selection.data(), count);
+	auto apply_invalid = [&](idx_t entry_idx, validity_t invalid) {
+		const auto start = entry_idx * ValidityMask::BITS_PER_VALUE;
+		while (invalid) {
+			target[start + CountZeros<validity_t>::Trailing(invalid)] = null_index;
+			invalid &= invalid - 1;
+		}
+	};
+	for (idx_t entry_idx = first_invalid; entry_idx < full_entry_count; entry_idx++) {
+		apply_invalid(entry_idx, ~validity[entry_idx]);
+	}
+	apply_invalid(full_entry_count, tail_invalid);
+	return true;
+}
+
+//! Apply row validity without expanding dictionaries that reserve a trailing NULL entry.
+static void ApplyDictionaryValidity(Vector &vector, const ValidityMask &validity) {
+	DictionaryVector::VerifyDictionary(vector);
+	if (validity.CannotHaveNull()) {
+		return;
+	}
+	const auto count = vector.size();
+	if (!TryApplyDictionaryValidity(
+	        vector, unsafe_array_ptr<const validity_t>(validity.GetData(), ValidityMask::EntryCount(count)))) {
+		if (validity.CheckAllValid(count)) {
+			return;
+		}
+		vector.Flatten();
+		auto &result_mask = FlatVector::ValidityMutable(vector);
+		// Reusable scan scratch must never be referenced by a returned result.
+		if (result_mask.CannotHaveNull()) {
+			result_mask.Copy(validity, count);
+		} else {
+			result_mask.Combine(validity, count);
+		}
+	}
+}
+
 template <class SCAN>
-static void ScanValidityMask(ColumnSegment &segment, Vector &result, idx_t count, ScanVectorType scan_type,
-                             SCAN &&scan) {
+static void ScanValidityMask(ColumnSegment &segment, ColumnScanState &state, Vector &result, idx_t count,
+                             ScanVectorType scan_type, SCAN &&scan) {
 	if (count == 0) {
 		return;
 	}
@@ -31,6 +98,16 @@ static void ScanValidityMask(ColumnSegment &segment, Vector &result, idx_t count
 				return;
 			}
 		}
+		if (result.GetVectorType() == VectorType::DICTIONARY_VECTOR) {
+			auto &mask = state.validity_scratch;
+			if (mask.Capacity() < count) {
+				mask.Resize(count);
+			}
+			mask.SetAllValid(count);
+			scan(mask);
+			ApplyDictionaryValidity(result, mask);
+			return;
+		}
 		result.Flatten();
 	}
 	scan(FlatVector::ValidityMutable(result));
@@ -38,7 +115,7 @@ static void ScanValidityMask(ColumnSegment &segment, Vector &result, idx_t count
 
 void ValidityColumnData::ScanValidity(ColumnSegment &segment, ColumnScanState &state, idx_t scan_count,
                                       Vector &result) {
-	ScanValidityMask(segment, result, scan_count, ScanVectorType::SCAN_ENTIRE_VECTOR, [&](ValidityMask &mask) {
+	ScanValidityMask(segment, state, result, scan_count, ScanVectorType::SCAN_ENTIRE_VECTOR, [&](ValidityMask &mask) {
 		segment.GetCompressionFunction().scan_validity(segment, state, scan_count, mask, 0,
 		                                               ScanVectorType::SCAN_ENTIRE_VECTOR);
 	});
@@ -53,7 +130,7 @@ void ValidityColumnData::ScanPartialValidity(ColumnSegment &segment, ColumnScanS
 void ValidityColumnData::SelectValidity(ColumnSegment &segment, ColumnScanState &state, idx_t vector_count,
                                         Vector &result, const SelectionVector &sel, idx_t sel_count,
                                         idx_t result_offset, ScanVectorType scan_type) {
-	ScanValidityMask(segment, result, sel_count, scan_type, [&](ValidityMask &mask) {
+	ScanValidityMask(segment, state, result, sel_count, scan_type, [&](ValidityMask &mask) {
 		segment.GetCompressionFunction().select_validity(segment, state, vector_count, mask, sel, sel_count,
 		                                                 result_offset);
 	});

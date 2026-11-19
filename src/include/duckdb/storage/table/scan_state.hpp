@@ -115,6 +115,8 @@ struct ColumnScanState {
 	StorageIndex storage_index;
 	//! Segment scan state
 	unique_ptr<SegmentScanState> scan_state;
+	//! Reusable row validity for compressed results; never shared with output vectors.
+	ValidityMask validity_scratch;
 	//! Child states of the vector
 	unsafe_vector<ColumnScanState> child_states;
 	//! Whether or not InitializeState has been called for this segment
